@@ -14,8 +14,8 @@ from legged_gym.utils.task_registry import TaskRegistry
 def train(args):
     args.proj_name = 'humanoid_parkour'
     args.headless = False
-    args.simulator = SimulatorType.Genesis
-    # args.simulator = SimulatorType.IsaacGym
+    # args.simulator = SimulatorType.Genesis
+    args.simulator = SimulatorType.IsaacGym
 
     # check if it is on AutoDL
     autodl_log_root = os.path.join(os.path.expanduser("~"), 'autodl-tmp')

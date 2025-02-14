@@ -175,9 +175,9 @@ class BaseTask:
         self._get_env_origins()
 
         # create indices
-        self.penalised_contact_indices = self.sim.create_indices(  # TODO: what about genesis?
+        self.penalised_contact_indices = self.sim.create_indices(
             self.sim.get_full_names(self.cfg.asset.penalize_contacts_on, True), True)
-        self.termination_contact_indices = self.sim.create_indices(  # TODO: what about genesis?
+        self.termination_contact_indices = self.sim.create_indices(
             self.sim.get_full_names(self.cfg.asset.terminate_after_contacts_on, True), True)
 
     # ------------------------------------------------- Simulation Step -------------------------------------------------

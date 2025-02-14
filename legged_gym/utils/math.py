@@ -2,8 +2,6 @@ from typing import Tuple
 
 import torch
 
-import genesis as gs
-
 
 # --------------------- Quaternion: (x, y, z, w) ---------------------
 

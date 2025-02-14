@@ -5,7 +5,6 @@ from .pdd.pdd_dreamwaq_environment import PddDreamWaqEnvironment
 from .pdd.pdd_scan_environment import PddScanEnvironment
 from .pdd.pdd_zju_environment import PddZJUEnvironment
 
-from .base.simple_task import SimpleTask
 
 task_list = [
     ['pdd_scan', PddScanEnvironment, PddScanCfg(), PddScanCfgPPO()],
@@ -15,7 +14,5 @@ task_list = [
     ['pdd_dreamwaq_dr', PddDreamWaqEnvironment, PddDreamWaqDRCfg(), PddDreamWaqDRCfgPPO()],
 
     ['pdd_zju', PddZJUEnvironment, PddZJUCfg(), PddZJUCfgPPO()],
-
-    ['test_task', SimpleTask, PddDreamWaqDRCfg(), PddDreamWaqDRCfgPPO()],
 
 ]
