@@ -1,0 +1,1001 @@
+import random
+from typing import List
+
+import cv2
+import numpy as np
+import torch
+import torchvision
+import warp as wp
+
+from legged_gym.utils.helpers import class_to_dict
+from legged_gym.utils.math import torch_rand_float, axis_angle_to_quat, transform_by_quat, transform_by_yaw, wrap_to_pi
+from legged_gym.utils.terrain import Terrain
+from .base_task import BaseTask
+from .utils import DepthBuffer
+from .warp_kernel import (depth_only_kernel,
+                          depth_point_cloud_kernel,
+                          point_cloud_depth_to_voxel_grid_accumulation_kernel,
+                          point_cloud_to_voxel_grid_kernel,
+                          generate_voxel_grid_terrain_kernel)
+
+
+class ParkourTask(BaseTask):
+
+    def _parse_cfg(self, args):
+        super()._parse_cfg(args)
+        self.cmd_ranges_flat = class_to_dict(self.cfg.commands.flat_ranges)
+        self.cmd_ranges_stair = class_to_dict(self.cfg.commands.stair_ranges)
+        self.cmd_ranges_parkour = class_to_dict(self.cfg.commands.parkour_ranges)
+
+        self.curriculum = self.cfg.terrain.curriculum
+        if self.cfg.terrain.description_type not in ['heightfield', 'trimesh']:
+            self.curriculum = False
+
+    # ----------------------------------------- Initialization -------------------------------------------
+    def _init_buffers(self):
+        """ Initialize torch tensors which will contain simulation states and processed quantities
+        """
+        super()._init_buffers()
+
+        self.commands_scale = torch.tensor(
+            [self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel],
+            device=self.device)
+
+        # initialize some data used later on
+        self.torques = self._zero_tensor(self.num_envs, self.num_actions)
+        self.base_height = self._zero_tensor(self.num_envs)
+        self.feet_height = self._zero_tensor(self.num_envs, len(self.feet_indices))
+
+        self.last_actions = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
+        self.last_last_actions = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
+        self.last_dof_vel = torch.zeros_like(self.sim.dof_vel)
+        self.last_torques = torch.zeros_like(self.torques)
+        self.last_root_vel = torch.zeros_like(self.sim.root_lin_vel)
+        self.last_contacts = self._zero_tensor(self.num_envs, len(self.feet_indices), dtype=torch.bool)
+        self.last_feet_vel_xy = self._zero_tensor(self.num_envs, len(self.feet_indices), 2)
+
+        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+            self.target_yaw = self._zero_tensor(self.num_envs)
+            self.delta_yaw = self._zero_tensor(self.num_envs)
+            self.reached_goal_ids = self._zero_tensor(self.num_envs, dtype=torch.bool)
+            self.reach_goal_timer = self._zero_tensor(self.num_envs)
+            self.target_pos_rel = self._zero_tensor(self.num_envs, 2)
+            self.num_trials = self._zero_tensor(self.num_envs, dtype=torch.long)
+
+        self.base_hmap_points = self._init_height_points(self.cfg.terrain.base_pts_x, self.cfg.terrain.base_pts_y)
+        if self.cfg.terrain.measure_heights:
+            self.scan_points = self._init_height_points(self.cfg.terrain.scan_pts_x, self.cfg.terrain.scan_pts_y)
+            self.num_scan = self.cfg.env.n_scan
+            self.scan_hmap = self._zero_tensor(self.num_envs, self.num_scan)  # in world frame
+
+        # Lag buffer
+        if self.cfg.depth.use_camera:
+            self.resize_transform = torchvision.transforms.Resize(
+                (self.cfg.depth.resized[1], self.cfg.depth.resized[0]),
+                interpolation=torchvision.transforms.InterpolationMode.BICUBIC,
+                antialias=True
+            )
+
+            self.depth_raw = self._zero_tensor(self.num_envs, 1, *reversed(self.cfg.depth.original))
+            self.depth_processed = self._zero_tensor(self.num_envs, 1, *reversed(self.cfg.depth.resized))
+            self.depth_buf = DepthBuffer(self.num_envs, self.cfg.env.len_depth_his, *reversed(self.cfg.depth.resized),
+                                         dtype=torch.float16, device=self.device)
+
+            vertices = self.sim.terrain.vertices - np.array([[self.cfg.terrain.border_size, self.cfg.terrain.border_size, 0]])
+            self.meshes = wp.Mesh(points=wp.array(vertices, dtype=wp.vec3),
+                                  indices=wp.array(self.sim.terrain.triangles.reshape(-1), dtype=int),
+                                  velocities=None)
+
+            # # properties of world voxel grid
+            # volume_array = (self.terrain.volume_array + 0.5) * self.cfg.reconstruction.grid_size
+            # self.volume_arr_com = wp.from_numpy(volume_array, dtype=wp.vec3f, device='cuda')
+            # self.volume_arr_occu = wp.ones((len(volume_array, )), dtype=float, device='cuda')
+
+            # cuda graph generated by Warp
+            self.graph = {}
+
+            # depth camera properties
+            self.sensor_pos_design = self._zero_wp_array(self.num_envs, dtype=wp.vec3f)
+            self.sensor_quat_design = self._zero_wp_array(self.num_envs, dtype=wp.quatf)
+            self.sensor_pos = self._zero_wp_array(self.num_envs, dtype=wp.vec3f)
+            self.sensor_quat = self._zero_wp_array(self.num_envs, dtype=wp.quatf)
+
+            # buffer to store computation result
+            width, height = self.cfg.depth.original
+            self.cloud_depth = self._zero_tensor(self.num_envs, height, width, 3)
+            self.cloud_depth_valid = self._zero_tensor(self.num_envs, height, width, dtype=torch.bool)
+            #
+            # # voxel grid output buffer
+            # self.voxel_grid_depth = self._zero_tensor(self.num_envs, *self.cfg.reconstruction.grid_shape, 4)
+            # self.voxel_grid_terrain = self._zero_tensor(self.num_envs, *self.cfg.reconstruction.grid_shape, 4)
+
+            # convert to warp for warp-torch bridging
+            self._depth_raw_wp = wp.from_torch(self.depth_raw, dtype=wp.float32)
+            self._cloud_depth_wp = wp.from_torch(self.cloud_depth, dtype=wp.vec3f)
+            self._cloud_depth_valid_wp = wp.from_torch(self.cloud_depth_valid, dtype=wp.bool)
+            # self._voxel_grid_depth_wp = wp.from_torch(self.voxel_grid_depth, dtype=wp.vec4f)
+            # self._voxel_grid_terrain_wp = wp.from_torch(self.voxel_grid_terrain, dtype=wp.vec4f)
+            # self._voxel_point_accumulation_wp = self._zero_wp_array(self.num_envs, *self.cfg.reconstruction.grid_shape, dtype=wp.vec4f)
+
+    # ---------------------------------------------- Robots Creation ----------------------------------------------
+
+    def _get_env_origins(self):
+        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+            # put robots at the origins defined by the terrain
+            max_init_level = self.cfg.terrain.max_init_terrain_level
+            if max_init_level >= self.cfg.terrain.num_rows:
+                raise ValueError("max_init_level should be less than num_rows")
+
+            if not self.curriculum:
+                max_init_level = self.cfg.terrain.num_rows - 1
+
+            self.env_levels = torch.randint(0, max_init_level + 1, (self.num_envs,), dtype=torch.long, device=self.device)
+            self.env_cols = torch.div(torch.arange(self.num_envs, device=self.device),
+                                      (self.num_envs / self.cfg.terrain.num_cols),
+                                      rounding_mode='floor').to(torch.long)
+            self.max_terrain_level = self.cfg.terrain.num_rows
+            self.terrain_origins = torch.from_numpy(self.sim.terrain.env_origins).to(self.device).to(torch.float)
+            self.env_origins = self.terrain_origins[self.env_levels, self.env_cols]  # (num_envs, 3)
+            self.terrain_class = torch.from_numpy(self.sim.terrain.terrain_type).to(self.device).to(torch.float)
+            self.env_class = self.terrain_class[self.env_levels, self.env_cols]  # (num_envs, )
+            print('normal terrain env number:', torch.sum(self.env_class < 4).cpu().numpy())
+
+            self.terrain_goals = torch.from_numpy(self.sim.terrain.goals).to(self.device).to(torch.float)
+            self.env_goals = self.terrain_goals[self.env_levels, self.env_cols]  # (num_envs, num_goals, 3))
+            self.cur_goal_idx = self._zero_tensor(self.num_envs, dtype=torch.long)
+            self.cur_goals = self._zero_tensor(self.num_envs, 3)
+
+            self.target_pos_rel = self._zero_tensor(self.num_envs, 2)
+            self.target_yaw = self._zero_tensor(self.num_envs)
+            self.reached_goal_envs = self._zero_tensor(self.num_envs, dtype=torch.bool)
+            self.reach_goal_timer = self._zero_tensor(self.num_envs)
+            self.reach_goal_cutoff = self._zero_tensor(self.num_envs, dtype=torch.bool)
+            self.num_trials = self._zero_tensor(self.num_envs, dtype=torch.long)
+
+        else:
+            super()._get_env_origins()
+
+    def _init_robot_props(self):
+        super()._init_robot_props()
+        self.feet_indices = self.sim.create_indices(
+            self.sim.get_full_names(self.cfg.asset.foot_name, True), True)
+
+    def _reset_idx(self, env_ids: torch.Tensor):
+        if len(env_ids) == 0:
+            return
+
+        # update curriculum
+        if self.curriculum:
+            self._update_terrain_curriculum(env_ids)
+
+        super()._reset_idx(env_ids)
+
+        # reset buffers
+        self.last_action_output[:] = 0.
+        self.last_actions[env_ids] = 0.
+        self.last_last_actions[env_ids] = 0.
+        self.last_dof_vel[env_ids] = 0.
+        self.last_torques[env_ids] = 0.
+        self.last_root_vel[:] = 0.
+        self.last_feet_vel_xy[env_ids] = 0.
+        self.feet_air_time[env_ids] = 0.
+        self.reach_goal_timer[env_ids] = 0
+
+        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+            self.cur_goal_idx[env_ids] = 0
+
+        # fill extras
+        self.extras['episode_rew'] = {}
+        for key in self.episode_sums.keys():
+            self.extras['episode_rew']['rew_' + key] = torch.mean(
+                self.episode_sums[key][env_ids]) / (self.max_episode_length * self.dt)
+            self.episode_sums[key][env_ids] = 0.
+        self.episode_length_buf[env_ids] = 0
+
+        # log additional curriculum info
+        if self.curriculum:
+            self.extras['episode_terrain_level'] = {}
+
+            env_cls = np.unique(self.env_class.cpu().numpy())
+            env_cls_name = [Terrain.terrain_type(c).name for c in env_cls]
+
+            for c, n in zip(env_cls, env_cls_name):
+                self.extras['episode_terrain_level'][n] = torch.mean(self.env_levels[self.env_class == c].float())
+
+        # send timeout info to the algorithm
+        if self.cfg.env.send_timeouts:
+            self.extras['time_outs'] = self.time_out_cutoff.clone()
+            self.extras['reach_goals'] = self.reach_goal_cutoff.clone()
+
+    # ----------------------------------------- Height Measurement -------------------------------------------
+
+    def _init_height_points(self, pts_x, pts_y):
+        """ Returns points at which the height measurements are sampled (in base frame)
+
+        Returns:
+            [torch.Tensor]: Tensor of shape (num_envs, self.num_height_points, 3)
+        """
+        x, y = torch.tensor(pts_x), torch.tensor(pts_y)
+        grid_x, grid_y = torch.meshgrid(x, y, indexing='ij')
+
+        points = self._zero_tensor(self.num_envs, grid_x.numel(), 3)
+        points[:, :, 0] = grid_x.flatten()
+        points[:, :, 1] = grid_y.flatten()
+        return points
+
+    def get_scan(self):
+        # convert height points coordinate to world frame
+        return self._get_heights(
+            transform_by_yaw(self.scan_points, self.base_euler[:, 2].repeat(1, self.num_scan)).unflatten(0, (self.num_envs, -1))
+            + self.sim.root_pos.unsqueeze(1)
+            + self.cfg.terrain.border_size
+        )
+
+    def get_base_height_map(self):
+        # convert height points coordinate to world frame
+        quat_yaw = axis_angle_to_quat(
+            self.base_euler[:, 2],
+            torch.tensor([0, 0, 1], device=self.device, dtype=torch.float)
+        )
+        return self._get_heights(transform_by_quat(self.base_hmap_points, quat_yaw.repeat(1, self.base_hmap_points.size(1)))
+                                 + self.sim.root_pos.unsqueeze(1)
+                                 + self.cfg.terrain.border_size)
+
+    def _get_heights(self, points, use_guidance=False):
+        if self.cfg.terrain.description_type not in ['heightfield', 'trimesh']:
+            return self._zero_tensor(self.num_envs, points.size(1))
+
+        points = (points / self.sim.terrain.cfg.horizontal_scale).long()
+        px = points[:, :, 0].view(-1)
+        py = points[:, :, 1].view(-1)
+        px = torch.clip(px, 0, self.sim.height_samples.size(0) - 2)
+        py = torch.clip(py, 0, self.sim.height_samples.size(1) - 2)
+
+        if use_guidance:
+            heights = self.sim.height_guidance[px, py]
+            heights += self.sim.height_guidance[px + 1, py]
+            heights += self.sim.height_guidance[px, py + 1]
+            heights += self.sim.height_guidance[px + 1, py + 1]
+            heights = (heights / 4).to(torch.short)
+        else:
+            heights1 = self.sim.height_samples[px, py]
+            heights2 = self.sim.height_samples[px + 1, py]
+            heights3 = self.sim.height_samples[px, py + 1]
+            heights = torch.min(heights1, heights2)
+            heights = torch.min(heights, heights3)
+
+        return heights.view(self.num_envs, -1) * self.cfg.terrain.vertical_scale
+
+    # ----------------------------------------- Post Physics -------------------------------------------
+
+    def _refresh_variables(self):
+        super()._refresh_variables()
+
+        # update height measurements
+        if self.cfg.terrain.measure_heights and (self.global_counter % self.cfg.terrain.height_update_interval == 0):
+            self.scan_hmap[:] = self.get_scan()
+        self.base_height[:] = self.sim.root_pos[:, 2] - self.get_base_height_map().mean()
+
+        self.is_zero_command[:] = torch.logical_and(
+            torch.norm(self.commands[:, :2], dim=1) <= self.cfg.commands.lin_vel_clip,
+            torch.abs(self.commands[:, 2]) <= self.cfg.commands.ang_vel_clip
+        )
+
+        # update feet height
+        feet_pos = self.sim.link_pos[:, self.feet_indices]
+        feet_z = feet_pos[:, :, 2] - 0.02
+        proj_ground_height = self._get_heights(feet_pos + self.cfg.terrain.border_size, use_guidance=self.cfg.rewards.use_guidance_terrain)
+        self.feet_height[:] = feet_z - proj_ground_height
+
+    def _post_physics_post_step(self):
+        self.last_last_actions[:] = self.last_actions[:]
+        self.last_actions[:] = self.actions[:]
+        self.last_dof_vel[:] = self.sim.dof_vel
+        self.last_torques[:] = self.torques[:]
+        self.last_root_vel[:] = self.sim.root_lin_vel
+        self.last_feet_vel_xy[:] = self.sim.link_vel[:, self.feet_indices]
+
+    def _update_goals(self):
+        self.reached_goal_ids[:] = torch.norm(self.root_states[:, :2] - self.cur_goals[:, :2], dim=1) < self.cfg.env.next_goal_threshold
+        self.reach_goal_timer[self.reached_goal_ids] += 1
+        self.reach_goal_timer[~self.reached_goal_ids] = 0
+
+        next_flag = self.reach_goal_timer > self.cfg.env.reach_goal_delay / self.dt
+        self.cur_goal_idx[next_flag] += 1
+
+    def _update_terrain_curriculum(self, env_ids: torch.Tensor):
+        """ Implements the game-inspired curriculum.
+
+        Args:
+            env_ids (List[int]): ids of environments being reset
+        """
+        # Implement Terrain curriculum
+        if not self.init_done:
+            # don't change on initial reset
+            return
+
+        dis_to_origin = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
+        threshold = torch.norm(self.commands[env_ids, :2], dim=1) * self.episode_length_buf[env_ids] * self.dt
+
+        move_up = torch.zeros(len(env_ids), dtype=torch.bool, device=self.device)
+        move_down = torch.zeros(len(env_ids), dtype=torch.bool, device=self.device)
+
+        # curriculum logic for flat terrain
+        env_is_flat = self.env_class[env_ids] < 2
+        # if len(env_is_flat) > 0:
+        #     # move_up[env_is_flat] = torch.logical_or(self.time_out_buf[env_ids][env_is_flat],
+        #     #                                         dis_to_origin[env_is_flat] > self.cfg.terrain.terrain_size[0] / 2)
+        #     # move_down[env_is_flat] = ~move_up[env_is_flat]
+        #     move_up[env_is_flat] = dis_to_origin[env_is_flat] > self.cfg.terrain.terrain_size[0] / 2
+        #     move_down[env_is_flat] = dis_to_origin[env_is_flat] < self.cfg.terrain.terrain_size[0] / 8
+
+        # curriculum logic for stair terrain
+        env_is_stair = torch.logical_and(self.env_class[env_ids] >= 2, self.env_class[env_ids] < 4)
+        if len(env_is_stair) > 0:
+            move_up[env_is_stair] = dis_to_origin[env_is_stair] > self.cfg.terrain.terrain_size[0] / 2
+            move_down[env_is_stair] = dis_to_origin[env_is_stair] < 0.4 * threshold[env_is_stair]
+
+        # curriculum logic for parkour terrain
+        env_is_parkour = self.env_class[env_ids] >= 4
+        if len(env_is_parkour) > 0:
+            move_up[env_is_parkour] = self.cur_goal_idx[env_ids][env_is_parkour] >= self.cfg.terrain.num_goals
+            move_down[env_is_parkour] = self.cur_goal_idx[env_ids][env_is_parkour] < self.cfg.terrain.num_goals // 2
+
+        self.env_levels[env_ids] += 1 * move_up - 1 * move_down
+
+        # downgrade after multiple failures
+        level_changed = torch.logical_xor(move_up, move_down)
+        self.num_trials[env_ids[level_changed]] = 0
+        self.num_trials[env_ids[~level_changed]] += 1
+        self.env_levels[env_ids] = torch.where(
+            self.num_trials[env_ids] >= 5,
+            # torch.randint_like(self.env_levels[env_ids], low=0, high=self.env_levels[env_ids]),
+            (torch.rand(self.env_levels[env_ids].shape, device=self.device) * self.env_levels[env_ids]).long(),
+            self.env_levels[env_ids]
+        )
+        self.num_trials[self.num_trials >= 5] = 0
+
+        # Robots that solve the last level are sent to a random one
+        self.env_levels[env_ids] = torch.where(
+            self.env_levels[env_ids] >= self.max_terrain_level,
+            torch.randint_like(self.env_levels[env_ids], self.max_terrain_level),
+            torch.clip(self.env_levels[env_ids], 0)
+        )  # (the minimum level is zero)
+
+        # randomize the terrain level for flat terrain
+        self.env_levels[env_ids[env_is_flat]] = torch.randint_like(self.env_levels[env_ids[env_is_flat]], self.max_terrain_level)
+        self.env_origins[env_ids] = self.terrain_origins[self.env_levels[env_ids], self.env_cols[env_ids]]
+        self.env_class[env_ids] = self.terrain_class[self.env_levels[env_ids], self.env_cols[env_ids]]
+        self.env_goals[:] = self.terrain_goals[self.env_levels, self.env_cols]
+
+    def _resample_commands(self, env_ids: torch.Tensor):
+        self.commands[env_ids] = 0
+        motion_type = self._zero_tensor(self.num_envs, dtype=torch.long)
+
+        def sample_cmd(rng, clip, num_samp):
+            if rng[0] * rng[1] > 0:  # same sign
+                assert abs(rng[0]) >= clip, "Abs of range_min should be greater than clip"
+                return torch_rand_float(rng[0], rng[1], (num_samp, 1), device=self.device).squeeze(1)
+            else:  # different sign
+                cmd = torch_rand_float(rng[0], rng[1], (num_samp, 1), device=self.device).squeeze(1)
+                ratio = torch.where(cmd < 0, (rng[0] + clip) / rng[0], (rng[1] - clip) / rng[1])
+                return cmd * ratio + torch.sign(cmd) * clip
+
+        def sample_motion_type(weights, num_samp):  # stationary, xy, yaw, xy & yaw
+            weights = torch.tensor(weights, dtype=torch.float, device=self.device)
+            return torch.multinomial(weights / weights.sum(), num_samp, replacement=True)
+
+        # sample command for slope terrain (omniverse mode, no heading)
+        env_ids_flat = env_ids[self.env_class[env_ids] < 2]
+        if len(env_ids_flat) > 0:
+            self.commands[env_ids_flat, 0] = sample_cmd(self.cmd_ranges_flat["lin_vel_x"],
+                                                        self.cfg.commands.lin_vel_clip,
+                                                        len(env_ids_flat))
+            self.commands[env_ids_flat, 1] = sample_cmd(self.cmd_ranges_flat["lin_vel_y"],
+                                                        self.cfg.commands.lin_vel_clip,
+                                                        len(env_ids_flat))
+
+            self.commands[env_ids_flat, 2] = sample_cmd(self.cmd_ranges_flat["ang_vel_yaw"],
+                                                        self.cfg.commands.ang_vel_clip,
+                                                        len(env_ids_flat))
+            motion_type[env_ids_flat] = sample_motion_type([2, 2, 2, 4], len(env_ids_flat))
+
+        # sample command for stair terrain (heading mode, yaw command is updated by heading)
+        env_ids_stair = env_ids[torch.logical_and(self.env_class[env_ids] >= 2, self.env_class[env_ids] < 4)]
+        if len(env_ids_stair) > 0:
+            self.commands[env_ids_stair, 0] = sample_cmd(self.cmd_ranges_stair["lin_vel_x"],
+                                                         self.cfg.commands.lin_vel_clip,
+                                                         len(env_ids_stair))
+            # self.commands[env_ids_stair, 1] = sample_cmd(self.cmd_ranges_stair["lin_vel_y"],
+            #                                                     self.cfg.commands.lin_vel_clip,
+            #                                                     len(env_ids_stair))
+
+            self.commands[env_ids_stair, 3] = sample_cmd(self.cmd_ranges_stair["heading"],
+                                                         self.cfg.commands.ang_vel_clip,
+                                                         len(env_ids_stair))
+            motion_type[env_ids_stair] = sample_motion_type([2, 0, 0, 8], len(env_ids_stair))
+
+        # sample command for parkour terrain (goal guided, no yaw command)
+        env_ids_parkour = env_ids[self.env_class[env_ids] >= 4]
+        if len(env_ids_parkour) > 0:
+            self.commands[env_ids_parkour, 0] = sample_cmd(self.cmd_ranges_parkour["lin_vel_x"],
+                                                           self.cfg.commands.lin_vel_clip,
+                                                           len(env_ids_parkour))
+            motion_type[env_ids_parkour] = sample_motion_type([1, 0, 0, 9], len(env_ids_parkour))
+
+        # for parkour stair, we don't want too large speed
+        env_ids_parkour_stair = env_ids[self.env_class[env_ids] == Terrain.terrain_type.parkour_stair]
+        if len(env_ids_parkour_stair) > 0:
+            self.commands[env_ids_parkour_stair, 0] = torch.abs(sample_cmd(self.cmd_ranges_stair["lin_vel_x"],
+                                                                           self.cfg.commands.lin_vel_clip,
+                                                                           len(env_ids_parkour_stair)))
+
+        # re-scale command (to prevent speed norm greater than x_vel_max)
+        commands_normal = self.commands[self.env_class < 4]
+        command_norm = torch.norm(commands_normal[:, :2], dim=1, keepdim=True)
+        command_norm = torch.clip(command_norm, min=self.cmd_ranges_flat["lin_vel_x"][1])
+        commands_normal[:, :2] *= self.cmd_ranges_flat["lin_vel_x"][1] / command_norm
+
+        # randomly clip some commands
+        motion_type = motion_type[env_ids]
+        self.commands[env_ids[motion_type == 0]] = 0  # stationary
+        self.commands[env_ids[motion_type == 1], 2:4] = 0  # xy
+        self.commands[env_ids[motion_type == 2], :2] = 0  # yaw
+
+    def _update_command(self):
+        super()._update_command()
+
+        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+            # update target_pos_rel and target_yaw
+            self.cur_goals[:] = self.env_goals[torch.arange(self.num_envs), self.cur_goal_idx]
+            self.target_pos_rel[:] = self.cur_goals[:, :2] - self.root_states[:, :2]
+            norm = torch.norm(self.target_pos_rel, dim=-1, keepdim=True)
+            target_vec_norm = self.target_pos_rel / (norm + 1e-5)
+            self.target_yaw[:] = torch.atan2(target_vec_norm[:, 1], target_vec_norm[:, 0])
+
+            if self.global_counter % 5 == 0:
+                self.delta_yaw[:] = self.target_yaw - self.base_euler[:, 2]
+
+        if not self.cfg.play.control:
+            # stair terrains use heading commands
+            env_is_stair = torch.logical_and(self.env_class >= 2, self.env_class < 4)
+            forward = transform_by_yaw(self.forward_vec, self.base_euler[:, 2])
+            heading = torch.atan2(forward[:, 1], forward[:, 0])
+            self.commands[env_is_stair, 2] = wrap_to_pi(self.commands[env_is_stair, 3] - heading[env_is_stair])
+            self.commands[env_is_stair, 2] = torch.clip(self.commands[env_is_stair, 2], *self.cmd_ranges_stair['ang_vel_yaw'])
+
+            # envs' yaw value of parkour terrain is computed using yaw difference
+            env_is_parkour = self.env_class >= 4
+            self.commands[env_is_parkour, 2] = wrap_to_pi(self.delta_yaw[env_is_parkour])
+            self.commands[env_is_parkour, 2] = torch.clip(self.commands[env_is_parkour, 2], *self.cmd_ranges_parkour['ang_vel_yaw'])
+
+    def _add_noise(self, x, scale):
+        if self.cfg.noise.add_noise:
+            scale = scale * self.cfg.noise.noise_level
+            return x + torch_rand_float(-scale, scale, x.shape, self.device)
+        return x
+
+    def _visualization(self):
+        clear_lines = True
+
+        if self.viewer and self.enable_viewer_sync:
+            if clear_lines:
+                self._draw_camera()
+                # self.draw_height_samples(self.scan_dots_recon, world_frame=False)
+                # self.draw_height_samples(self.get_scan(), world_frame=True)
+                self._draw_goals()
+                self._draw_feet_at_edge()
+                # self._draw_feet_proj()
+                # self._draw_depth_to_point_cloud()
+
+                if self.cfg.depth.use_camera:
+                    self._draw_cloud_depth()
+                    # self._draw_voxel_depth()
+                    # self._draw_voxel_terrain()
+                    # self._draw_voxel_recon()
+
+            elif not self.init_done:
+                # self._draw_edge()  # for debug use, turn it on will drastically reduce fps
+                self._draw_height_field(self.cfg.rewards.use_guidance_terrain)  # for debug use, turn it on will drastically reduce fps
+
+            if self.cfg.depth.use_camera:
+                img = self.depth_raw[self.lookat_id, 0].cpu().numpy()
+                img = np.clip(img / self.cfg.depth.far_clip * 255, 0, 255).astype(np.uint8)
+                cv2.imshow("Depth Image", cv2.resize(img, (530, 300)))
+                cv2.waitKey(1)
+
+        self.render()
+
+        if self.viewer and self.enable_viewer_sync and clear_lines:
+            self.gym.clear_lines(self.viewer)
+
+    # ----------------------------------------- Sensor Related-------------------------------------------
+    def _update_sensors(self):
+        if not self.cfg.depth.use_camera:
+            return
+
+        if self.global_counter % self.cfg.depth.update_interval != 0:
+            return
+
+        if self.cfg.depth.use_warp and self.sim_device.startswith('cuda'):
+            # ---------------------------  render by Nvidia Warp  ---------------------------
+            if not self.init_done:
+                wp.capture_begin()
+                # self._launch_kernel('depth')
+                self._launch_kernel('depth_cloud')
+                # self._launch_kernel('depth_cloud', 'cloud_to_voxel_grid')
+                self.graph['depth'] = wp.capture_end()
+
+                # wp.capture_begin()
+                # self._launch_kernel('tri_mesh_to_voxel_grid')
+                # self.graph['terrain'] = wp.capture_end()
+
+            # update depth camera and convert to voxel grid
+            self.sensor_pos_design.assign(wp.from_torch(
+                tf_apply(self.base_quat, self.root_states[:, :3], self.cam_offset_pos_design), dtype=wp.vec3f))
+            self.sensor_quat_design.assign(wp.from_torch(
+                quat_mul(self.base_quat, self.cam_offset_quat_design), dtype=wp.quatf))
+            self.sensor_pos.assign(wp.from_torch(
+                tf_apply(self.base_quat, self.root_states[:, :3], self.cam_offset_pos), dtype=wp.vec3f))
+            self.sensor_quat.assign(wp.from_torch(
+                quat_mul(self.base_quat, self.cam_offset_quat), dtype=wp.quatf))
+            wp.capture_launch(self.graph['depth'])
+
+        else:
+            # ---------------------------  render by IsaacGym  ---------------------------
+            self.gym.step_graphics(self.sim)  # required to render in headless mode
+            self.gym.render_all_camera_sensors(self.sim)
+            self.gym.start_access_image_tensors(self.sim)
+
+            for env_i in range(self.num_envs):
+                self.depth_raw[env_i, 0] = -gymtorch.wrap_tensor(
+                    self.gym.get_camera_image_gpu_tensor(
+                        self.sim, self.envs[env_i], self.cam_handles[env_i], gymapi.IMAGE_DEPTH))
+            self.gym.end_access_image_tensors(self.sim)
+
+        # wp.synchronize()
+
+        # # convert terrain tri-mesh to voxel grid
+        # if self.cfg.reconstruction.recon_each_step or (self.global_counter % self.cfg.depth.update_interval == 0):
+        #     wp.capture_launch(self.graph['terrain'])
+
+        # wp.synchronize()
+
+        # process sensor data
+        self._process_depth_sensor()
+        # self._process_voxel_grid()
+        # torch.cuda.synchronize()
+
+    def _process_depth_sensor(self):
+        # These operations are replicated on the hardware
+        depth_image = self.depth_raw.clone()
+
+        # crop 30 pixels from the left and right and 20 pixels from bottom and return croped image
+        depth_image = depth_image[:, :, :-2, 4:-4]
+
+        # add global distance noise
+        dis_noise_global = self.cfg.depth.dis_noise_global * 2 * (torch.rand(self.num_envs, device=self.device) - 0.5)
+        depth_image += dis_noise_global[:, None, None, None]
+
+        # add Gaussian noise
+        depth_image += torch.randn_like(depth_image) * self.cfg.depth.dis_noise_gaussian
+
+        # distance clip
+        depth_image[:] = torch.clip(depth_image, self.cfg.depth.near_clip, self.cfg.depth.far_clip)
+
+        # resize image
+        depth_image = self.resize_transform(depth_image)
+
+        # normalize the depth image to range (-0.5, 0.5)
+        depth_image[:] = (depth_image - self.cfg.depth.near_clip) / (self.cfg.depth.far_clip - self.cfg.depth.near_clip) - 0.5
+
+        self.depth_processed[:] = depth_image
+        self.depth_buf.append(self.depth_processed.squeeze(), round(random.gauss(self.cfg.depth.update_interval, 1)))
+
+    # def _process_voxel_grid(self):
+    #     def process(voxel: torch.Tensor, noise_level):
+    #         occu = voxel[..., 0:1] > 0
+    #
+    #         if noise_level == 0:
+    #             # normalize com to (-1, 1) and set com of unoccupied voxel to zero
+    #             voxel[..., 1:] = torch.where(occu, voxel[..., 1:] - 0.5, 0)
+    #         else:
+    #             # and add noise to each occupied voxel
+    #             noise = (torch.rand_like(voxel[..., 1:]) - 0.5) * noise_level
+    #             voxel[..., 1:] = torch.where(occu, voxel[..., 1:] - 0.5 + noise, 0)
+    #
+    #     if self.global_counter % self.cfg.depth.update_interval == 0:
+    #         process(self.voxel_grid_depth, self.cfg.reconstruction.voxel_noise / self.cfg.reconstruction.grid_size)
+    #
+    #     if self.cfg.reconstruction.recon_each_step or (self.global_counter % self.cfg.depth.update_interval == 0):
+    #         process(self.voxel_grid_terrain, 0)
+
+    def _launch_kernel(self, *kernel_name):
+        for n in kernel_name:
+            if n == 'depth':
+                wp.launch(
+                    kernel=depth_only_kernel,
+                    dim=(self.num_envs, *self.cfg.depth.original),
+                    inputs=[
+                        self.meshes.id,
+                        self.sensor_pos,
+                        self.sensor_quat,
+                        self.K_inv,
+                        self.c_x,
+                        self.c_y,
+                        self.cfg.depth.far_clip,
+                        self._depth_raw_wp,
+                    ],
+                    device=wp.device_from_torch(self.device)
+                )
+            elif n == 'depth_cloud':
+                # initial launch, building graph
+                wp.launch(
+                    kernel=depth_point_cloud_kernel,
+                    dim=(self.num_envs, *self.cfg.depth.original),
+                    inputs=[
+                        self.meshes.id,
+                        self.sensor_pos_design,
+                        self.sensor_quat_design,
+                        self.sensor_pos,
+                        self.sensor_quat,
+                        self.K_inv,
+                        self.c_x,
+                        self.c_y,
+                        self.cfg.depth.far_clip,
+                        self._depth_raw_wp,
+                        self._cloud_depth_wp,
+                        self._cloud_depth_valid_wp
+                    ],
+                    device=wp.device_from_torch(self.device)
+                )
+
+            elif n == 'cloud_to_voxel_grid':
+                # prepare properties and buffers
+                bound = self.cfg.reconstruction.ROI_depth_bound
+                trans_voxel = wp.vec3f([bound[0][0], bound[1][0], bound[2][0]])
+                self._voxel_point_accumulation_wp.zero_()
+                self._voxel_grid_depth_wp.zero_()
+
+                wp.launch(
+                    kernel=point_cloud_depth_to_voxel_grid_accumulation_kernel,
+                    dim=(self.num_envs, *reversed(self.cfg.depth.original)),
+                    inputs=[
+                        wp.vec3i(self.cfg.reconstruction.grid_shape),
+                        self.cfg.reconstruction.grid_size,
+                        self.root_states[:, :3],
+                        self.root_states[:, 3:7],
+                        trans_voxel,
+                        self._cloud_depth_wp,
+                        self._cloud_depth_valid_wp,
+                        self._voxel_point_accumulation_wp,
+                    ],
+                    device=wp.device_from_torch(self.device)
+                )
+
+                wp.launch(
+                    kernel=point_cloud_to_voxel_grid_kernel,
+                    dim=(self.num_envs, *self.cfg.reconstruction.grid_shape),
+                    inputs=[
+                        self._voxel_point_accumulation_wp,
+                        self._voxel_grid_depth_wp
+                    ],
+                    device=wp.device_from_torch(self.device)
+                )
+
+            elif n == 'tri_mesh_to_voxel_grid':
+                bound = self.cfg.reconstruction.ROI_body_bound
+                trans_voxel = wp.vec3f([bound[0][0], bound[1][0], bound[2][0]])
+                self._voxel_grid_terrain_wp.zero_()
+
+                wp.launch(
+                    kernel=generate_voxel_grid_terrain_kernel,
+                    dim=(self.num_envs, *self.cfg.reconstruction.grid_shape),
+                    inputs=[
+                        self.cfg.reconstruction.grid_size,
+                        self.root_states[:, :3],
+                        self.root_states[:, 3:7],
+                        trans_voxel,
+                        self.terrain.volume.id,
+                        self.volume_arr_occu,
+                        self.volume_arr_com,
+                        self._voxel_grid_terrain_wp
+                    ],
+                    device=wp.device_from_torch(self.device)
+                )
+
+            else:
+                raise NotImplementedError(f'The kernel {n} is not implemented!')
+
+    # ----------------------------------------- Graphics -------------------------------------------
+    def draw_height_samples(self, samples, world_frame=True):
+        """
+        Draws visualizations for debugging (slows down simulation a lot).
+        Default behaviour: draws height measurement points
+
+        Args:
+            samples: height points in base frame
+            world_frame: if samples is in world frame, else base frame
+        """
+
+        if not self.terrain.cfg.measure_heights or samples is None:
+            return
+
+        self.gym.refresh_rigid_body_state_tensor(self.sim)
+        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(0, 1, 0))
+
+        base_pos = (self.root_states[self.lookat_id, :3]).cpu().numpy()
+        height_points = quat_apply_yaw(self.base_quat[self.lookat_id].repeat(self.num_scan),
+                                       self.scan_points[self.lookat_id]).cpu().numpy()
+        height_points[:, :2] += base_pos[None, :2]
+
+        samples = samples.flatten(start_dim=1)
+        if world_frame:
+            heights = samples[self.lookat_id].cpu().numpy()
+        else:
+            heights = (base_pos[2] - samples[self.lookat_id] - self.cfg.normalization.scan_norm_bias).cpu().numpy()
+
+        for j in range(height_points.size(0)):
+            x, y, z = height_points[j, 0], height_points[j, 1], heights[j] + 0.02
+            sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[self.lookat_id], sphere_pose)
+
+    def _draw_cloud_depth(self):
+        cloud = self.cloud_depth[self.lookat_id]
+        valid = self.cloud_depth_valid[self.lookat_id]
+        cloud = cloud[valid].cpu().numpy()
+        self._draw_point_cloud(cloud, color=(0, 1, 1))
+
+    # def _draw_voxel_depth(self):
+    #     if self.global_counter % self.cfg.depth.update_interval == 0 or self.global_counter < 10:
+    #         self._pts_depth = self._draw_voxel_grid(*self._extract_voxel_grid(self.voxel_grid_depth),
+    #                                                 ROI=self.cfg.reconstruction.ROI_depth_bound, color=(1, 0.5, 0))
+    #     else:
+    #         self._draw_point_cloud(self._pts_depth, sample_rate=1, color=(1, 0.5, 0))
+    #
+    # def _draw_voxel_terrain(self):
+    #     if self.global_counter % self.cfg.depth.update_interval == 0 or self.global_counter < 10:
+    #         self._pts_terrain = self._draw_voxel_grid(*self._extract_voxel_grid(self.voxel_grid_terrain),
+    #                                                   ROI=self.cfg.reconstruction.ROI_body_bound, color=(1, 0, 1))
+    #     else:
+    #         self._draw_point_cloud(self._pts_terrain, sample_rate=1, color=(1, 0, 1))
+    #
+    # def _draw_voxel_recon(self):
+    #     if self.voxel_recon is None:
+    #         return
+    #
+    #     if self.global_counter % self.cfg.depth.update_interval == 0 or self.global_counter < 10:
+    #         self._pts_recon = self._draw_voxel_grid(*self._extract_voxel_grid(self.voxel_recon),
+    #                                                 ROI=self.cfg.reconstruction.ROI_body_bound)
+    #     else:
+    #         self._draw_point_cloud(self._pts_recon, sample_rate=1, color=(1, 1, 0))
+    #
+    # def _extract_voxel_grid(self, voxel_grid):
+    #     return voxel_grid[self.lookat_id, ..., 0] > 0, voxel_grid[self.lookat_id, ..., 1:] + 0.5
+    #
+    # def _draw_voxel_grid(self, grid_occupied: torch.Tensor, grid_com: torch.Tensor, in_world_frame=False, ROI=None, color=(1, 1, 0)):
+    #     if not in_world_frame:
+    #         # transform to voxel grid root frame
+    #         x = torch.arange(self.cfg.reconstruction.grid_shape[0], dtype=torch.long)
+    #         y = torch.arange(self.cfg.reconstruction.grid_shape[1], dtype=torch.long)
+    #         z = torch.arange(self.cfg.reconstruction.grid_shape[2], dtype=torch.long)
+    #         x, y, z = torch.meshgrid(x, y, z, indexing='ij')
+    #         indices = torch.stack((x, y, z), dim=-1).to(self.device)
+    #         grid_com = grid_com.clone()
+    #         grid_com[:] = (grid_com + indices) * self.cfg.reconstruction.grid_size
+    #
+    #         # convert to base frame
+    #         grid_com += torch.tensor([ROI[0][0], ROI[1][0], ROI[2][0]], dtype=torch.float, device=self.device)[None, None, None, :]
+    #
+    #         # convert to world frame
+    #         grid_com = quat_apply(self.base_quat[self.lookat_id].unsqueeze(0), grid_com)
+    #         grid_com += self.root_states[self.lookat_id, None, None, None, :3]
+    #
+    #     if type(grid_occupied) is torch.Tensor:
+    #         grid_occupied = grid_occupied.cpu().numpy()
+    #         grid_com = grid_com.cpu().numpy()
+    #
+    #     pts = grid_com[grid_occupied]
+    #     self._draw_point_cloud(pts, sample_rate=1, color=color)
+    #     return pts
+
+    def _draw_point_cloud(self, cloud: np.ndarray, sample_rate=1.0, color=(0, 1, 0), env_id=None):
+        if sample_rate < 1:
+            cloud_idx = np.random.choice(np.arange(len(cloud)), int(len(cloud) * 0.1), replace=False)
+        else:
+            cloud_idx = np.arange(len(cloud))
+
+        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=color)
+
+        env_id = self.lookat_id is env_id is None
+
+        for idx in cloud_idx:
+            sphere_pose = gymapi.Transform(gymapi.Vec3(cloud[idx, 0], cloud[idx, 1], cloud[idx, 2] + 0.02), r=None)
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[env_id], sphere_pose)
+
+    # ----------------------------------------- Rewards -------------------------------------------
+    def _reward_tracking_lin_vel(self):
+        # Tracking of linear velocity commands (xy axes)
+        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+        rew = torch.exp(-lin_vel_error / self.cfg.rewards.tracking_sigma)
+
+        rew[torch.logical_and(self.env_class >= 4, self.env_class < 12)] *= 0.3
+        return rew
+
+    def _reward_tracking_goal_vel(self):
+        norm = torch.norm(self.target_pos_rel, dim=1, keepdim=True)
+        target_vec_norm = self.target_pos_rel / (norm + 1e-5)
+        rew = torch.where(
+            self.commands[:, 0] > self.cfg.commands.lin_vel_clip,
+            torch.sum(target_vec_norm * self.root_states[:, 7:9], dim=1) / (self.commands[:, 0]),
+            0  # no reward for zero_command
+        )
+        rew = torch.clip(rew, max=1)
+
+        rew[self.env_class < 4] = 0.
+        return rew
+
+    def _reward_tracking_yaw(self):
+        diff = self.commands[:, 2] - self.base_ang_vel[:, 2]
+        return torch.exp(-torch.square(diff) / self.cfg.rewards.tracking_sigma)
+
+    def _reward_lin_vel_z(self):
+        rew = torch.square(self.base_lin_vel[:, 2])
+
+        rew[torch.logical_and(self.env_class >= 4, self.env_class < 12)] *= 0.5
+        return rew
+
+    def _reward_ang_vel_xy(self):
+        rew = torch.square(self.base_ang_vel[:, :2])
+
+        rew *= torch.tensor([[1, 3]], device=self.device)
+        rew = torch.sum(rew, dim=1)
+
+        rew[torch.logical_and(self.env_class >= 4, self.env_class < 12)] *= 0.3
+        return rew
+
+    def _reward_orientation(self):
+        rew = torch.square(self.projected_gravity[:, :2])
+        rew *= torch.tensor([[1, 3]], device=self.device)
+        rew = torch.sum(rew, dim=1)
+
+        rew[torch.logical_and(self.env_class >= 2, self.env_class < 13)] *= 0.3
+        return rew
+
+    def _reward_torques(self):
+        rew = torch.sum(torch.square(self.torques), dim=1)
+        rew[torch.logical_and(self.env_class >= 4, self.env_class < 13)] *= 0.3
+        return rew
+
+    def _reward_delta_torques(self):
+        rew = torch.sum(torch.square(self.torques - self.last_torques), dim=1)
+        rew[torch.logical_and(self.env_class >= 4, self.env_class < 13)] *= 0.3
+        return rew
+
+    def _reward_action_rate(self):
+        rew = (self.actions - self.last_actions).square().sum(dim=1)
+        rew[torch.logical_and(self.env_class >= 4, self.env_class < 13)] *= 0.5
+        return rew
+
+    def _reward_action_smoothness(self):
+        return (self.actions + self.last_last_actions - 2 * self.last_actions).square().sum(dim=1)
+
+    def _reward_dof_acc(self):
+        rew = torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
+        rew[torch.logical_and(self.env_class >= 4, self.env_class < 13)] *= 0.3
+        return rew
+
+    def _reward_dof_error(self):
+        return torch.sum(torch.square(self.dof_pos - self.default_dof_pos.clone()), dim=1)
+
+    def _reward_hip_pos(self):
+        diff = torch.square(self.dof_pos[:, self.hip_indices] - self.default_dof_pos[:, self.hip_indices])
+        rew = torch.sum(diff, dim=1)
+        return rew
+
+    def _reward_thigh_pos(self):
+        diff = torch.square(self.dof_pos[:, self.thigh_indices] - self.default_dof_pos[:, self.thigh_indices])
+        rew = torch.sum(diff, dim=1)
+        return rew
+
+    def _reward_feet_accel(self):
+        feet_vel_xy = self.rigid_body_states[:, self.feet_indices, 7:9]
+        feet_accel_xy = (feet_vel_xy - self.last_feet_vel_xy) / self.dt
+        rew = torch.exp(-0.02 * feet_accel_xy.norm(dim=2).sum(dim=1))
+        return rew
+
+    def _reward_feet_air_time(self):
+        # Reward long steps
+        first_contact = (self.feet_air_time > 0.) * self.contact_filt
+        rew = self.feet_air_time * first_contact  # reward only on first contact with the ground
+
+        # no reward for zero command
+        rew *= ~self.is_zero_command.unsqueeze(1)
+
+        # # no reward for legs with smaller feet_air_time_avg
+        # mask_equalization = torch.empty_like(self.feet_air_time_avg)
+        # mask_equalization[:, 0] = torch.where(self.feet_air_time_avg[:, 0] < self.feet_air_time_avg[:, 1], 1, 0)
+        # mask_equalization[:, 1] = torch.where(self.feet_air_time_avg[:, 1] < self.feet_air_time_avg[:, 0], 1, 0)
+        # mask_equalization[:, 2] = torch.where(self.feet_air_time_avg[:, 2] < self.feet_air_time_avg[:, 3], 1, 0)
+        # mask_equalization[:, 3] = torch.where(self.feet_air_time_avg[:, 3] < self.feet_air_time_avg[:, 2], 1, 0)
+        # rew *= mask_equalization
+
+        return rew.sum(dim=1)
+
+    def _reward_feet_clearance(self):
+        """
+        Calculates reward based on the clearance of the swing leg from the ground during movement.
+        Encourages appropriate lift of the feet during the swing phase of the gait.
+        """
+        # feet height should larger than target feet height at the peak
+        rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, 0, 1)
+
+        # revert reward for zero command
+        rew[self.is_zero_command] = torch.where(torch.all(self.contact_filt[self.is_zero_command]),
+                                                0,
+                                                -rew[self.is_zero_command] - 1.0)
+
+        # # no reward for legs with smaller feet_air_time_avg
+        # mask_equalization = torch.empty_like(self.feet_air_time_avg)
+        # mask_equalization[:, 0] = torch.where(self.feet_air_time_avg[:, 0] < self.feet_air_time_avg[:, 1], 1, 0)
+        # mask_equalization[:, 1] = torch.where(self.feet_air_time_avg[:, 1] < self.feet_air_time_avg[:, 0], 1, 0)
+        # mask_equalization[:, 2] = torch.where(self.feet_air_time_avg[:, 2] < self.feet_air_time_avg[:, 3], 1, 0)
+        # mask_equalization[:, 3] = torch.where(self.feet_air_time_avg[:, 3] < self.feet_air_time_avg[:, 2], 1, 0)
+        # rew *= mask_equalization
+
+        return rew.sum(dim=1)
+
+    # def _reward_feet_clearance(self):
+    #     env_only_yaw = torch.logical_and(
+    #         torch.norm(self.commands[:, :2], dim=1) < self.cfg.commands.lin_vel_clip,
+    #         torch.abs(self.commands[:, 2]) > 0
+    #     )
+    #
+    #     feet_vel_xy = torch.norm(self.rigid_body_states[:, self.feet_indices, 7:9], dim=2)
+    #
+    #     # encourage the robot to lift its legs when it moves, especially rotates in place
+    #     rew = (self.feet_height - self.cfg.rewards.feet_height_target).square()
+    #
+    #     # the robot do not need to lift too much when you walk slowly
+    #     rew[~env_only_yaw] *= feet_vel_xy[~env_only_yaw]
+    #
+    #     return rew.sum(dim=1)
+
+    def _reward_base_stumble(self):
+        base_stumble = torch.norm(self.contact_forces[:, self.base_indices].squeeze(1), dim=1) > 1
+        rew = base_stumble.float()
+        return rew
+
+    def _reward_feet_stumble(self):
+        # Penalize feet hitting vertical surfaces
+        force = self.contact_forces[:, self.feet_indices]
+        rew = torch.any(torch.norm(force[:, :, :2], dim=2) > 4 * torch.abs(force[:, :, 2]), dim=1).float()
+        return rew
+
+    def _reward_feet_edge(self):
+        feet_pos_xy = self.rigid_body_states[:, self.feet_indices, :2] + self.cfg.terrain.border_size  # (num_envs, 4, 2)
+        feet_pos_xy = (feet_pos_xy / self.cfg.terrain.horizontal_scale).round().long()
+        feet_pos_xy[..., 0] = torch.clip(feet_pos_xy[..., 0], 0, self.sim.terrain.edge_mask.size(0) - 1)
+        feet_pos_xy[..., 1] = torch.clip(feet_pos_xy[..., 1], 0, self.sim.terrain.edge_mask.size(1) - 1)
+        feet_at_edge = self.sim.terrain.edge_mask[feet_pos_xy[..., 0], feet_pos_xy[..., 1]]
+
+        self.feet_at_edge = self.contact_filt & feet_at_edge
+        rew = torch.sum(self.feet_at_edge.float(), dim=-1)
+        return rew
+
+    def _reward_collision(self):
+        return torch.sum(1. * (torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
+
+    def _reward_dof_pos_limits(self):
+        # Penalize dof positions too close to the limit
+        out_of_limits = -(self.dof_pos - self.soft_dof_pos_limits[:, 0]).clip(max=0.)  # lower limit
+        out_of_limits += (self.dof_pos - self.soft_dof_pos_limits[:, 1]).clip(min=0.)
+        return torch.sum(out_of_limits, dim=1)
+
+    def _reward_base_height(self):
+        # Penalize base height away from target
+        rew = torch.square(self.base_height - self.cfg.rewards.base_height_target)
+        return rew.clip(-1, 1)
+
+    def _reward_termination(self):
+        raise NotImplementedError

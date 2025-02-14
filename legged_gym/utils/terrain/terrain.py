@@ -1,0 +1,447 @@
+import random
+from enum import Enum
+
+import pyfqmr
+from scipy.ndimage import binary_dilation
+
+from .make_terrain import *
+from .utils import convert_heightfield_to_trimesh, convert_heightfield_to_trimesh_delatin, add_fractal_roughness
+
+
+class Terrain:
+    class terrain_type(Enum):
+        smooth_slope = 0
+        rough_slope = 1
+        stairs_up = 2
+        stairs_down = 3
+        discrete = 4
+        stepping_stone = 5
+        gap = 6
+        pit = 7
+        parkour = 8
+        parkour_gap = 9
+        parkour_box = 10
+        parkour_step = 11
+        parkour_stair = 12
+        parkour_flat = 13
+
+    def __init__(self, cfg, terrain_utils):
+        self.cfg = cfg
+        self.terrain_utils = terrain_utils
+
+        if cfg.description_type in ["none", 'plane']:
+            return
+
+        self.proportions = np.array(list(cfg.terrain_dict.values()))
+        self.proportions = np.cumsum(self.proportions / np.sum(self.proportions))
+        self.cfg.num_sub_terrains = cfg.num_rows * cfg.num_cols
+        self.env_origins = np.zeros((cfg.num_rows, cfg.num_cols, 3))
+        self.terrain_type = np.zeros((cfg.num_rows, cfg.num_cols))
+        self.goals = np.zeros((cfg.num_rows, cfg.num_cols, cfg.num_goals, 3))
+        self.num_goals = cfg.num_goals
+
+        self.border = int(cfg.border_size / self.cfg.horizontal_scale)
+        self.tot_cols = self.tot_rows = None
+        self.height_field_raw = None
+        self.height_field_guidance = None
+
+        self.curriculum(max_difficulty=cfg.max_difficulty)
+
+        if cfg.description_type == "trimesh":
+            print("Converting heightmap to trimesh...")
+            if cfg.hf2mesh_method == "grid":
+                self.vertices, self.triangles, self.edge_mask = convert_heightfield_to_trimesh(self.height_field_raw,
+                                                                                               self.cfg.horizontal_scale,
+                                                                                               self.cfg.vertical_scale,
+                                                                                               self.cfg.slope_treshold)
+                half_edge_width = int(self.cfg.edge_width_thresh / self.cfg.horizontal_scale)
+                structure = np.ones((half_edge_width * 2 + 1, half_edge_width * 2 + 1))
+                self.edge_mask = binary_dilation(self.edge_mask, structure=structure)
+
+                if self.cfg.simplify_grid:
+                    mesh_simplifier = pyfqmr.Simplify()
+                    mesh_simplifier.setMesh(self.vertices, self.triangles)
+                    mesh_simplifier.simplify_mesh(target_count=int(0.05 * self.triangles.shape[0]), aggressiveness=7, preserve_border=True, verbose=10)
+
+                    self.vertices, self.triangles, _ = mesh_simplifier.getMesh()
+                    self.vertices = self.vertices.astype(np.float32)
+                    self.triangles = self.triangles.astype(np.uint32)
+            else:
+                assert cfg.hf2mesh_method == "fast", "Height field to mesh method must be grid or fast"
+                self.vertices, self.triangles = convert_heightfield_to_trimesh_delatin(self.height_field_raw,
+                                                                                       self.cfg.horizontal_scale,
+                                                                                       self.cfg.vertical_scale,
+                                                                                       max_error=cfg.max_error)
+
+            print(f'Created {self.vertices.shape[0]} vertices')
+            print(f'Created {self.triangles.shape[0]} triangles')
+
+    def curriculum(self, max_difficulty=False):
+        terrain_mat = np.empty((self.cfg.num_rows, self.cfg.num_cols), dtype=object)
+
+        for j in range(self.cfg.num_cols):
+            for i in range(self.cfg.num_rows):
+                choice = j / self.cfg.num_cols + 0.001
+                difficulty = i / (self.cfg.num_rows - 1) if self.cfg.num_rows > 1 else 0.5
+
+                if max_difficulty:
+                    # terrain = self.make_terrain(choice, 0.8 + 0.2 * difficulty)
+                    terrain = self.make_terrain(choice, 0.9999)
+                else:
+                    terrain = self.make_terrain(choice, difficulty)
+
+                terrain_mat[i, j] = terrain
+
+        self.add_terrains_to_map(terrain_mat)
+
+    def add_roughness(self, terrain, difficulty=1):
+        max_height = (self.cfg.roughness_height[1] - self.cfg.roughness_height[0]) * difficulty + self.cfg.roughness_height[0]
+        height = random.uniform(self.cfg.roughness_height[0], max_height)
+        random_uniform_terrain(terrain,
+                               min_height=-height,
+                               max_height=height,
+                               step=0.005,
+                               downsampled_scale=self.cfg.downsampled_scale)
+
+    def make_terrain(self, choice, difficulty):
+        if choice < self.proportions[7]:
+            # legged_gym terrain
+            pixel_length_per_env = int(self.cfg.terrain_size[0] / self.cfg.horizontal_scale)
+            pixel_width_per_env = int(self.cfg.terrain_size[1] / self.cfg.horizontal_scale)
+        else:
+            # parkour terrain
+            pixel_length_per_env = int(self.cfg.terrain_parkour_size[0] / self.cfg.horizontal_scale)
+            pixel_width_per_env = int(self.cfg.terrain_parkour_size[1] / self.cfg.horizontal_scale)
+
+        terrain = SubTerrain("terrain",
+                             width=pixel_length_per_env,
+                             length=pixel_width_per_env,
+                             vertical_scale=self.cfg.vertical_scale,
+                             horizontal_scale=self.cfg.horizontal_scale)
+        slope = difficulty * 0.4
+        step_up_height = 0.02 + 0.08 * difficulty
+        step_down_height = 0.02 + 0.08 * difficulty
+        step_height_goal = 0.03 + 0.1 * difficulty  # 跑酷楼梯的高度
+        discrete_obstacles_height = 0.03 + difficulty * 0.15
+        stepping_stones_size = 1.5 * (1.05 - difficulty)
+        stone_distance = 0.05 if difficulty == 0 else 0.1
+        gap_size = 0.1 + 0.7 * difficulty
+        pit_depth = 0.01 + 0.05 * difficulty
+
+        if choice < self.proportions[0]:
+            terrain.terrain_type = Terrain.terrain_type.smooth_slope
+            # if choice < self.proportions[0] / 2:
+            #     slope *= -1
+            # terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
+            # self.add_fractal_roughness(terrain, difficulty)
+
+        elif choice < self.proportions[1]:
+            terrain.terrain_type = Terrain.terrain_type.rough_slope
+            self.terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
+            # random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05,
+            #                        step=0.005, downsampled_scale=0.2)
+            add_fractal_roughness(terrain, difficulty)
+
+        elif choice < self.proportions[3]:
+            if choice < self.proportions[2]:
+                terrain.terrain_type = Terrain.terrain_type.stairs_up
+                pyramid_stairs_terrain(terrain, step_width=0.31, step_height=-step_up_height, platform_size=3.)
+            else:
+                terrain.terrain_type = Terrain.terrain_type.stairs_down
+                pyramid_stairs_terrain(terrain, step_width=0.31, step_height=step_down_height, platform_size=3.)
+
+            self.add_roughness(terrain, difficulty)
+
+        elif choice < self.proportions[4]:
+            terrain.terrain_type = Terrain.terrain_type.discrete
+            num_rectangles = 20
+            rectangle_min_size = 1.
+            rectangle_max_size = 2.
+            self.terrain_utils.discrete_obstacles_terrain(terrain, discrete_obstacles_height, rectangle_min_size,
+                                                          rectangle_max_size, num_rectangles, platform_size=3.)
+
+        elif choice < self.proportions[5]:
+            terrain.terrain_type = Terrain.terrain_type.stepping_stone
+            self.terrain_utils.stepping_stones_terrain(terrain, stone_size=stepping_stones_size,
+                                                       stone_distance=stone_distance, max_height=0., platform_size=4.)
+
+        elif choice < self.proportions[6]:
+            terrain.terrain_type = Terrain.terrain_type.gap
+            gap_terrain(terrain, gap_size=gap_size, outer_platform_size=6.)
+            terrain.centered_origin = False
+            self.add_roughness(terrain, difficulty)
+
+        elif choice < self.proportions[7]:
+            terrain.terrain_type = Terrain.terrain_type.pit
+            pit_terrain(terrain, depth=pit_depth, bottom_size=4.)
+            terrain.centered_origin = False
+            self.add_roughness(terrain, difficulty)
+
+        elif choice < self.proportions[8]:
+            terrain.terrain_type = Terrain.terrain_type.parkour
+            x_range = [-0.1, 0.1 + 0.3 * difficulty]  # offset to stone_len
+            y_range = [0.2, 0.3 + 0.1 * difficulty]
+            stone_len = [0.9 - 0.3 * difficulty, 1 - 0.2 * difficulty]  # 2 * round((0.6) / 2.0, 1)
+            incline_height = 0.25 * difficulty
+            last_incline_height = incline_height + 0.1 - 0.1 * difficulty
+            parkour_terrain(terrain,
+                            num_stones=self.num_goals - 2,
+                            x_range=x_range,
+                            y_range=y_range,
+                            incline_height=incline_height,
+                            stone_len=stone_len,
+                            stone_width=1.0,
+                            last_incline_height=last_incline_height,
+                            pad_height=0,
+                            pit_depth=[0.2, 1])
+            terrain.centered_origin = False
+            self.add_roughness(terrain, difficulty)
+
+        elif choice < self.proportions[9]:
+            terrain.terrain_type = Terrain.terrain_type.parkour_gap
+            parkour_gap_terrain(terrain,
+                                num_gaps=self.num_goals - 2,
+                                gap_size=gap_size,
+                                gap_depth=[0.2, 1],
+                                pad_height=0,
+                                x_range=[0.8, 1.5],
+                                y_range=self.cfg.y_range,
+                                half_valid_width=[0.6, 1.2])
+            terrain.centered_origin = False
+            self.add_roughness(terrain, difficulty)
+
+        elif choice < self.proportions[10]:
+            terrain.terrain_type = Terrain.terrain_type.parkour_box
+            parkour_box_terrain(terrain,
+                                num_goals=self.num_goals,
+                                box_height=[pit_depth - 0.05, pit_depth + 0.05])
+            terrain.centered_origin = False
+            self.add_roughness(terrain, 0 * difficulty)
+
+        elif choice < self.proportions[11]:
+            terrain.terrain_type = Terrain.terrain_type.parkour_step
+            parkour_step_terrain(terrain,
+                                 num_stones=self.num_goals - 2,
+                                 step_height=pit_depth,
+                                 x_range=[0.8, 1.2],
+                                 y_range=self.cfg.y_range,
+                                 half_valid_width=[1.2, 1.5],
+                                 pad_height=0)
+            terrain.centered_origin = False
+            self.add_roughness(terrain, difficulty)
+
+        elif choice < self.proportions[12]:
+            terrain.terrain_type = Terrain.terrain_type.parkour_stair
+            parkour_stair_terrain(terrain,
+                                  step_height=step_height_goal,
+                                  step_width=0.31)
+            terrain.centered_origin = False
+            self.add_roughness(terrain, difficulty)
+
+        elif choice < self.proportions[13]:
+            terrain.terrain_type = Terrain.terrain_type.parkour_flat
+            parkour_flat_terrain(terrain, num_goals=self.num_goals)
+            terrain.centered_origin = False
+            self.add_roughness(terrain, difficulty)
+
+        return terrain
+
+    def add_terrains_to_map(self, terrain_mat):
+        # check if terrains are of the same shape
+        unique_shape = [t.height_field_raw.shape for t in terrain_mat.T.flatten()]
+        unique_shape, counts = np.unique(unique_shape, axis=0, return_counts=True)
+
+        if len(unique_shape) != 2:
+            return self.add_terrains_to_map_compact(terrain_mat)
+
+        if unique_shape[0, 0] >= unique_shape[1, 0]:
+            raise ValueError('terrain 1 height should be less than terrain 2 height')
+
+        # find the best combination
+        (h1, w1), (h2, w2) = unique_shape[0], unique_shape[1]
+        min_canvas_area = None
+
+        for row_2 in range(1, counts[1] + 1):
+            col_2 = np.ceil(counts[1] / row_2).astype(int)
+
+            row_1 = (row_2 * h2) // h1
+            col_1 = np.ceil(counts[0] / row_1).astype(int)
+
+            canvas_height = h2 * row_2
+            canvas_width = w2 * col_2 + w1 * col_1
+            canvas_area = canvas_height * canvas_width
+
+            if min_canvas_area is None or canvas_area < min_canvas_area:
+                min_canvas_area = canvas_area
+                best_combination = ((row_1, col_1), (row_2, col_2))
+                best_canvas_height = canvas_height
+                best_canvas_width = canvas_width
+
+        print('best_combination: ', best_combination)
+        terrain_area = np.prod(unique_shape, axis=1)
+        terrain_area = np.sum(terrain_area * [counts])
+        print('area utilization: ', terrain_area / min_canvas_area)
+
+        self.height_field_raw = np.zeros((best_canvas_height, best_canvas_width))
+        self.height_field_guidance = np.zeros((best_canvas_height, best_canvas_width))
+        offset_x1, offset_y1, offset_x2, offset_y2 = 0, 0, 0, 0
+
+        # compute origins and goals
+        for col in range(self.cfg.num_cols):
+            for row in range(self.cfg.num_rows):
+                # get terrain chunk
+                terrain = terrain_mat[row, col]
+
+                # store terrain type
+                self.terrain_type[row, col] = terrain.terrain_type.value
+
+                # update guidance terrain
+                if terrain.height_field_guidance is None:
+                    terrain.height_field_guidance = terrain.height_field_raw.copy()
+
+                # fill in the canvas
+                if np.all(terrain.height_field_raw.shape == unique_shape[0]):
+                    start_x, start_y = offset_x1 * h1, offset_y1 * w1
+                    self.height_field_raw[start_x: start_x + h1, start_y: start_y + w1] = terrain.height_field_raw
+                    self.height_field_guidance[start_x: start_x + h1, start_y: start_y + w1] = terrain.height_field_guidance
+                    offset_x1 += 1
+
+                    # change column
+                    if offset_x1 >= best_combination[0][0]:
+                        offset_x1 = 0
+                        offset_y1 += 1
+
+                else:
+                    start_x, start_y = offset_x2 * h2, best_combination[0][1] * w1 + offset_y2 * w2
+                    self.height_field_raw[start_x: start_x + h2, start_y: start_y + w2] = terrain.height_field_raw
+                    self.height_field_guidance[start_x: start_x + h2, start_y: start_y + w2] = terrain.height_field_guidance
+                    offset_x2 += 1
+
+                    # change column
+                    if offset_x2 >= best_combination[1][0]:
+                        offset_x2 = 0
+                        offset_y2 += 1
+
+                # compute terrain origin
+                if terrain.centered_origin:
+                    env_origin_x = (start_x + 0.5 * terrain.width) * terrain.horizontal_scale
+                else:
+                    env_origin_x = start_x * terrain.horizontal_scale + 1.0
+
+                env_origin_y = (start_y + 0.5 * terrain.length) * terrain.horizontal_scale
+
+                if self.cfg.origin_zero_z or not terrain.centered_origin:
+                    env_origin_z = 0
+                else:
+                    x1 = int(0.5 * terrain.width - 0.5 / terrain.horizontal_scale)  # within 1 meter square range
+                    x2 = int(0.5 * terrain.width + 0.5 / terrain.horizontal_scale)
+                    y1 = int(0.5 * terrain.length - 0.5 / terrain.horizontal_scale)
+                    y2 = int(0.5 * terrain.length + 0.5 / terrain.horizontal_scale)
+                    env_origin_z = np.max(terrain.height_field_raw[x1:x2, y1:y2]) * terrain.vertical_scale
+
+                self.env_origins[row, col] = [env_origin_x, env_origin_y, env_origin_z]
+
+                if terrain.goals is None:
+                    self.goals[row, col, :, :2] = [(start_x + terrain.width) * terrain.horizontal_scale, env_origin_y]
+                else:
+                    self.goals[row, col, :, :2] = terrain.goals + [start_x * terrain.horizontal_scale,
+                                                                   start_y * terrain.horizontal_scale]
+
+        self.height_field_raw = np.pad(self.height_field_raw, (self.border,), 'constant', constant_values=(0,))
+        self.tot_rows, self.tot_cols = self.height_field_raw.shape
+
+        self.height_field_guidance = np.pad(self.height_field_guidance, (self.border,), 'constant', constant_values=(0,))
+
+    def add_terrains_to_map_compact(self, terrain_mat):
+        def concat_chunks(chunk_mat, hf_name):
+            chunk_col_list = []  # the list to store columns of terrain
+            col_len_max = 0  # the maximum length of the columns. Used for padding
+
+            for col in chunk_mat.T:
+                hf_raw_col = [getattr(chunk, hf_name) for chunk in col]  # the list to store terrain chunks of the same column
+                hf_raw_col = np.concatenate(hf_raw_col, axis=0)
+                chunk_col_list.append(hf_raw_col)
+                col_len_max = max(col_len_max, hf_raw_col.shape[0])
+
+            # pad terrain_cols to same length
+            for i, col in enumerate(chunk_col_list):
+                pad_len = col_len_max - col.shape[0]
+                chunk_col_list[i] = np.pad(col, ((0, pad_len), (0, 0)), 'constant', constant_values=0)
+
+            return np.concatenate(chunk_col_list, axis=1, dtype=np.int16)
+
+        start_y = self.border
+        for col in range(self.cfg.num_cols):
+            start_x = self.border
+
+            for row in range(self.cfg.num_rows):
+                terrain = terrain_mat[row, col]
+                self.terrain_type[row, col] = terrain.terrain_type.value
+
+                if terrain.height_field_guidance is None:
+                    terrain.height_field_guidance = terrain.height_field_raw.copy()
+
+                end_x = start_x + terrain.width
+                end_y = start_y + terrain.length
+
+                # compute terrain origin
+                if terrain.centered_origin:
+                    env_origin_x = (start_x - self.border + 0.5 * terrain.width) * terrain.horizontal_scale
+                else:
+                    env_origin_x = (start_x - self.border) * terrain.horizontal_scale + 1.0
+
+                env_origin_y = (start_y - self.border + 0.5 * terrain.length) * terrain.horizontal_scale
+
+                if self.cfg.origin_zero_z or not terrain.centered_origin:
+                    env_origin_z = 0
+                else:
+                    x1 = int(0.5 * terrain.width - 0.5 / terrain.horizontal_scale)  # within 1 meter square range
+                    x2 = int(0.5 * terrain.width + 0.5 / terrain.horizontal_scale)
+                    y1 = int(0.5 * terrain.length - 0.5 / terrain.horizontal_scale)
+                    y2 = int(0.5 * terrain.length + 0.5 / terrain.horizontal_scale)
+                    env_origin_z = np.max(terrain.height_field_raw[x1:x2, y1:y2]) * terrain.vertical_scale
+
+                self.env_origins[row, col] = [env_origin_x, env_origin_y, env_origin_z]
+
+                if terrain.goals is None:
+                    self.goals[row, col, :, :2] = [env_origin_x + 0.5, env_origin_y]
+                    self.goals[row, col, -1, :2] = [(end_x - self.border) * terrain.horizontal_scale, env_origin_y]
+                else:
+                    self.goals[row, col, :, :2] = terrain.goals + [(start_x - self.border) * terrain.horizontal_scale,
+                                                                   (start_y - self.border) * terrain.horizontal_scale]
+
+                start_x = end_x
+            start_y = end_y
+
+        self.height_field_raw = concat_chunks(terrain_mat, 'height_field_raw')
+        self.height_field_raw = np.pad(self.height_field_raw, (self.border,), 'constant', constant_values=(0,))
+        self.tot_rows, self.tot_cols = self.height_field_raw.shape
+
+        self.height_field_guidance = concat_chunks(terrain_mat, 'height_field_guidance')
+        self.height_field_guidance = np.pad(self.height_field_guidance, (self.border,), 'constant', constant_values=(0,))
+
+    # def _create_voxel_grid(self):
+    #     # sample point cloud from triangle meshes
+    #     mesh = o3d.geometry.TriangleMesh()
+    #     vertices = np.array(self.vertices, dtype=np.float32) - np.array([[self.cfg.border_size, self.cfg.border_size, 0]])
+    #     mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    #     mesh.triangles = o3d.utility.Vector3iVector(np.array(self.triangles))
+    #
+    #     # convert to voxel grid
+    #     voxel_size = 0.025
+    #     vg = o3d.geometry.VoxelGrid()
+    #     vg = vg.create_from_triangle_mesh(mesh, voxel_size)
+    #
+    #     # export to warp array
+    #     self.volume_array = np.stack([v.grid_index for v in vg.get_voxels()], axis=0)
+    #     vg_wp = wp.from_numpy(self.volume_array, dtype=wp.vec3i)
+    #     print(f'Created {len(self.volume_array)} voxels')
+    #
+    #     # create index volume
+    #     terrain_height_min = vertices[:, 2].min()
+    #     self.volume = wp.Volume.allocate_by_voxels(
+    #         vg_wp,
+    #         voxel_size=voxel_size,
+    #         translation=(-self.cfg.border_size, -self.cfg.border_size, terrain_height_min),
+    #         device='cuda'
+    #     )
