@@ -170,10 +170,10 @@ class RLDreamRunner:
         wandb.log(wandb_dict, step=self.cur_it)
 
         # logging string to print
-        progress = f" \033[1m Learning iteration {self.cur_it}/{self.start_it + locs['num_learning_iterations']} \033[0m "
+        progress = f" \033[1m Learning iteration {self.cur_it}/{self.start_it + self.cfg.max_iterations} \033[0m "
         fps = int(self.num_steps_per_env * self.env.num_envs / iteration_time)
         curr_it = self.cur_it - self.start_it
-        eta = self.tot_time / (curr_it + 1) * (locs['num_learning_iterations'] - curr_it)
+        eta = self.tot_time / (curr_it + 1) * (self.cfg.max_iterations - curr_it)
         coefficient_variation = ", ".join([f"{x:.2f}" for x in locs['coefficient_variation'].tolist()])
         log_string = (
             f"""{'*' * width}\n"""

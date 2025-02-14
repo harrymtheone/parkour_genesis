@@ -20,6 +20,7 @@ class IsaacGymWrapper(BaseWrapper):
         super().__init__(cfg, args)
         self.cfg = cfg
         self.debug = True
+        self.init_done = False
 
         self._parse_cfg(args)
 
@@ -28,6 +29,7 @@ class IsaacGymWrapper(BaseWrapper):
         self._create_sim()
         self._create_envs()
         self._init_buffers()
+        self.init_done = True
 
     # ---------------------------------------------- Sim Creation ----------------------------------------------
 

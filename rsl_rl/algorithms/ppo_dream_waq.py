@@ -80,7 +80,11 @@ class PPODreamWaQ(BaseAlgorithm):
 
         # Bootstrapping on time-outs
         if 'time_outs' in infos:
-            bootstrapping = (infos['reach_goals'] | infos['time_outs']).unsqueeze(1).to(self.device)
+            if 'reach_goals' in infos:
+                bootstrapping = (infos['time_outs'] | infos['reach_goals']).unsqueeze(1).to(self.device)
+            else:
+                bootstrapping = (infos['time_outs']).unsqueeze(1).to(self.device)
+
             self.transition.rewards += self.cfg.gamma * self.transition.values * bootstrapping
 
         # Record the transition

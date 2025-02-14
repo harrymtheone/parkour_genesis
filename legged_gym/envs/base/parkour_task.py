@@ -178,11 +178,10 @@ class ParkourTask(BaseTask):
         self.last_torques[env_ids] = 0.
         self.last_root_vel[:] = 0.
         self.last_feet_vel_xy[env_ids] = 0.
-        self.feet_air_time[env_ids] = 0.
-        self.reach_goal_timer[env_ids] = 0
 
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
             self.cur_goal_idx[env_ids] = 0
+            self.reach_goal_timer[env_ids] = 0
 
         # fill extras
         self.extras['episode_rew'] = {}
@@ -205,7 +204,9 @@ class ParkourTask(BaseTask):
         # send timeout info to the algorithm
         if self.cfg.env.send_timeouts:
             self.extras['time_outs'] = self.time_out_cutoff.clone()
-            self.extras['reach_goals'] = self.reach_goal_cutoff.clone()
+
+            if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+                self.extras['reach_goals'] = self.reach_goal_cutoff.clone()
 
     # ----------------------------------------- Height Measurement -------------------------------------------
 
@@ -293,7 +294,7 @@ class ParkourTask(BaseTask):
         self.last_dof_vel[:] = self.sim.dof_vel
         self.last_torques[:] = self.torques[:]
         self.last_root_vel[:] = self.sim.root_lin_vel
-        self.last_feet_vel_xy[:] = self.sim.link_vel[:, self.feet_indices]
+        self.last_feet_vel_xy[:] = self.sim.link_vel[:, self.feet_indices, :2]
 
     def _update_goals(self):
         self.reached_goal_ids[:] = torch.norm(self.root_states[:, :2] - self.cur_goals[:, :2], dim=1) < self.cfg.env.next_goal_threshold
@@ -445,16 +446,18 @@ class ParkourTask(BaseTask):
     def _update_command(self):
         super()._update_command()
 
-        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
-            # update target_pos_rel and target_yaw
-            self.cur_goals[:] = self.env_goals[torch.arange(self.num_envs), self.cur_goal_idx]
-            self.target_pos_rel[:] = self.cur_goals[:, :2] - self.root_states[:, :2]
-            norm = torch.norm(self.target_pos_rel, dim=-1, keepdim=True)
-            target_vec_norm = self.target_pos_rel / (norm + 1e-5)
-            self.target_yaw[:] = torch.atan2(target_vec_norm[:, 1], target_vec_norm[:, 0])
+        if self.cfg.terrain.description_type not in ["heightfield", "trimesh"]:
+            return
 
-            if self.global_counter % 5 == 0:
-                self.delta_yaw[:] = self.target_yaw - self.base_euler[:, 2]
+        # update target_pos_rel and target_yaw
+        self.cur_goals[:] = self.env_goals[torch.arange(self.num_envs), self.cur_goal_idx]
+        self.target_pos_rel[:] = self.cur_goals[:, :2] - self.sim.root_pos[:, :2]
+        norm = torch.norm(self.target_pos_rel, dim=-1, keepdim=True)
+        target_vec_norm = self.target_pos_rel / (norm + 1e-5)
+        self.target_yaw[:] = torch.atan2(target_vec_norm[:, 1], target_vec_norm[:, 0])
+
+        if self.global_counter % 5 == 0:
+            self.delta_yaw[:] = self.target_yaw - self.base_euler[:, 2]
 
         if not self.cfg.play.control:
             # stair terrains use heading commands
@@ -476,38 +479,39 @@ class ParkourTask(BaseTask):
         return x
 
     def _visualization(self):
-        clear_lines = True
+        self.sim.render()
 
-        if self.viewer and self.enable_viewer_sync:
-            if clear_lines:
-                self._draw_camera()
-                # self.draw_height_samples(self.scan_dots_recon, world_frame=False)
-                # self.draw_height_samples(self.get_scan(), world_frame=True)
-                self._draw_goals()
-                self._draw_feet_at_edge()
-                # self._draw_feet_proj()
-                # self._draw_depth_to_point_cloud()
-
-                if self.cfg.depth.use_camera:
-                    self._draw_cloud_depth()
-                    # self._draw_voxel_depth()
-                    # self._draw_voxel_terrain()
-                    # self._draw_voxel_recon()
-
-            elif not self.init_done:
-                # self._draw_edge()  # for debug use, turn it on will drastically reduce fps
-                self._draw_height_field(self.cfg.rewards.use_guidance_terrain)  # for debug use, turn it on will drastically reduce fps
-
-            if self.cfg.depth.use_camera:
-                img = self.depth_raw[self.lookat_id, 0].cpu().numpy()
-                img = np.clip(img / self.cfg.depth.far_clip * 255, 0, 255).astype(np.uint8)
-                cv2.imshow("Depth Image", cv2.resize(img, (530, 300)))
-                cv2.waitKey(1)
-
-        self.render()
-
-        if self.viewer and self.enable_viewer_sync and clear_lines:
-            self.gym.clear_lines(self.viewer)
+        # clear_lines = True
+        #
+        # if self.viewer and self.enable_viewer_sync:
+        #     if clear_lines:
+        #         self._draw_camera()
+        #         # self.draw_height_samples(self.scan_dots_recon, world_frame=False)
+        #         # self.draw_height_samples(self.get_scan(), world_frame=True)
+        #         self._draw_goals()
+        #         self._draw_feet_at_edge()
+        #         # self._draw_feet_proj()
+        #         # self._draw_depth_to_point_cloud()
+        #
+        #         if self.cfg.depth.use_camera:
+        #             self._draw_cloud_depth()
+        #             # self._draw_voxel_depth()
+        #             # self._draw_voxel_terrain()
+        #             # self._draw_voxel_recon()
+        #
+        #     elif not self.init_done:
+        #         # self._draw_edge()  # for debug use, turn it on will drastically reduce fps
+        #         self._draw_height_field(self.cfg.rewards.use_guidance_terrain)  # for debug use, turn it on will drastically reduce fps
+        #
+        #     if self.cfg.depth.use_camera:
+        #         img = self.depth_raw[self.lookat_id, 0].cpu().numpy()
+        #         img = np.clip(img / self.cfg.depth.far_clip * 255, 0, 255).astype(np.uint8)
+        #         cv2.imshow("Depth Image", cv2.resize(img, (530, 300)))
+        #         cv2.waitKey(1)
+        #
+        #
+        # if self.viewer and self.enable_viewer_sync and clear_lines:
+        #     self.gym.clear_lines(self.viewer)
 
     # ----------------------------------------- Sensor Related-------------------------------------------
     def _update_sensors(self):

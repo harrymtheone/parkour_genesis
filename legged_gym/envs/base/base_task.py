@@ -31,7 +31,6 @@ class BaseTask:
 
         # reset agents to initialize them
         self._reset_idx(torch.arange(self.num_envs, device=self.device))
-        self.sim.step_environment()
         self._post_physics_step()
 
     # ------------------------------------------------- Interfaces -------------------------------------------------
@@ -101,10 +100,16 @@ class BaseTask:
                                                 device=self.device)
 
         if self.cfg.domain_rand.add_dof_lag:
-            self.dof_lag_buf = DelayBuffer(self.num_envs, (self.num_dof, 2), self.cfg.domain_rand.dof_lag_prop, device=self.device)
+            self.dof_lag_buf = DelayBuffer(self.num_envs, (self.num_dof, 2),
+                                           self.cfg.domain_rand.dof_lag_range,
+                                           self.cfg.domain_rand.randomize_dof_lag_each_step,
+                                           device=self.device)
 
         if self.cfg.domain_rand.add_imu_lag:
-            self.imu_lag_buf = DelayBuffer(self.num_envs, (4 + 3,), self.cfg.domain_rand.imu_lag_prop, device=self.device)
+            self.imu_lag_buf = DelayBuffer(self.num_envs, (4 + 3,),
+                                           self.cfg.domain_rand.imu_lag_range,
+                                           self.cfg.domain_rand.randomize_imu_lag_each_step,
+                                           device=self.device)
 
         # Push robot
         self.ext_force = self._zero_tensor(self.num_envs, 3)
@@ -337,7 +342,7 @@ class BaseTask:
         pass
 
     def _visualization(self):
-        pass
+        raise NotImplementedError
 
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. """

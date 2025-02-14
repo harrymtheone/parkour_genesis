@@ -24,6 +24,8 @@ class BaseWrapper:
         self.height_guidance = None
         self.edge_mask = None
 
+        self.init_done = False
+
     # ------------------------------------------------- Simulator Interfaces -------------------------------------------------
 
     def set_root_state(self, env_ids, pos, quat, lin_vel, ang_vel):
@@ -58,6 +60,9 @@ class BaseWrapper:
             return [s for s in self._dof_names if names in s]
 
     def create_indices(self, names, is_link):
+        raise NotImplementedError
+
+    def render(self):
         raise NotImplementedError
 
     @property
@@ -125,31 +130,34 @@ class BaseWrapper:
         """ Randomise some of the rigid body properties of the actor in the given environments, i.e.
             sample the mass, centre of mass position, friction and restitution."""
 
-        if self.cfg.domain_rand.randomize_base_mass:
-            self.payload_masses = torch_rand_float(self.cfg.domain_rand.added_mass_range[0],
-                                                   self.cfg.domain_rand.added_mass_range[1],
-                                                   (self.num_envs, 1),
-                                                   device=self.device)
+        if not self.init_done:
+            self.friction_coeffs = self._zero_tensor(self.num_envs, 1)
+            self.payload_masses = self._zero_tensor(self.num_envs, 1)
 
-        if self.cfg.domain_rand.randomize_link_mass:
-            self.link_mass_multiplier = torch_rand_float(self.cfg.domain_rand.link_mass_multiplier_range[0],
-                                                         self.cfg.domain_rand.link_mass_multiplier_range[1],
-                                                         (self.num_envs, self.num_bodies - 1),
-                                                         device=self.device)
+            if self.cfg.domain_rand.randomize_base_mass:
+                self.payload_masses = torch_rand_float(self.cfg.domain_rand.added_mass_range[0],
+                                                       self.cfg.domain_rand.added_mass_range[1],
+                                                       (self.num_envs, 1),
+                                                       device=self.device)
 
-        if self.cfg.domain_rand.randomize_com:
-            self.com_displacements = torch_rand_float(self.cfg.domain_rand.com_displacement_range[0],
-                                                      self.cfg.domain_rand.com_displacement_range[1],
-                                                      (self.num_envs, 3),
-                                                      device=self.device)
+            if self.cfg.domain_rand.randomize_link_mass:
+                self.link_mass_multiplier = torch_rand_float(self.cfg.domain_rand.link_mass_multiplier_range[0],
+                                                             self.cfg.domain_rand.link_mass_multiplier_range[1],
+                                                             (self.num_envs, self.num_bodies - 1),
+                                                             device=self.device)
 
-        if self.cfg.domain_rand.randomize_friction:
-            self.friction_coeffs = torch_rand_float(self.cfg.domain_rand.friction_range[0],
-                                                    self.cfg.domain_rand.friction_range[1],
-                                                    (self.num_envs, 1),
-                                                    device=self.device).repeat(1, self.num_bodies)
+            if self.cfg.domain_rand.randomize_com:
+                self.com_displacements = torch_rand_float(self.cfg.domain_rand.com_displacement_range[0],
+                                                          self.cfg.domain_rand.com_displacement_range[1],
+                                                          (self.num_envs, 3),
+                                                          device=self.device)
+
+            if self.cfg.domain_rand.randomize_friction:
+                self.friction_coeffs[:] = torch_rand_float(self.cfg.domain_rand.friction_range[0],
+                                                           self.cfg.domain_rand.friction_range[1],
+                                                           (self.num_envs, 1),
+                                                           device=self.device).repeat(1, self.num_bodies)
             self.restitution_coeffs = torch_rand_float(self.cfg.domain_rand.restitution_range[0],
                                                        self.cfg.domain_rand.restitution_range[1],
                                                        (self.num_envs, 1),
                                                        device=self.device).repeat(1, self.num_bodies)
-

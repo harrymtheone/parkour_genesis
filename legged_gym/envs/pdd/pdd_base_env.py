@@ -114,7 +114,7 @@ class PddBaseEnvironment(ParkourTask):
         # Add double support phase
         self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
 
-        self.ref_dof_pos[:] += self.default_dof_pos
+        self.ref_dof_pos[:] += self.init_state_dof_pos
 
     def draw_feet_hmap(self, estimation=None):
         feet_pos = self.rigid_body_states[self.lookat_id, self.feet_indices, :3]

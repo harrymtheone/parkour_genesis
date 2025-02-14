@@ -39,7 +39,8 @@ class PddBaseCfg(BaseConfig):
         clip_actions = 100.
 
     class terrain:
-        description_type = 'trimesh'  # "heightfield" # none, plane, heightfield or trimesh
+        # description_type = 'trimesh'  # plane, heightfield or trimesh
+        description_type = 'plane'  # plane, heightfield or trimesh
         hf2mesh_method = "grid"  # grid or fast
         max_error = 0.1  # for fast
 
@@ -147,12 +148,12 @@ class PddBaseCfg(BaseConfig):
         add_dof_lag = False
         randomize_dof_lag = True  # if False, max delay will be used
         randomize_dof_lag_each_step = False
-        dof_lag_prop = (0, 40)
+        dof_lag_range = (0, 40)
 
         add_imu_lag = False
         randomize_imu_lag = True  # if False, max delay will be used
         randomize_imu_lag_each_step = False
-        imu_lag_prop = (1, 10)
+        imu_lag_range = (1, 10)
 
         randomize_base_mass = False
         added_mass_range = [-2.5, 2.5]

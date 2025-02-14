@@ -40,7 +40,7 @@ class PddDreamWaqEnvironment(PddBaseEnvironment):
             dof_data = self.dof_lag_buf.get()
             dof_pos, dof_vel = dof_data[..., 0], dof_data[..., 1]
         else:
-            dof_pos, dof_vel = self.dof_pos, self.dof_vel
+            dof_pos, dof_vel = self.sim.dof_pos, self.sim.dof_vel
 
         if self.cfg.domain_rand.add_imu_lag:
             imu_data = self.imu_lag_buf.get()
@@ -67,7 +67,7 @@ class PddDreamWaqEnvironment(PddBaseEnvironment):
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
             command_input,  # 5
-            (dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,  # 10D
+            (dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
             dof_vel * self.obs_scales.dof_vel,  # 10D
             self.last_action_output,  # 10D
         ), dim=-1)
@@ -75,21 +75,21 @@ class PddDreamWaqEnvironment(PddBaseEnvironment):
         # explicit privileged information
         priv_obs = torch.cat((
             command_input,
-            (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,  # 10D
-            self.dof_vel * self.obs_scales.dof_vel,  # 10D
+            (self.sim.dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
+            self.sim.dof_vel * self.obs_scales.dof_vel,  # 10D
             self.last_action_output,  # 10D
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.base_ang_vel * self.obs_scales.ang_vel,  # 3
-            self.base_euler_xyz * self.obs_scales.quat,  # 3
-            self.ext_forces[:, :2],  # 2
-            self.ext_torques,  # 3
-            self.friction_coeffs_tensor,  # 1
-            self.mass_params_tensor[:, :1] / 10.,  # 1
-            self.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
+            self.base_euler * self.obs_scales.quat,  # 3
+            self.ext_force[:, :2],  # 2
+            self.ext_torque,  # 3
+            self.sim.friction_coeffs,  # 1
+            self.sim.payload_masses / 10.,  # 1
+            self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
         # compute height map
-        scan = torch.clip(self.root_states[:, 2].unsqueeze(1) - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan = torch.clip(self.sim.root_pos[:, 2].unsqueeze(1) - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
 
         # compose actor observation
