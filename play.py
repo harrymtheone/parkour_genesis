@@ -17,10 +17,10 @@ slowmo = 1
 
 
 def play(args):
-    args.proj_name = 'humanoid_parkour'
+    args.proj_name = 'parkour_genesis'
     log_root = 'logs'
-    # args.simulator = SimulatorType.Genesis
-    args.simulator = SimulatorType.IsaacGym
+    args.simulator = SimulatorType.Genesis
+    # args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
 
@@ -50,7 +50,7 @@ def play(args):
     env_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
 
     env_cfg.terrain.terrain_dict = {
-        'smooth_slope': 0,
+        'smooth_slope': 1,
         'rough_slope': 0,
         'stairs_up': 0,
         'stairs_down': 0,
@@ -62,12 +62,13 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
+        'parkour_stair': 0,
         'parkour_flat': 0,
     }
     env_cfg.terrain.num_cols = sum(env_cfg.terrain.terrain_dict.values())
 
     # prepare environment
+    args.n_rendered_envs = env_cfg.env.num_envs
     env, _ = task_registry.make_env(args=args, env_cfg=env_cfg)
     obs = env.get_observations()
 

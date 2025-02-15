@@ -1,16 +1,12 @@
-import math
 import os
 
 import genesis as gs
 import torch
-import warp as wp
-from genesis.engine.solvers import RigidSolver
 from genesis.ext.isaacgym import terrain_utils
 from rich import print
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.simulator.base_wrapper import BaseWrapper
-from legged_gym.utils.math import torch_rand_float
+from legged_gym.simulator.base_wrapper import BaseWrapper, DriveMode
 from legged_gym.utils.terrain import Terrain
 
 
@@ -67,7 +63,6 @@ class GenesisWrapper(BaseWrapper):
     # ---------------------------------------------- Sim Creation ----------------------------------------------
     def _parse_cfg(self, args):
         self.device = torch.device(args.device)
-        self.headless = args.headless
 
         self.num_envs = self.cfg.env.num_envs
 
@@ -76,12 +71,21 @@ class GenesisWrapper(BaseWrapper):
     def _create_scene(self, n_rendered_envs):
         """ Creates simulation, terrain and environments
         """
-        if hasattr(self.cfg.control, 'use_genesis_torque_controller') and self.cfg.control.use_genesis_torque_controller:
-            dt = self.dt / self.cfg.control.decimation
-            substeps = 1
-        else:
-            dt = self.dt
+        if self.cfg.asset.default_dof_drive_mode == 1:
+            self.drive_mode = DriveMode.pos_target
+            dt = self.cfg.sim.dt * self.cfg.control.decimation
             substeps = self.cfg.control.decimation
+        elif self.cfg.asset.default_dof_drive_mode == 2:
+            self.drive_mode = DriveMode.vel_target
+            dt = self.cfg.sim.dt * self.cfg.control.decimation
+            substeps = self.cfg.control.decimation
+            raise ValueError("pos_vel drive mode not implemented yet!")
+        elif self.cfg.asset.default_dof_drive_mode == 3:
+            dt = self.cfg.sim.dt
+            substeps = 1
+            self.drive_mode = DriveMode.torque
+        else:
+            raise ValueError(f'Invalid drive mode value: {self.cfg.asset.default_dof_drive_mode}')
 
         if self.cfg.asset.disable_gravity:
             self.cfg.sim.gravity[2] = 0
@@ -153,15 +157,6 @@ class GenesisWrapper(BaseWrapper):
         # build the scene
         self._scene.build(n_envs=self.num_envs)
 
-        # save solver for advanced domain randomization
-        # self.rigid_solver = self.scene.sim.active_solvers[0]
-        # assert isinstance(self.rigid_solver, gs.engine.solvers.rigid.rigid_solver_decomp.RigidSolver), "Solver type is wrong???"
-
-        for solver in self._scene.sim.solvers:
-            if not isinstance(solver, RigidSolver):
-                continue
-            self.rigid_solver = solver
-
     def _create_heightfield(self):
         """ Adds a heightfield terrain to the simulation, sets parameters based on the cfg.
         """
@@ -227,24 +222,19 @@ class GenesisWrapper(BaseWrapper):
         self.num_dof = len(self._dof_names)
 
         # create indices
-        self._base_idx_scene_level = [self._robot.get_link(self.cfg.asset.base_link_name).idx, ]
-        self._body_indices_scene_level = self._create_indices(self._body_names, True, True)  # contains base link!
-        self._dof_indices_local = self._create_indices(self._dof_names, False, False)
+        self._base_idx = self.create_indices([self.cfg.asset.base_link_name], True)
+        self._body_indices = self.create_indices(self._body_names, True)  # contains base link!
+        self._dof_indices = self.create_indices(self._dof_names, False)
 
         # read dof properties
-        self.dof_pos_limits = torch.stack(self._robot.get_dofs_limit(self._dof_indices_local), dim=1)
-        self.torque_limits = self._robot.get_dofs_force_range(self._dof_indices_local)[1]
+        self.dof_pos_limits = torch.stack(self._robot.get_dofs_limit(self._dof_indices), dim=1)
+        self.torque_limits = self._robot.get_dofs_force_range(self._dof_indices)[1]
 
     def create_indices(self, names, is_link):
-        return self._create_indices(names, is_link, False)
-
-    def _create_indices(self, names, is_link, scene_level):
         indices = self._zero_tensor(len(names), dtype=torch.long)
 
         for i, n in enumerate(names):
-            if scene_level:
-                indices[i] = self._robot.get_link(n).idx
-            elif is_link:
+            if is_link:
                 indices[i] = self._robot.get_link(n).idx_local
             else:
                 indices[i] = self._robot.get_joint(n).dof_idx_local
@@ -258,20 +248,19 @@ class GenesisWrapper(BaseWrapper):
         self._randomize_rigid_body_props()
 
         if self.cfg.domain_rand.randomize_base_mass:
-            self.rigid_solver.set_links_mass_shift(self.payload_masses, self._base_idx_scene_level, env_ids)
-            # self._robot.set_mass_shift(self.payload_masses, self._base_idx_scene_level, env_ids)  # TODO: use this !!!
+            self._robot.set_mass_shift(self.payload_masses, self._base_idx.clone(), env_ids)  # TODO: use this !!!
 
         if self.cfg.domain_rand.randomize_link_mass:
             # notice the [1:] slicing, this is because base is not considered
             link_mass = [self._robot.get_link(n).get_mass() for n in self._body_names]
             link_mass_shift = (self.link_mass_multiplier - 1) * torch.tensor(link_mass[1:], device=self.device).unsqueeze(0)
-            self.rigid_solver.set_links_mass_shift(link_mass_shift, self._body_indices_scene_level[1:], env_ids)
+            self._robot.set_mass_shift(link_mass_shift, self._body_indices[1:].clone(), env_ids)
 
         if self.cfg.domain_rand.randomize_com:
-            self.rigid_solver.set_links_COM_shift(self.com_displacements.unsqueeze(1), self._base_idx_scene_level, env_ids)
+            self._robot.set_COM_shift(self.com_displacements.unsqueeze(1), self._base_idx.clone(), env_ids)
 
         if self.cfg.domain_rand.randomize_friction:
-            self.rigid_solver.set_geoms_friction_ratio(self.friction_coeffs, self._body_indices_scene_level, env_ids)
+            self._robot.set_friction_ratio(self.friction_coeffs.repeat(1, self.num_bodies), self._body_indices.clone(), env_ids)
 
             if not self.suppress_warning:
                 print(f"[bold red]⚠️ Restitution is not supported by Genesis currently?![/bold red]")  # Rich formatting
@@ -279,23 +268,23 @@ class GenesisWrapper(BaseWrapper):
     # ---------------------------------------------- IO Interface ----------------------------------------------
 
     def set_root_state(self, env_ids, pos, quat, lin_vel, ang_vel):
-        self._robot.set_pos(pos, zero_velocity=False, envs_idx=env_ids)
-        self._robot.set_quat(quat, zero_velocity=False, envs_idx=env_ids)
+        self._robot.set_pos(pos, zero_velocity=True, envs_idx=env_ids)
+        self._robot.set_quat(quat, zero_velocity=True, envs_idx=env_ids)
 
-        if not (lin_vel is None and ang_vel is None):
+        if not (self.suppress_warning or (lin_vel is None and ang_vel is None)):
             print(f"[bold red]⚠️ Setting base lin_vel and ang_vel is not supported by Genesis currently![/bold red]")  # Rich formatting
 
     def set_dof_state(self, env_ids, dof_pos, dof_vel):
         self._robot.set_dofs_position(
             position=dof_pos,
-            dofs_idx_local=self._dof_indices_local,
-            zero_velocity=False,
+            dofs_idx_local=self._dof_indices,
+            zero_velocity=True,
             envs_idx=env_ids,
         )
 
         self._robot.set_dofs_velocity(
             velocity=dof_vel,
-            dofs_idx_local=self._dof_indices_local,
+            dofs_idx_local=self._dof_indices,
             envs_idx=env_ids,
         )
 
@@ -321,11 +310,11 @@ class GenesisWrapper(BaseWrapper):
 
     @property
     def dof_pos(self):
-        return self._robot.get_dofs_position(self._dof_indices_local)
+        return self._robot.get_dofs_position(self._dof_indices)
 
     @property
     def dof_vel(self):
-        return self._robot.get_dofs_velocity(self._dof_indices_local)
+        return self._robot.get_dofs_velocity(self._dof_indices)
 
     @property
     def contact_forces(self):
@@ -347,13 +336,14 @@ class GenesisWrapper(BaseWrapper):
     # ---------------------------------------------- Step Interface ----------------------------------------------
 
     def apply_perturbation(self, force, torque):
-        print(f"[bold red]⚠️ Apply external force is not implemented yet! [/bold red]")  # Rich formatting
+        if not self.suppress_warning:
+            print(f"[bold red]⚠️ Apply external force is not implemented yet! [/bold red]")  # Rich formatting
 
     def step_environment(self):
         self._scene.step(update_visualizer=False)
 
     def control_dof_torque(self, torques):
-        self._robot.control_dofs_force(torques, self._dof_indices_local)
+        self._robot.control_dofs_force(torques, self._dof_indices)
 
     # def _control_dof_position(self, target_dof_pos):
     #     self.robot.control_dofs_position(target_dof_pos, self._dof_indices_local)
@@ -365,6 +355,9 @@ class GenesisWrapper(BaseWrapper):
         pass
 
     def render(self):
+        if self.headless:
+            return
+
         if not self.free_cam:
             self.lookat(self.lookat_id)
 

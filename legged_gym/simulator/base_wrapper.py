@@ -1,15 +1,24 @@
 import torch
 import warp as wp
+from enum import Enum
 
 from legged_gym.utils.math import torch_rand_float
+
+
+class DriveMode(Enum):
+    none = 0
+    pos_target = 1
+    vel_target = 2
+    torque = 3
 
 
 class BaseWrapper:
     def __init__(self, cfg, args):
         self.cfg = cfg
-        self.suppress_warning = False
+        self.suppress_warning = True
 
         self.device = torch.device(args.device)
+        self.headless = args.headless
         self.num_envs = self.cfg.env.num_envs
 
         self._body_names = None
@@ -17,6 +26,7 @@ class BaseWrapper:
         self.num_bodies = None
         self.num_dof = None
 
+        self.drive_mode = DriveMode.none
         self.dof_pos_limits = None
         self.torque_limits = None
 
@@ -131,7 +141,7 @@ class BaseWrapper:
             sample the mass, centre of mass position, friction and restitution."""
 
         if not self.init_done:
-            self.friction_coeffs = self._zero_tensor(self.num_envs, 1)
+            self.friction_coeffs = 1 + self._zero_tensor(self.num_envs, 1)
             self.payload_masses = self._zero_tensor(self.num_envs, 1)
 
             if self.cfg.domain_rand.randomize_base_mass:
@@ -156,8 +166,8 @@ class BaseWrapper:
                 self.friction_coeffs[:] = torch_rand_float(self.cfg.domain_rand.friction_range[0],
                                                            self.cfg.domain_rand.friction_range[1],
                                                            (self.num_envs, 1),
+                                                           device=self.device)
+                self.restitution_coeffs = torch_rand_float(self.cfg.domain_rand.restitution_range[0],
+                                                           self.cfg.domain_rand.restitution_range[1],
+                                                           (self.num_envs, 1),
                                                            device=self.device).repeat(1, self.num_bodies)
-            self.restitution_coeffs = torch_rand_float(self.cfg.domain_rand.restitution_range[0],
-                                                       self.cfg.domain_rand.restitution_range[1],
-                                                       (self.num_envs, 1),
-                                                       device=self.device).repeat(1, self.num_bodies)

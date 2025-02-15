@@ -57,8 +57,13 @@ class PddDreamWaqCfg(PddBaseCfg):
         randomize_gains = True
 
         randomize_start_pos = True
-        randomize_start_yaw = True
         randomize_start_y = True
+        randomize_start_yaw = True
+        randomize_start_vel = True
+        randomize_start_pitch = True
+
+        randomize_start_dof_pos = True
+        randomize_start_dof_vel = True
 
     class rewards:
         base_height_target = 0.6
@@ -175,22 +180,16 @@ class PddDreamWaqDRCfg(PddDreamWaqCfg):
     class domain_rand(PddDreamWaqCfg.domain_rand):
         switch = True
 
-        randomize_start_vel = switch
-        randomize_start_pitch = switch
-
-        randomize_start_dof_pos = switch
-        randomize_start_dof_vel = switch
-
         push_robots = switch
-        action_delay = False
+        action_delay = True
         add_dof_lag = False
         add_imu_lag = False
 
         randomize_base_mass = switch
         randomize_link_mass = switch
         randomize_com = switch
-        randomize_friction = False
-        randomize_coulomb_friction = switch
+        randomize_friction = switch
+        randomize_coulomb_friction = False
         randomize_torque = switch
         randomize_motor_offset = switch
         randomize_gains = switch

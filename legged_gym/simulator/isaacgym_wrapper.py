@@ -10,7 +10,7 @@ from isaacgym import gymapi, gymutil, terrain_utils, gymtorch
 from tqdm import tqdm
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.simulator.base_wrapper import BaseWrapper
+from legged_gym.simulator.base_wrapper import BaseWrapper, DriveMode
 from legged_gym.utils.helpers import class_to_dict
 from legged_gym.utils.math import torch_rand_float, transform_quat_by_quat
 from legged_gym.utils.terrain import Terrain
@@ -50,7 +50,6 @@ class IsaacGymWrapper(BaseWrapper):
     # ---------------------------------------------- Sim Creation ----------------------------------------------
 
     def _parse_cfg(self, args):
-        self.headless = args.headless
         self.dt = self.cfg.control.decimation * self.cfg.sim.dt
 
     def _create_sim(self):
@@ -160,6 +159,19 @@ class IsaacGymWrapper(BaseWrapper):
         asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
         asset_root = os.path.dirname(asset_path)
         asset_file = os.path.basename(asset_path)
+
+        if self.cfg.asset.default_dof_drive_mode == 1:
+            assert self.cfg.sim.substeps > 1, 'You should set sim.substeps > 1 to use pos_target drive mode'
+            self.drive_mode = DriveMode.pos_target
+        elif self.cfg.asset.default_dof_drive_mode == 2:
+            assert self.cfg.sim.substeps > 1, 'You should set sim.substeps > 1 to use pos_vel drive mode'
+            self.drive_mode = DriveMode.vel_target
+            raise ValueError("pos_vel drive mode not implemented yet!")
+        elif self.cfg.asset.default_dof_drive_mode == 3:
+            assert self.cfg.sim.substeps == 1, 'You should set sim.substeps == 1 to use torque drive mode'
+            self.drive_mode = DriveMode.torque
+        else:
+            raise ValueError(f'Invalid drive mode value: {self.cfg.asset.default_dof_drive_mode}')  # TODO: this not finished yet!
 
         asset_options = gymapi.AssetOptions()
         asset_options.default_dof_drive_mode = self.cfg.asset.default_dof_drive_mode
@@ -361,9 +373,6 @@ class IsaacGymWrapper(BaseWrapper):
         self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(torques))
 
     # ------------------------------------------------ Graphics ------------------------------------------------
-
-    def _visualization(self):
-        pass
 
     def render(self, sync_frame_time=True):
         if not self.viewer:

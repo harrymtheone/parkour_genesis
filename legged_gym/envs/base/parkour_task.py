@@ -1,7 +1,6 @@
 import random
 from typing import List
 
-import cv2
 import numpy as np
 import torch
 import torchvision
@@ -44,18 +43,15 @@ class ParkourTask(BaseTask):
         # initialize some data used later on
         self.torques = self._zero_tensor(self.num_envs, self.num_actions)
         self.base_height = self._zero_tensor(self.num_envs)
-        self.feet_height = self._zero_tensor(self.num_envs, len(self.feet_indices))
 
         self.last_actions = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
         self.last_last_actions = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
         self.last_dof_vel = torch.zeros_like(self.sim.dof_vel)
         self.last_torques = torch.zeros_like(self.torques)
         self.last_root_vel = torch.zeros_like(self.sim.root_lin_vel)
-        self.last_contacts = self._zero_tensor(self.num_envs, len(self.feet_indices), dtype=torch.bool)
-        self.last_feet_vel_xy = self._zero_tensor(self.num_envs, len(self.feet_indices), 2)
 
+        self.target_yaw = self._zero_tensor(self.num_envs)  # used by info panel in play.py
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
-            self.target_yaw = self._zero_tensor(self.num_envs)
             self.delta_yaw = self._zero_tensor(self.num_envs)
             self.reached_goal_ids = self._zero_tensor(self.num_envs, dtype=torch.bool)
             self.reach_goal_timer = self._zero_tensor(self.num_envs)
@@ -155,11 +151,6 @@ class ParkourTask(BaseTask):
         else:
             super()._get_env_origins()
 
-    def _init_robot_props(self):
-        super()._init_robot_props()
-        self.feet_indices = self.sim.create_indices(
-            self.sim.get_full_names(self.cfg.asset.foot_name, True), True)
-
     def _reset_idx(self, env_ids: torch.Tensor):
         if len(env_ids) == 0:
             return
@@ -177,7 +168,6 @@ class ParkourTask(BaseTask):
         self.last_dof_vel[env_ids] = 0.
         self.last_torques[env_ids] = 0.
         self.last_root_vel[:] = 0.
-        self.last_feet_vel_xy[env_ids] = 0.
 
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
             self.cur_goal_idx[env_ids] = 0
@@ -234,13 +224,12 @@ class ParkourTask(BaseTask):
 
     def get_base_height_map(self):
         # convert height points coordinate to world frame
-        quat_yaw = axis_angle_to_quat(
-            self.base_euler[:, 2],
-            torch.tensor([0, 0, 1], device=self.device, dtype=torch.float)
+        n_points = self.base_hmap_points.size(1)
+        return self._get_heights(
+            transform_by_yaw(self.base_hmap_points, self.base_euler[:, 2].repeat(1, n_points)).unflatten(0, (self.num_envs, -1))
+            + self.sim.root_pos.unsqueeze(1)
+            + self.cfg.terrain.border_size
         )
-        return self._get_heights(transform_by_quat(self.base_hmap_points, quat_yaw.repeat(1, self.base_hmap_points.size(1)))
-                                 + self.sim.root_pos.unsqueeze(1)
-                                 + self.cfg.terrain.border_size)
 
     def _get_heights(self, points, use_guidance=False):
         if self.cfg.terrain.description_type not in ['heightfield', 'trimesh']:
@@ -282,22 +271,15 @@ class ParkourTask(BaseTask):
             torch.abs(self.commands[:, 2]) <= self.cfg.commands.ang_vel_clip
         )
 
-        # update feet height
-        feet_pos = self.sim.link_pos[:, self.feet_indices]
-        feet_z = feet_pos[:, :, 2] - 0.02
-        proj_ground_height = self._get_heights(feet_pos + self.cfg.terrain.border_size, use_guidance=self.cfg.rewards.use_guidance_terrain)
-        self.feet_height[:] = feet_z - proj_ground_height
-
     def _post_physics_post_step(self):
         self.last_last_actions[:] = self.last_actions[:]
         self.last_actions[:] = self.actions[:]
         self.last_dof_vel[:] = self.sim.dof_vel
         self.last_torques[:] = self.torques[:]
         self.last_root_vel[:] = self.sim.root_lin_vel
-        self.last_feet_vel_xy[:] = self.sim.link_vel[:, self.feet_indices, :2]
 
     def _update_goals(self):
-        self.reached_goal_ids[:] = torch.norm(self.root_states[:, :2] - self.cur_goals[:, :2], dim=1) < self.cfg.env.next_goal_threshold
+        self.reached_goal_ids[:] = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1) < self.cfg.env.next_goal_threshold
         self.reach_goal_timer[self.reached_goal_ids] += 1
         self.reach_goal_timer[~self.reached_goal_ids] = 0
 
@@ -315,7 +297,7 @@ class ParkourTask(BaseTask):
             # don't change on initial reset
             return
 
-        dis_to_origin = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
+        dis_to_origin = torch.norm(self.sim.root_pos[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
         threshold = torch.norm(self.commands[env_ids, :2], dim=1) * self.episode_length_buf[env_ids] * self.dt
 
         move_up = torch.zeros(len(env_ids), dtype=torch.bool, device=self.device)
@@ -444,8 +426,6 @@ class ParkourTask(BaseTask):
         self.commands[env_ids[motion_type == 2], :2] = 0  # yaw
 
     def _update_command(self):
-        super()._update_command()
-
         if self.cfg.terrain.description_type not in ["heightfield", "trimesh"]:
             return
 
@@ -477,9 +457,6 @@ class ParkourTask(BaseTask):
             scale = scale * self.cfg.noise.noise_level
             return x + torch_rand_float(-scale, scale, x.shape, self.device)
         return x
-
-    def _visualization(self):
-        self.sim.render()
 
         # clear_lines = True
         #
@@ -816,190 +793,3 @@ class ParkourTask(BaseTask):
         for idx in cloud_idx:
             sphere_pose = gymapi.Transform(gymapi.Vec3(cloud[idx, 0], cloud[idx, 1], cloud[idx, 2] + 0.02), r=None)
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[env_id], sphere_pose)
-
-    # ----------------------------------------- Rewards -------------------------------------------
-    def _reward_tracking_lin_vel(self):
-        # Tracking of linear velocity commands (xy axes)
-        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
-        rew = torch.exp(-lin_vel_error / self.cfg.rewards.tracking_sigma)
-
-        rew[torch.logical_and(self.env_class >= 4, self.env_class < 12)] *= 0.3
-        return rew
-
-    def _reward_tracking_goal_vel(self):
-        norm = torch.norm(self.target_pos_rel, dim=1, keepdim=True)
-        target_vec_norm = self.target_pos_rel / (norm + 1e-5)
-        rew = torch.where(
-            self.commands[:, 0] > self.cfg.commands.lin_vel_clip,
-            torch.sum(target_vec_norm * self.root_states[:, 7:9], dim=1) / (self.commands[:, 0]),
-            0  # no reward for zero_command
-        )
-        rew = torch.clip(rew, max=1)
-
-        rew[self.env_class < 4] = 0.
-        return rew
-
-    def _reward_tracking_yaw(self):
-        diff = self.commands[:, 2] - self.base_ang_vel[:, 2]
-        return torch.exp(-torch.square(diff) / self.cfg.rewards.tracking_sigma)
-
-    def _reward_lin_vel_z(self):
-        rew = torch.square(self.base_lin_vel[:, 2])
-
-        rew[torch.logical_and(self.env_class >= 4, self.env_class < 12)] *= 0.5
-        return rew
-
-    def _reward_ang_vel_xy(self):
-        rew = torch.square(self.base_ang_vel[:, :2])
-
-        rew *= torch.tensor([[1, 3]], device=self.device)
-        rew = torch.sum(rew, dim=1)
-
-        rew[torch.logical_and(self.env_class >= 4, self.env_class < 12)] *= 0.3
-        return rew
-
-    def _reward_orientation(self):
-        rew = torch.square(self.projected_gravity[:, :2])
-        rew *= torch.tensor([[1, 3]], device=self.device)
-        rew = torch.sum(rew, dim=1)
-
-        rew[torch.logical_and(self.env_class >= 2, self.env_class < 13)] *= 0.3
-        return rew
-
-    def _reward_torques(self):
-        rew = torch.sum(torch.square(self.torques), dim=1)
-        rew[torch.logical_and(self.env_class >= 4, self.env_class < 13)] *= 0.3
-        return rew
-
-    def _reward_delta_torques(self):
-        rew = torch.sum(torch.square(self.torques - self.last_torques), dim=1)
-        rew[torch.logical_and(self.env_class >= 4, self.env_class < 13)] *= 0.3
-        return rew
-
-    def _reward_action_rate(self):
-        rew = (self.actions - self.last_actions).square().sum(dim=1)
-        rew[torch.logical_and(self.env_class >= 4, self.env_class < 13)] *= 0.5
-        return rew
-
-    def _reward_action_smoothness(self):
-        return (self.actions + self.last_last_actions - 2 * self.last_actions).square().sum(dim=1)
-
-    def _reward_dof_acc(self):
-        rew = torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
-        rew[torch.logical_and(self.env_class >= 4, self.env_class < 13)] *= 0.3
-        return rew
-
-    def _reward_dof_error(self):
-        return torch.sum(torch.square(self.dof_pos - self.default_dof_pos.clone()), dim=1)
-
-    def _reward_hip_pos(self):
-        diff = torch.square(self.dof_pos[:, self.hip_indices] - self.default_dof_pos[:, self.hip_indices])
-        rew = torch.sum(diff, dim=1)
-        return rew
-
-    def _reward_thigh_pos(self):
-        diff = torch.square(self.dof_pos[:, self.thigh_indices] - self.default_dof_pos[:, self.thigh_indices])
-        rew = torch.sum(diff, dim=1)
-        return rew
-
-    def _reward_feet_accel(self):
-        feet_vel_xy = self.rigid_body_states[:, self.feet_indices, 7:9]
-        feet_accel_xy = (feet_vel_xy - self.last_feet_vel_xy) / self.dt
-        rew = torch.exp(-0.02 * feet_accel_xy.norm(dim=2).sum(dim=1))
-        return rew
-
-    def _reward_feet_air_time(self):
-        # Reward long steps
-        first_contact = (self.feet_air_time > 0.) * self.contact_filt
-        rew = self.feet_air_time * first_contact  # reward only on first contact with the ground
-
-        # no reward for zero command
-        rew *= ~self.is_zero_command.unsqueeze(1)
-
-        # # no reward for legs with smaller feet_air_time_avg
-        # mask_equalization = torch.empty_like(self.feet_air_time_avg)
-        # mask_equalization[:, 0] = torch.where(self.feet_air_time_avg[:, 0] < self.feet_air_time_avg[:, 1], 1, 0)
-        # mask_equalization[:, 1] = torch.where(self.feet_air_time_avg[:, 1] < self.feet_air_time_avg[:, 0], 1, 0)
-        # mask_equalization[:, 2] = torch.where(self.feet_air_time_avg[:, 2] < self.feet_air_time_avg[:, 3], 1, 0)
-        # mask_equalization[:, 3] = torch.where(self.feet_air_time_avg[:, 3] < self.feet_air_time_avg[:, 2], 1, 0)
-        # rew *= mask_equalization
-
-        return rew.sum(dim=1)
-
-    def _reward_feet_clearance(self):
-        """
-        Calculates reward based on the clearance of the swing leg from the ground during movement.
-        Encourages appropriate lift of the feet during the swing phase of the gait.
-        """
-        # feet height should larger than target feet height at the peak
-        rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, 0, 1)
-
-        # revert reward for zero command
-        rew[self.is_zero_command] = torch.where(torch.all(self.contact_filt[self.is_zero_command]),
-                                                0,
-                                                -rew[self.is_zero_command] - 1.0)
-
-        # # no reward for legs with smaller feet_air_time_avg
-        # mask_equalization = torch.empty_like(self.feet_air_time_avg)
-        # mask_equalization[:, 0] = torch.where(self.feet_air_time_avg[:, 0] < self.feet_air_time_avg[:, 1], 1, 0)
-        # mask_equalization[:, 1] = torch.where(self.feet_air_time_avg[:, 1] < self.feet_air_time_avg[:, 0], 1, 0)
-        # mask_equalization[:, 2] = torch.where(self.feet_air_time_avg[:, 2] < self.feet_air_time_avg[:, 3], 1, 0)
-        # mask_equalization[:, 3] = torch.where(self.feet_air_time_avg[:, 3] < self.feet_air_time_avg[:, 2], 1, 0)
-        # rew *= mask_equalization
-
-        return rew.sum(dim=1)
-
-    # def _reward_feet_clearance(self):
-    #     env_only_yaw = torch.logical_and(
-    #         torch.norm(self.commands[:, :2], dim=1) < self.cfg.commands.lin_vel_clip,
-    #         torch.abs(self.commands[:, 2]) > 0
-    #     )
-    #
-    #     feet_vel_xy = torch.norm(self.rigid_body_states[:, self.feet_indices, 7:9], dim=2)
-    #
-    #     # encourage the robot to lift its legs when it moves, especially rotates in place
-    #     rew = (self.feet_height - self.cfg.rewards.feet_height_target).square()
-    #
-    #     # the robot do not need to lift too much when you walk slowly
-    #     rew[~env_only_yaw] *= feet_vel_xy[~env_only_yaw]
-    #
-    #     return rew.sum(dim=1)
-
-    def _reward_base_stumble(self):
-        base_stumble = torch.norm(self.contact_forces[:, self.base_indices].squeeze(1), dim=1) > 1
-        rew = base_stumble.float()
-        return rew
-
-    def _reward_feet_stumble(self):
-        # Penalize feet hitting vertical surfaces
-        force = self.contact_forces[:, self.feet_indices]
-        rew = torch.any(torch.norm(force[:, :, :2], dim=2) > 4 * torch.abs(force[:, :, 2]), dim=1).float()
-        return rew
-
-    def _reward_feet_edge(self):
-        feet_pos_xy = self.rigid_body_states[:, self.feet_indices, :2] + self.cfg.terrain.border_size  # (num_envs, 4, 2)
-        feet_pos_xy = (feet_pos_xy / self.cfg.terrain.horizontal_scale).round().long()
-        feet_pos_xy[..., 0] = torch.clip(feet_pos_xy[..., 0], 0, self.sim.terrain.edge_mask.size(0) - 1)
-        feet_pos_xy[..., 1] = torch.clip(feet_pos_xy[..., 1], 0, self.sim.terrain.edge_mask.size(1) - 1)
-        feet_at_edge = self.sim.terrain.edge_mask[feet_pos_xy[..., 0], feet_pos_xy[..., 1]]
-
-        self.feet_at_edge = self.contact_filt & feet_at_edge
-        rew = torch.sum(self.feet_at_edge.float(), dim=-1)
-        return rew
-
-    def _reward_collision(self):
-        return torch.sum(1. * (torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
-
-    def _reward_dof_pos_limits(self):
-        # Penalize dof positions too close to the limit
-        out_of_limits = -(self.dof_pos - self.soft_dof_pos_limits[:, 0]).clip(max=0.)  # lower limit
-        out_of_limits += (self.dof_pos - self.soft_dof_pos_limits[:, 1]).clip(min=0.)
-        return torch.sum(out_of_limits, dim=1)
-
-    def _reward_base_height(self):
-        # Penalize base height away from target
-        rew = torch.square(self.base_height - self.cfg.rewards.base_height_target)
-        return rew.clip(-1, 1)
-
-    def _reward_termination(self):
-        raise NotImplementedError

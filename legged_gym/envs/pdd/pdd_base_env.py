@@ -11,6 +11,14 @@ class PddBaseEnvironment(ParkourTask):
     def get_critic_observations(self):
         return self.critic_obs
 
+    def _init_robot_props(self):
+        super()._init_robot_props()
+        self.feet_indices = self.sim.create_indices(
+            self.sim.get_full_names(self.cfg.asset.foot_name, True), True)
+
+        self.knee_indices = self.sim.create_indices(
+            self.sim.get_full_names(self.cfg.asset.knee_name, True), True)
+
     def _init_buffers(self):
         super()._init_buffers()
 
@@ -24,12 +32,18 @@ class PddBaseEnvironment(ParkourTask):
         self.gait_start = self._zero_tensor(self.num_envs)
         self.ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
 
+        self.last_contacts = self._zero_tensor(self.num_envs, len(self.feet_indices), dtype=torch.bool)
+        self.last_feet_vel_xy = self._zero_tensor(self.num_envs, len(self.feet_indices), 2)
+
+        self.feet_height = self._zero_tensor(self.num_envs, len(self.feet_indices))
         self.feet_euler_xyz = self._zero_tensor(self.num_envs, len(self.feet_indices), 3)
 
     def _reset_idx(self, env_ids: torch.Tensor):
         super()._reset_idx(env_ids)
         self.phase_length_buf[env_ids] = 0.
         self.gait_start[env_ids] = 0.5 * torch.randint(0, 2, (len(env_ids),), device=self.device)
+
+        self.last_feet_vel_xy[env_ids] = 0.
         self.feet_euler_xyz[:] = quat_to_xyz(self.sim.link_quat)[:, self.feet_indices]
 
     def _refresh_variables(self):
@@ -50,6 +64,11 @@ class PddBaseEnvironment(ParkourTask):
         self.phase_length_buf[:] += self.dt
         self._update_phase()
 
+        # update feet height
+        feet_pos = self.sim.link_pos[:, self.feet_indices]
+        feet_z = feet_pos[:, :, 2] - 0.02
+        proj_ground_height = self._get_heights(feet_pos + self.cfg.terrain.border_size, use_guidance=self.cfg.rewards.use_guidance_terrain)
+        self.feet_height[:] = feet_z - proj_ground_height
         self.feet_euler_xyz[:] = quat_to_xyz(self.sim.link_quat[:, self.feet_indices])
 
     def _post_physics_post_step(self):
@@ -59,6 +78,7 @@ class PddBaseEnvironment(ParkourTask):
             self.phase_length_buf[self.is_zero_command] = 0.
 
         self.feet_air_time[:] *= ~(self.contact_filt | self.is_zero_command.unsqueeze(1))
+        self.last_feet_vel_xy[:] = self.sim.link_vel[:, self.feet_indices, :2]
 
     def _update_phase(self):
         """ return the phase value ranging from 0 to 1 """
@@ -116,55 +136,14 @@ class PddBaseEnvironment(ParkourTask):
 
         self.ref_dof_pos[:] += self.init_state_dof_pos
 
-    def draw_feet_hmap(self, estimation=None):
-        feet_pos = self.rigid_body_states[self.lookat_id, self.feet_indices, :3]
-
-        # compute points position
-        height_points = quat_apply_yaw(self.base_quat[self.lookat_id].repeat(self.feet_hmap_points.shape[1]),
-                                       self.feet_hmap_points[self.lookat_id])
-        height_points = height_points[None, :, :] + feet_pos[:, None, :]
-
-        # compute points height
-        if estimation is None:
-            hmap = self.get_feet_hmap()[self.lookat_id]
-        else:
-            hmap = estimation[self.lookat_id]
-        height_points[..., 2] = feet_pos[:, None, 2] - hmap.unflatten(0, (len(self.feet_indices), -1))
-
-        height_points = height_points.flatten(0, 1).cpu().numpy()
-        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(0, 1, 0))
-        for j in range(height_points.shape[0]):
-            x, y, z = height_points[j, 0], height_points[j, 1], height_points[j, 2] + 0.02
-            sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
-            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[self.lookat_id], sphere_pose)
-
-    def draw_body_hmap(self, estimation=None):
-        base_pos = self.root_states[self.lookat_id, :3]
-
-        # compute points position
-        height_points = quat_apply_yaw(self.base_quat[self.lookat_id].repeat(self.body_hmap_points.shape[1]),
-                                       self.body_hmap_points[self.lookat_id])
-        height_points[:, :2] += base_pos[None, :2]
-
-        # compute points height
-        hmap = self.get_body_hmap()[self.lookat_id]
-        height_points[..., 2] = base_pos[None, 2] - hmap
-
-        height_points = height_points.cpu().numpy()
-        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(0, 1, 0))
-        for j in range(height_points.shape[0]):
-            x, y, z = height_points[j, 0], height_points[j, 1], height_points[j, 2] + 0.02
-            sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
-            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[self.lookat_id], sphere_pose)
-
     # ================================================ Rewards ================================================== #
     def _reward_joint_pos(self):
         """
         Calculates the reward based on the difference between the current joint positions and the target joint positions.
         """
-        diff = self.dof_pos - torch.where(
+        diff = self.sim.dof_pos - torch.where(
             self.is_zero_command.unsqueeze(1),
-            self.default_dof_pos,
+            self.init_state_dof_pos,
             self.ref_dof_pos
         )
 
@@ -200,8 +179,8 @@ class PddBaseEnvironment(ParkourTask):
         and the speed of the feet. A contact threshold is used to determine if the foot is in contact
         with the ground. The speed of the foot is calculated and scaled by the contact conditions.
         """
-        contact = self.contact_forces[:, self.feet_indices, 2] > 5.
-        foot_speed_norm = torch.norm(self.rigid_body_states[:, self.feet_indices, 10:12], dim=2)
+        contact = self.sim.contact_forces[:, self.feet_indices, 2] > 5.
+        foot_speed_norm = torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2)
         rew = torch.sqrt(foot_speed_norm)
         rew *= contact
         return torch.sum(rew, dim=1)
@@ -210,7 +189,7 @@ class PddBaseEnvironment(ParkourTask):
         """
         Calculates the reward based on the distance between the feet. Penilize feet get close to each other or too far away.
         """
-        foot_pos = self.rigid_body_states[:, self.feet_indices, :2]
+        foot_pos = self.sim.link_pos[:, self.feet_indices, :2]
         foot_dist = torch.norm(foot_pos[:, 0, :] - foot_pos[:, 1, :], dim=1)
         fd = self.cfg.rewards.min_dist
         max_df = self.cfg.rewards.max_dist
@@ -222,7 +201,7 @@ class PddBaseEnvironment(ParkourTask):
         """
         Calculates the reward based on the distance between the knee of the humanoid.
         """
-        foot_pos = self.rigid_body_states[:, self.knee_indices, :2]
+        foot_pos = self.sim.link_pos[:, self.knee_indices, :2]
         foot_dist = torch.norm(foot_pos[:, 0, :] - foot_pos[:, 1, :], dim=1)
         fd = self.cfg.rewards.min_dist
         max_df = self.cfg.rewards.max_dist / 2
@@ -236,7 +215,7 @@ class PddBaseEnvironment(ParkourTask):
         high contact forces on the feet.
         """
         # print(self.contact_forces[:, self.feet_indices, :])
-        return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - self.cfg.rewards.max_contact_force).clip(0, 400), dim=1)
+        return torch.sum((torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1) - self.cfg.rewards.max_contact_force).clip(0, 400), dim=1)
 
     def _reward_tracking_lin_vel(self):
         """
@@ -369,7 +348,7 @@ class PddBaseEnvironment(ParkourTask):
         Calculates the reward for keeping joint positions close to default positions, with a focus
         on penalizing deviation in yaw and roll directions. Excludes yaw and roll from the main penalty.
         """
-        joint_diff = self.dof_pos - self.default_dof_pos
+        joint_diff = self.sim.dof_pos - self.init_state_dof_pos
         left_yaw_roll = joint_diff[:, :2]
         right_yaw_roll = joint_diff[:, 5:7]
         yaw_roll = torch.norm(left_yaw_roll, dim=1) + torch.norm(right_yaw_roll, dim=1)
@@ -381,7 +360,7 @@ class PddBaseEnvironment(ParkourTask):
         Calculates a reward based on the number of feet contacts aligning with the gait phase.
         Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
         """
-        contact = self.contact_forces[:, self.feet_indices, 2] > 5.
+        contact = self.sim.contact_forces[:, self.feet_indices, 2] > 5.
         stance_mask = self._get_stance_mask()
         reward = torch.where(contact == stance_mask, 1, -0.3)
         return torch.mean(reward, dim=1)
@@ -391,7 +370,7 @@ class PddBaseEnvironment(ParkourTask):
         Calculates the reward for maintaining a flat base orientation. It penalizes deviation
         from the desired base orientation using the base euler angles and the projected gravity vector.
         """
-        quat_mismatch = torch.exp(-torch.sum(torch.abs(self.base_euler_xyz[:, :2]), dim=1) * 10)
+        quat_mismatch = torch.exp(-torch.sum(torch.abs(self.base_euler[:, :2]), dim=1) * 10)
         orientation = torch.exp(-torch.norm(self.projected_gravity[:, :2], dim=1) * 20)
         return (quat_mismatch + orientation) / 2.
 
@@ -415,7 +394,7 @@ class PddBaseEnvironment(ParkourTask):
         Computes the reward based on the base's acceleration. Penalizes high accelerations of the robot's base,
         encouraging smoother motion.
         """
-        root_acc = self.last_root_vel - self.root_states[:, 7:13]
+        root_acc = self.last_root_vel - self.sim.root_lin_vel
         rew = torch.exp(-torch.norm(root_acc, dim=1) * 3)
         return rew
 
@@ -441,21 +420,21 @@ class PddBaseEnvironment(ParkourTask):
         Penalizes high velocities at the degrees of freedom (DOF) of the robot. This encourages smoother and
         more controlled movements.
         """
-        return torch.sum(torch.square(self.dof_vel), dim=1)
+        return torch.sum(torch.square(self.sim.dof_vel), dim=1)
 
     def _reward_dof_acc(self):
         """
         Penalizes high accelerations at the robot's degrees of freedom (DOF). This is important for ensuring
         smooth and stable motion, reducing wear on the robot's mechanical parts.
         """
-        return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
+        return torch.sum(torch.square((self.last_dof_vel - self.sim.dof_vel) / self.dt), dim=1)
 
     def _reward_collision(self):
         """
         Penalizes collisions of the robot with the environment, specifically focusing on selected body parts.
         This encourages the robot to avoid undesired contact with objects or surfaces.
         """
-        return torch.sum(1. * (torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
+        return torch.sum(1. * (torch.norm(self.sim.contact_forces[:, self.penalised_contact_indices], dim=-1) > 0.1), dim=1)
 
     def _reward_stand_still(self):
         # penalize motion at zero commands
@@ -463,7 +442,7 @@ class PddBaseEnvironment(ParkourTask):
         # not_being_pushed = torch.norm(self.ext_forces, dim=1) < 100
         # stand_command = torch.logical_and(stand_command, not_being_pushed)
         dof_idx = [0, 1, 2, 3, 5, 6, 7, 8]
-        dof_default_error = self.dof_pos[:, dof_idx] - self.default_dof_pos[:, dof_idx]
+        dof_default_error = self.sim.dof_pos[:, dof_idx] - self.init_state_dof_pos[:, dof_idx]
         ankle_dof_error = self.feet_euler_xyz[:, :, 1]
         rew = torch.exp(-dof_default_error.square().sum(dim=1) - ankle_dof_error.square().sum(dim=1))
         rew[self.is_zero_command] = 0
@@ -489,8 +468,8 @@ class PddBaseEnvironment(ParkourTask):
 
     def _reward_feet_stumble(self):
         # Penalize feet hitting vertical surfaces
-        return torch.any(torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) > \
-                         5 * torch.abs(self.contact_forces[:, self.feet_indices, 2]), dim=1)
+        return torch.any(torch.norm(self.sim.contact_forces[:, self.feet_indices, :2], dim=2) >
+                         5 * torch.abs(self.sim.contact_forces[:, self.feet_indices, 2]), dim=1)
 
     def _reward_dof_vel_limits(self):
         # Penalize dof velocities too close to the limit

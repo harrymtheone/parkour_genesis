@@ -11,7 +11,8 @@ from legged_gym.utils.math import (torch_rand_float,
                                    axis_angle_to_quat,
                                    quat_to_xyz,
                                    transform_quat_by_quat,
-                                   transform_by_quat, xyz_to_quat)
+                                   transform_by_quat,
+                                   xyz_to_quat)
 
 
 class BaseTask:
@@ -32,6 +33,8 @@ class BaseTask:
         # reset agents to initialize them
         self._reset_idx(torch.arange(self.num_envs, device=self.device))
         self._post_physics_step()
+
+        self.init_done = True
 
     # ------------------------------------------------- Interfaces -------------------------------------------------
 
@@ -82,6 +85,7 @@ class BaseTask:
 
         # allocate buffers
         self.actions = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
+        self.torques = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
         self.last_action_output = self._zero_tensor(self.num_envs, self.num_actions)  # network output
         self.forward_vec = torch.tensor([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
         self.actor_obs, self.critic_obs = None, None
@@ -204,9 +208,8 @@ class BaseTask:
                 self.action_delay_buf.step()
                 self.actions[:] = self.action_delay_buf.get()
 
-            # self.torques[:] = self._compute_torques()
-            torques = self._compute_torques()
-            self.sim.control_dof_torque(torques)
+            self.torques[:] = self._compute_torques()
+            self.sim.control_dof_torque(self.torques)
             self.sim.step_environment()
 
             if self.cfg.domain_rand.add_dof_lag:
@@ -261,7 +264,7 @@ class BaseTask:
         self._compute_observations()
         self._post_physics_post_step()
 
-        self._visualization()
+        self.render()
 
     def _refresh_variables(self):
         self.sim.refresh_variable()
@@ -273,10 +276,10 @@ class BaseTask:
         )
 
         # prepare quantities
-        self.base_euler[:] = torch.deg2rad(quat_to_xyz(transform_quat_by_quat(
+        self.base_euler[:] = quat_to_xyz(transform_quat_by_quat(
             self.sim.root_quat,
             inv_quat(self.init_state_quat.repeat(self.num_envs, 1))
-        )))
+        ))
         inv_quat_yaw = axis_angle_to_quat(
             -self.base_euler[:, 2],
             torch.tensor([0, 0, 1], device=self.device, dtype=torch.float)
@@ -313,16 +316,14 @@ class BaseTask:
         raise NotImplementedError
 
     def _update_command(self):
-        # resample command target
-        env_ids = self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt) == 0
-        self._resample_commands(torch.arange(self.num_envs, device=self.device)[env_ids])
+        raise NotImplementedError
 
     def _check_termination(self):
         """ Check if environments need to be reset
         """
         self.reset_buf[:] = torch.any(torch.norm(self.sim.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
-        roll_cutoff = torch.abs(self.base_euler[0]) > 0.6
-        pitch_cutoff = torch.abs(self.base_euler[1]) > 0.6
+        roll_cutoff = torch.abs(self.base_euler[:, 0]) > 0.6
+        pitch_cutoff = torch.abs(self.base_euler[:, 1]) > 0.6
         height_cutoff = self.sim.root_pos[:, 2] < -10
         self.time_out_cutoff[:] = self.episode_length_buf > self.max_episode_length  # no terminal reward for time-outs
 
@@ -341,8 +342,8 @@ class BaseTask:
         # raise NotImplementedError
         pass
 
-    def _visualization(self):
-        raise NotImplementedError
+    def render(self):
+        self.sim.render()
 
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. """
@@ -378,6 +379,7 @@ class BaseTask:
             return
 
         # reset robot states
+        self.sim.control_dof_torque(self.torques.zero_())
         self._reset_dof_state(env_ids)
         self._reset_root_state(env_ids)
         self._resample_commands(env_ids)

@@ -78,6 +78,12 @@ class TaskRegistry:
 
         if args.resumeid:
             resume_dir = os.path.join(log_root, args.proj_name, args.resumeid)
+        elif (args.resumeid is None) and train_cfg.runner.resume:
+            resume_dir = model_dir
+        else:
+            resume_dir = None
+
+        if resume_dir is not None:
             resume_path = get_load_path(resume_dir, checkpoint=args.checkpoint)
             runner.load(resume_path)
 

@@ -77,7 +77,7 @@ def quat_to_xyz(quat):
     siny_cosp = 2 * (qw * qz + qx * qy)
     cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
     yaw = torch.atan2(siny_cosp, cosy_cosp)
-    return torch.stack([roll, pitch, yaw], dim=-1) * 180.0 / torch.tensor(torch.pi)
+    return wrap_to_pi(torch.stack([roll, pitch, yaw], dim=-1))
 
 
 @torch.jit.script
