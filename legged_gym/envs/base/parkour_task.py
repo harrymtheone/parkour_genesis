@@ -272,10 +272,10 @@ class ParkourTask(BaseTask):
         )
 
     def _post_physics_post_step(self):
-        self.last_last_actions[:] = self.last_actions[:]
-        self.last_actions[:] = self.actions[:]
+        self.last_last_actions[:] = self.last_actions
+        self.last_actions[:] = self.actions
         self.last_dof_vel[:] = self.sim.dof_vel
-        self.last_torques[:] = self.torques[:]
+        self.last_torques[:] = self.torques
         self.last_root_vel[:] = self.sim.root_lin_vel
 
     def _update_goals(self):

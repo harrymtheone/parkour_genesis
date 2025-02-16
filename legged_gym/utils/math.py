@@ -90,15 +90,15 @@ def transform_by_quat(v, quat):
     return v + quat[:, 3:] * t + qvec.cross(t, dim=-1)
 
 
-# @torch.jit.script
+@torch.jit.script
 def transform_quat_by_quat(v, u):
     # type: (torch.Tensor, torch.Tensor) -> torch.Tensor
     assert v.shape == u.shape, f"{v.shape} != {u.shape}"
     shape = u.shape
     u = u.reshape(-1, 4)
     v = v.reshape(-1, 4)
-    x1, y1, z1, w1 = u[:, 0], u[:, 1], u[:, 2], u[:, 3]
-    x2, y2, z2, w2 = v[:, 0], v[:, 1], v[:, 2], v[:, 3]
+    x1, y1, z1, w1 = u.unbind(-1)
+    x2, y2, z2, w2 = v.unbind(-1)
     ww = (z1 + x1) * (x2 + y2)
     yy = (w1 - y1) * (w2 + z2)
     zz = (w1 + y1) * (w2 - z2)

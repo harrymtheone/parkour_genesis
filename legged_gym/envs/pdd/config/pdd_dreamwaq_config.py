@@ -62,8 +62,8 @@ class PddDreamWaqCfg(PddBaseCfg):
         randomize_start_vel = True
         randomize_start_pitch = True
 
-        randomize_start_dof_pos = True
-        randomize_start_dof_vel = True
+        randomize_start_dof_pos = False
+        randomize_start_dof_vel = False
 
     class rewards:
         base_height_target = 0.6
@@ -181,7 +181,7 @@ class PddDreamWaqDRCfg(PddDreamWaqCfg):
         switch = True
 
         push_robots = switch
-        action_delay = True
+        action_delay = False
         add_dof_lag = False
         add_imu_lag = False
 

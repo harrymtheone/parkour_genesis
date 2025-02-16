@@ -109,7 +109,7 @@ class BaseWrapper:
         raise NotImplementedError
 
     @property
-    def link_quat(self):
+    def link_quat(self):  # (x, y, z, w)
         raise NotImplementedError
 
     @property
@@ -170,4 +170,4 @@ class BaseWrapper:
                 self.restitution_coeffs = torch_rand_float(self.cfg.domain_rand.restitution_range[0],
                                                            self.cfg.domain_rand.restitution_range[1],
                                                            (self.num_envs, 1),
-                                                           device=self.device).repeat(1, self.num_bodies)
+                                                           device=self.device)

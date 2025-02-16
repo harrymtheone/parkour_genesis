@@ -276,10 +276,11 @@ class BaseTask:
         )
 
         # prepare quantities
-        self.base_euler[:] = quat_to_xyz(transform_quat_by_quat(
-            self.sim.root_quat,
-            inv_quat(self.init_state_quat.repeat(self.num_envs, 1))
-        ))
+        # self.base_euler[:] = quat_to_xyz(transform_quat_by_quat(
+        #     self.sim.root_quat,
+        #     inv_quat(self.init_state_quat.repeat(self.num_envs, 1))
+        # ))
+        self.base_euler[:] = quat_to_xyz(self.sim.root_quat)
         inv_quat_yaw = axis_angle_to_quat(
             -self.base_euler[:, 2],
             torch.tensor([0, 0, 1], device=self.device, dtype=torch.float)

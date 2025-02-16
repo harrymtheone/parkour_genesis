@@ -5,14 +5,12 @@ import time
 
 import numpy as np
 import torch
-import warp as wp
 from isaacgym import gymapi, gymutil, terrain_utils, gymtorch
 from tqdm import tqdm
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.simulator.base_wrapper import BaseWrapper, DriveMode
 from legged_gym.utils.helpers import class_to_dict
-from legged_gym.utils.math import torch_rand_float, transform_quat_by_quat
 from legged_gym.utils.terrain import Terrain
 
 
@@ -29,13 +27,14 @@ class IsaacGymWrapper(BaseWrapper):
         self.gym = gymapi.acquire_gym()
         self._create_sim()
         self._create_envs()
+        self.gym.prepare_sim(self.sim)
         self._init_buffers()
 
         if not self.headless:
             self.viewer = self.gym.create_viewer(self.sim, gymapi.CameraProperties())
 
             self.enable_viewer_sync = True
-            self.free_cam = True
+            self.free_cam = False
             self.lookat_vec = torch.Tensor([-0, 2, 1])
 
             # if self.cfg.play.control:
@@ -67,8 +66,24 @@ class IsaacGymWrapper(BaseWrapper):
         # initialize sim params
         sim_params = gymapi.SimParams()
         gymutil.parse_sim_config(class_to_dict(self.cfg.sim), sim_params)
-        sim_params.physx.use_gpu = sim_device == 'cuda'
         sim_params.use_gpu_pipeline = sim_device == 'cuda'
+        sim_params.physx.use_gpu = sim_device == 'cuda'
+
+        if self.cfg.asset.default_dof_drive_mode == 1:
+            self.drive_mode = DriveMode.pos_target
+            sim_params.dt = self.cfg.sim.dt * self.cfg.control.decimation
+            sim_params.substeps = self.cfg.control.decimation
+        elif self.cfg.asset.default_dof_drive_mode == 2:
+            self.drive_mode = DriveMode.vel_target
+            sim_params.dt = self.cfg.sim.dt * self.cfg.control.decimation
+            sim_params.substeps = self.cfg.control.decimation
+            raise ValueError("pos_vel drive mode not implemented yet!")
+        elif self.cfg.asset.default_dof_drive_mode == 3:
+            sim_params.dt = self.cfg.sim.dt
+            sim_params.substeps = 1
+            self.drive_mode = DriveMode.torque
+        else:
+            raise ValueError(f'Invalid drive mode value: {self.cfg.asset.default_dof_drive_mode}')
 
         self.sim = self.gym.create_sim(sim_device_id,
                                        graphics_device_id,
@@ -160,19 +175,6 @@ class IsaacGymWrapper(BaseWrapper):
         asset_root = os.path.dirname(asset_path)
         asset_file = os.path.basename(asset_path)
 
-        if self.cfg.asset.default_dof_drive_mode == 1:
-            assert self.cfg.sim.substeps > 1, 'You should set sim.substeps > 1 to use pos_target drive mode'
-            self.drive_mode = DriveMode.pos_target
-        elif self.cfg.asset.default_dof_drive_mode == 2:
-            assert self.cfg.sim.substeps > 1, 'You should set sim.substeps > 1 to use pos_vel drive mode'
-            self.drive_mode = DriveMode.vel_target
-            raise ValueError("pos_vel drive mode not implemented yet!")
-        elif self.cfg.asset.default_dof_drive_mode == 3:
-            assert self.cfg.sim.substeps == 1, 'You should set sim.substeps == 1 to use torque drive mode'
-            self.drive_mode = DriveMode.torque
-        else:
-            raise ValueError(f'Invalid drive mode value: {self.cfg.asset.default_dof_drive_mode}')  # TODO: this not finished yet!
-
         asset_options = gymapi.AssetOptions()
         asset_options.default_dof_drive_mode = self.cfg.asset.default_dof_drive_mode
         asset_options.collapse_fixed_joints = self.cfg.asset.collapse_fixed_joints
@@ -216,7 +218,7 @@ class IsaacGymWrapper(BaseWrapper):
             # this is just for env creation, set to different start positions to avoid PhyX buffer overflow(IsaacGym)
             start_pose = gymapi.Transform()
             start_pose.p = gymapi.Vec3(np.random.uniform(0, 100), np.random.uniform(0, 100), 0)
-            actor_handle = self.gym.create_actor(env_handle, robot_asset, gymapi.Transform(), "bridge", env_i, self.cfg.asset.self_collisions, 0)
+            actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, "bridge", env_i, self.cfg.asset.self_collisions, 0)
             self._actor_handles.append(actor_handle)
 
             # process dof properties
@@ -375,7 +377,7 @@ class IsaacGymWrapper(BaseWrapper):
     # ------------------------------------------------ Graphics ------------------------------------------------
 
     def render(self, sync_frame_time=True):
-        if not self.viewer:
+        if self.headless:
             return
 
         # check for window closed
