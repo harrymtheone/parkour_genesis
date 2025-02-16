@@ -79,6 +79,9 @@ class HistoryBuffer:
             torch.cat([self.buf[:, 1:], data.unsqueeze(1)], dim=1),
         )
 
+        # self.buf[reset].zero_()
+        # self.buf[:] = torch.cat([self.buf[:, 1:], data.unsqueeze(1)], dim=1)
+
     def get(self):
         return self.buf.clone()
 

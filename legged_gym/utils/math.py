@@ -120,7 +120,6 @@ def transform_by_yaw(v, yaw):
     )
     return transform_by_quat(v, quat_yaw)
 
-
 # def depth_to_point_cloud(depth: np.ndarray,
 #                          proj: np.matrix,
 #                          v_inv: np.matrix,

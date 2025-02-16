@@ -266,11 +266,6 @@ class ParkourTask(BaseTask):
             self.scan_hmap[:] = self.get_scan()
         self.base_height[:] = self.sim.root_pos[:, 2] - self.get_base_height_map().mean()
 
-        self.is_zero_command[:] = torch.logical_and(
-            torch.norm(self.commands[:, :2], dim=1) <= self.cfg.commands.lin_vel_clip,
-            torch.abs(self.commands[:, 2]) <= self.cfg.commands.ang_vel_clip
-        )
-
     def _post_physics_post_step(self):
         self.last_last_actions[:] = self.last_actions
         self.last_actions[:] = self.actions

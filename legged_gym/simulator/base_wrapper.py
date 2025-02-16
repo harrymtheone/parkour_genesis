@@ -21,18 +21,18 @@ class BaseWrapper:
         self.headless = args.headless
         self.num_envs = self.cfg.env.num_envs
 
-        self._body_names = None
-        self._dof_names = None
-        self.num_bodies = None
-        self.num_dof = None
+        self._body_names: list
+        self._dof_names: list
+        self.num_bodies: int
+        self.num_dof: int
 
-        self.drive_mode = DriveMode.none
-        self.dof_pos_limits = None
-        self.torque_limits = None
+        self.drive_mode: DriveMode
+        self.dof_pos_limits: torch.Tensor
+        self.torque_limits: torch.Tensor
 
-        self.height_samples = None
-        self.height_guidance = None
-        self.edge_mask = None
+        self.height_samples: torch.Tensor
+        self.height_guidance: torch.Tensor
+        self.edge_mask: torch.Tensor
 
         self.init_done = False
 

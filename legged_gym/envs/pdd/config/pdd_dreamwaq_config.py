@@ -180,7 +180,7 @@ class PddDreamWaqDRCfg(PddDreamWaqCfg):
     class domain_rand(PddDreamWaqCfg.domain_rand):
         switch = True
 
-        push_robots = switch
+        push_robots = False
         action_delay = False
         add_dof_lag = False
         add_imu_lag = False

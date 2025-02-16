@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 import torch
-from isaacgym import gymapi, gymutil, terrain_utils, gymtorch
+from isaacgym import gymapi, gymutil, gymtorch, terrain_utils
 from tqdm import tqdm
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
@@ -20,8 +20,6 @@ class IsaacGymWrapper(BaseWrapper):
         self.cfg = cfg
         self.debug = True
         self.init_done = False
-
-        self._parse_cfg(args)
 
         # create envs, sim and viewer
         self.gym = gymapi.acquire_gym()
@@ -47,9 +45,6 @@ class IsaacGymWrapper(BaseWrapper):
         self.init_done = True
 
     # ---------------------------------------------- Sim Creation ----------------------------------------------
-
-    def _parse_cfg(self, args):
-        self.dt = self.cfg.control.decimation * self.cfg.sim.dt
 
     def _create_sim(self):
         """ Creates simulation, terrain and evironments
@@ -308,10 +303,12 @@ class IsaacGymWrapper(BaseWrapper):
                                               len(env_ids_int32))
 
     def refresh_variable(self):
+        self.gym.refresh_dof_state_tensor(self.sim)
         self.gym.refresh_actor_root_state_tensor(self.sim)
-        self.gym.refresh_net_contact_force_tensor(self.sim)
         self.gym.refresh_rigid_body_state_tensor(self.sim)
+
         self.gym.refresh_force_sensor_tensor(self.sim)
+        self.gym.refresh_net_contact_force_tensor(self.sim)
 
     @property
     def root_pos(self):
@@ -365,7 +362,6 @@ class IsaacGymWrapper(BaseWrapper):
         self.gym.simulate(self.sim)
         self.gym.fetch_results(self.sim, True)
         self.gym.refresh_dof_state_tensor(self.sim)
-        self.gym.refresh_actor_root_state_tensor(self.sim)
 
     # def _control_dof_position(self, target_dof_pos):
     #     self.robot.control_dofs_position(target_dof_pos, self._dof_indices_local)

@@ -204,10 +204,10 @@ class PddBaseCfg(BaseConfig):
 
     class control:
         # PD Drive parameters:
-        stiffness = {'1_joint': 15, '2_joint': 5, '3_joint': 15, '4_joint': 25, '5_joint': 5}
-        damping = {'1_joint': 1.0, '2_joint': 0.5, '3_joint': 1.5, '4_joint': 2.5, '5_joint': 0.1}
-        # stiffness = {'1_joint': 30, '2_joint': 5, '3_joint': 15, '4_joint': 25, '5_joint': 5}
-        # damping = {'1_joint': 3.0, '2_joint': 0.5, '3_joint': 1.5, '4_joint': 2.5, '5_joint': 0.1}
+        # stiffness = {'1_joint': 15, '2_joint': 5, '3_joint': 15, '4_joint': 25, '5_joint': 5}
+        # damping = {'1_joint': 1.0, '2_joint': 0.5, '3_joint': 1.5, '4_joint': 2.5, '5_joint': 0.1}
+        stiffness = {'1_joint': 30, '2_joint': 5, '3_joint': 15, '4_joint': 25, '5_joint': 5}
+        damping = {'1_joint': 3.0, '2_joint': 0.5, '3_joint': 1.5, '4_joint': 2.5, '5_joint': 0.1}
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT

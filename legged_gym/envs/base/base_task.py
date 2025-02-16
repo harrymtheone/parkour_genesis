@@ -6,13 +6,8 @@ import warp as wp
 from legged_gym.envs.base.utils import DelayBuffer
 from legged_gym.simulator import get_simulator
 from legged_gym.utils.helpers import class_to_dict
-from legged_gym.utils.math import (torch_rand_float,
-                                   inv_quat,
-                                   axis_angle_to_quat,
-                                   quat_to_xyz,
-                                   transform_quat_by_quat,
-                                   transform_by_quat,
-                                   xyz_to_quat)
+from legged_gym.utils.joystick import JoystickHandler, KeyboardHandler
+from legged_gym.utils.math import torch_rand_float, inv_quat, axis_angle_to_quat, quat_to_xyz, transform_quat_by_quat, transform_by_quat, xyz_to_quat
 
 
 class BaseTask:
@@ -23,6 +18,8 @@ class BaseTask:
 
         # prepare simulator
         simulator_class = get_simulator(args.simulator)
+        # from legged_gym.simulator.genesis_wrapper import GenesisWrapper
+        # self.sim: GenesisWrapper = simulator_class(cfg, args)
         self.sim = simulator_class(cfg, args)
 
         self._parse_cfg(args)
@@ -85,7 +82,6 @@ class BaseTask:
 
         # allocate buffers
         self.actions = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
-        self.torques = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
         self.last_action_output = self._zero_tensor(self.num_envs, self.num_actions)  # network output
         self.forward_vec = torch.tensor([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
         self.actor_obs, self.critic_obs = None, None
@@ -123,7 +119,8 @@ class BaseTask:
         self.extras = {}
 
         self.lookat_id = 0
-        self.input_handler = None
+        if not self.sim.headless and self.cfg.play.control:
+            self.input_handler = JoystickHandler(self) if self.cfg.play.use_joystick else KeyboardHandler(self)
 
     # ---------------------------------------------- Robots Creation ----------------------------------------------
 
@@ -208,18 +205,16 @@ class BaseTask:
                 self.action_delay_buf.step()
                 self.actions[:] = self.action_delay_buf.get()
 
-            self.torques[:] = self._compute_torques()
-            self.sim.control_dof_torque(self.torques)
+            torques = self._compute_torques()
+            self.sim.control_dof_torque(torques)
             self.sim.step_environment()
 
             if self.cfg.domain_rand.add_dof_lag:
-                a = torch.stack([self.sim.dof_pos, self.sim.dof_vel], dim=2)
-                self.dof_lag_buf.append(a)
+                self.dof_lag_buf.append(torch.stack([self.sim.dof_pos, self.sim.dof_vel], dim=2))
                 self.dof_lag_buf.step()
 
             if self.cfg.domain_rand.add_imu_lag:
-                b = torch.stack([self.sim.root_quat, self.sim.root_ang_vel], dim=2)
-                self.imu_lag_buf.append(b)
+                self.imu_lag_buf.append(torch.stack([self.sim.root_quat, self.sim.root_ang_vel], dim=2))
                 self.imu_lag_buf.step()
 
         self._post_physics_step()
@@ -251,11 +246,12 @@ class BaseTask:
 
     def _post_physics_step(self):
         self._refresh_variables()
+        self._post_physics_pre_step()
 
         # compute observations, rewards, resets, ...
         if self.init_done:
-            self._check_termination()
             self._compute_reward()
+            self._check_termination()
             self._reset_idx(self.reset_buf.nonzero(as_tuple=False).flatten())
             self._refresh_variables()
 
@@ -269,7 +265,6 @@ class BaseTask:
     def _refresh_variables(self):
         self.sim.refresh_variable()
 
-        self.episode_length_buf[:] += 1
         self.is_zero_command[:] = torch.logical_and(
             torch.norm(self.commands[:, :2], dim=1) <= self.cfg.commands.lin_vel_clip,
             torch.abs(self.commands[:, 2]) <= self.cfg.commands.ang_vel_clip
@@ -288,13 +283,17 @@ class BaseTask:
         inv_base_quat = inv_quat(self.sim.root_quat)
         self.base_lin_vel[:] = transform_by_quat(self.sim.root_lin_vel, inv_quat_yaw)
         self.base_ang_vel[:] = transform_by_quat(self.sim.root_ang_vel, inv_base_quat)
-        self.projected_gravity = transform_by_quat(self.gravity_vec, inv_base_quat)
+        self.projected_gravity[:] = transform_by_quat(self.gravity_vec, inv_base_quat)
+
+    def _post_physics_pre_step(self):
+        self.episode_length_buf[:] += 1
 
     def _post_physics_mid_step(self):
         if self.cfg.play.control:
             # overwrite commands
             self.commands.zero_()
             self.commands[self.lookat_id, :3] = torch.Tensor(self.input_handler.get_control_input())
+            print(self.input_handler.get_control_input())
         else:
             self._update_command()
 
@@ -346,6 +345,9 @@ class BaseTask:
     def render(self):
         self.sim.render()
 
+        if not self.sim.headless and self.cfg.play.control:
+            self.input_handler.handle_device_input()
+
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. """
         apply_force = self._zero_tensor((self.num_envs, self.sim.num_bodies, 3))
@@ -380,7 +382,7 @@ class BaseTask:
             return
 
         # reset robot states
-        self.sim.control_dof_torque(self.torques.zero_())
+        self.sim.control_dof_torque(self._zero_tensor(self.num_envs, self.num_dof))
         self._reset_dof_state(env_ids)
         self._reset_root_state(env_ids)
         self._resample_commands(env_ids)

@@ -17,8 +17,6 @@ class GenesisWrapper(BaseWrapper):
         self.debug = True
         self.init_done = False
 
-        self._parse_cfg(args)
-
         # create envs, sim and viewer
         gs.init(backend=gs.gpu if self.device.type == 'cuda' else gs.cpu, logging_level='info')
 
@@ -61,12 +59,6 @@ class GenesisWrapper(BaseWrapper):
         # self.lookat_id = 0
 
     # ---------------------------------------------- Sim Creation ----------------------------------------------
-    def _parse_cfg(self, args):
-        self.device = torch.device(args.device)
-
-        self.num_envs = self.cfg.env.num_envs
-
-        self.dt = self.cfg.control.decimation * self.cfg.sim.dt
 
     def _create_scene(self, n_rendered_envs):
         """ Creates simulation, terrain and environments
@@ -269,6 +261,7 @@ class GenesisWrapper(BaseWrapper):
 
     def set_root_state(self, env_ids, pos, quat, lin_vel, ang_vel):
         self._robot.set_pos(pos, zero_velocity=True, envs_idx=env_ids)
+        quat = quat[..., [3, 0, 1, 2]]  # [x, y, z, w] -> [w, x, y, z]
         self._robot.set_quat(quat, zero_velocity=True, envs_idx=env_ids)
 
         if not (self.suppress_warning or (lin_vel is None and ang_vel is None)):
@@ -297,8 +290,7 @@ class GenesisWrapper(BaseWrapper):
 
     @property
     def root_quat(self):
-        quat = self._robot.get_quat()  # (w, x, y, z)
-        return torch.cat([quat[:, 1:], quat[:, :1]], dim=1)
+        return self._robot.get_quat()[..., [1, 2, 3, 0]]  # (w, x, y, z) -> (x, y, z, w)
 
     @property
     def root_lin_vel(self):
@@ -326,8 +318,7 @@ class GenesisWrapper(BaseWrapper):
 
     @property
     def link_quat(self):
-        quat = self._robot.get_links_quat()  # (w, x, y, z)
-        return torch.cat([quat[:, 1:], quat[:, :1]], dim=1)
+        return self._robot.get_links_quat()[..., [1, 2, 3, 0]]  # (w, x, y, z) -> (x, y, z, w)
 
     @property
     def link_vel(self):

@@ -5,13 +5,12 @@ except ImportError:
 
 import time
 
-import numpy as np
 from rich.live import Live
-from rich.table import Table
 
 from legged_gym.simulator import SimulatorType
 from legged_gym.utils.helpers import get_args
 from legged_gym.utils.task_registry import TaskRegistry
+from vis import gen_info_panel
 
 slowmo = 1
 
@@ -19,20 +18,16 @@ slowmo = 1
 def play(args):
     args.proj_name = 'parkour_genesis'
     log_root = 'logs'
-    # args.simulator = SimulatorType.Genesis
-    args.simulator = SimulatorType.IsaacGym
+    args.simulator = SimulatorType.Genesis
+    # args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
-
-    # rtv = RealTimeVisualizer(3, 1, (-30.0, 30.0))
-    # rtv = RealTimeVisualizer(2, 2, (-1., 1.0))
-    # rtv = RealTimeVisualizer(6, 2, (-2.5, 2.))
 
     task_registry = TaskRegistry()
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
 
     # override some parameters for testing
-    env_cfg.play.control = False
+    env_cfg.play.control = True
     env_cfg.play.use_joystick = True
     env_cfg.env.num_envs = 1
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
@@ -81,6 +76,8 @@ def play(args):
     cur_reward_sum = torch.zeros(env_cfg.env.num_envs, dtype=torch.float, device=args.device)
     mean_env_reward = torch.zeros(env_cfg.env.num_envs, dtype=torch.float, device=args.device)
 
+    # visualizer = RqtVisualizer()
+
     with Live(gen_info_panel(args, env), refresh_per_second=60) as live:
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
@@ -106,7 +103,7 @@ def play(args):
             # env.draw_height_samples(scan - recon_refine - 1.0, world_frame=False)
 
             # # for testing reference motion
-            # actions[env.lookat_id] = (env.ref_dof_pos - env.default_dof_pos_all)[env.lookat_id]
+            # actions[env.lookat_id] = (env.ref_dof_pos - env.init_state_dof_pos)[env.lookat_id]
             # actions[env.lookat_id] /= env.cfg.control.action_scale
 
             obs, _, rewards, dones, _ = env.step(actions)
@@ -126,6 +123,12 @@ def play(args):
 
             live.update(gen_info_panel(args, env))
 
+            # visualizer.update({
+            #     'action_0': actions[0, 0].item()
+            # })
+
+            # rtv.update([*actions[0]])
+            # rtv.update([*env.sim.dof_pos[0]])
             # rtv.update([env.rew_buf[env.lookat_id] / env.dt, value[env.lookat_id, 0]])
             # rtv.update([*env.dof_vel[env.lookat_id, 3:6].cpu().numpy()])
             # rtv.update([*env.commands[0]])
@@ -133,54 +136,6 @@ def play(args):
 
             while time.time() - time_start < env.dt * slowmo:
                 env.render()
-
-
-def gen_info_panel(args, env):
-    cmd_vx, cmd_vy, cmd_yaw, _ = env.commands[env.lookat_id].cpu().numpy()
-    real_vx, real_vy, _ = env.base_lin_vel[env.lookat_id].cpu().numpy()
-    _, _, real_yaw = env.base_ang_vel[env.lookat_id].cpu().numpy()
-    real_base_height = env.base_height[env.lookat_id].cpu().numpy()
-
-    if args.headless:
-        perc_contact_forces = torch.mean(env.contact_forces_avg, dim=0).cpu().numpy()
-        perc_feet_air_time = torch.mean(env.feet_air_time_avg, dim=0).cpu().numpy()
-    else:
-        perc_contact_forces = env.contact_forces_avg[env.lookat_id].cpu().numpy()
-        perc_feet_air_time = env.feet_air_time_avg[env.lookat_id].cpu().numpy()
-
-    perc_feet_air_time = perc_feet_air_time / np.sum(perc_feet_air_time + 1e-5)
-    # print(f'env level: {env.env_levels[env.lookat_id].cpu().numpy()}')
-
-    table11 = Table()
-    table11.add_column(f'time: {env.episode_length_buf[env.lookat_id].item() / 50:.2f}')
-    table11.add_column("vx")
-    table11.add_column("vy")
-    table11.add_column("yaw")
-    table11.add_row("cmd", f'{cmd_vx: .2f}', f'{cmd_vy: .2f}', f'{cmd_yaw: .2f}')
-    table11.add_row("real", f'{real_vx: .2f}', f'{real_vy: .2f}', f'{real_yaw: .2f}')
-
-    table12 = Table()
-    table12.add_column("target_yaw")
-    table12.add_column("base_height")
-    table12.add_row(f'{env.target_yaw[env.lookat_id]: .2f}', f'{real_base_height: .2f}')
-
-    table21 = Table()
-    table21.add_column("")
-    table21.add_column("Left")
-    table21.add_column("Right")
-    table21.add_row("Contact forces", f'{perc_contact_forces[0]: .2f}', f'{perc_contact_forces[1]: .2f}')
-
-    table22 = Table()
-    table22.add_column("")
-    table22.add_column("Left")
-    table22.add_column("Right")
-    table22.add_row("Feet air time", f'{perc_feet_air_time[0]: .2f}', f'{perc_feet_air_time[1]: .2f}')
-
-    grid = Table.grid()
-    grid.add_row(table11, table12)
-    grid.add_row(table21, table22)
-
-    return grid
 
 
 if __name__ == '__main__':

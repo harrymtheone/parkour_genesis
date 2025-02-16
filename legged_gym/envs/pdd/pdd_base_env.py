@@ -51,7 +51,16 @@ class PddBaseEnvironment(ParkourTask):
 
         contact = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1) > 2.
         self.contact_filt[:] = contact | self.last_contacts | self._get_stance_mask()
-        self.last_contacts[:] = contact
+
+        # update feet height
+        feet_pos = self.sim.link_pos[:, self.feet_indices]
+        feet_z = feet_pos[:, :, 2] - 0.02
+        proj_ground_height = self._get_heights(feet_pos + self.cfg.terrain.border_size, use_guidance=self.cfg.rewards.use_guidance_terrain)
+        self.feet_height[:] = feet_z - proj_ground_height
+        self.feet_euler_xyz[:] = quat_to_xyz(self.sim.link_quat[:, self.feet_indices])
+
+    def _post_physics_pre_step(self):
+        super()._post_physics_pre_step()
 
         alpha = self.cfg.rewards.EMA_update_alpha
         self.contact_forces_avg[self.contact_filt] = alpha * self.contact_forces_avg[self.contact_filt]
@@ -64,13 +73,6 @@ class PddBaseEnvironment(ParkourTask):
         self.phase_length_buf[:] += self.dt
         self._update_phase()
 
-        # update feet height
-        feet_pos = self.sim.link_pos[:, self.feet_indices]
-        feet_z = feet_pos[:, :, 2] - 0.02
-        proj_ground_height = self._get_heights(feet_pos + self.cfg.terrain.border_size, use_guidance=self.cfg.rewards.use_guidance_terrain)
-        self.feet_height[:] = feet_z - proj_ground_height
-        self.feet_euler_xyz[:] = quat_to_xyz(self.sim.link_quat[:, self.feet_indices])
-
     def _post_physics_post_step(self):
         super()._post_physics_post_step()
 
@@ -79,6 +81,7 @@ class PddBaseEnvironment(ParkourTask):
 
         self.feet_air_time[:] *= ~(self.contact_filt | self.is_zero_command.unsqueeze(1))
         self.last_feet_vel_xy[:] = self.sim.link_vel[:, self.feet_indices, :2]
+        self.last_contacts[:] = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1) > 2.
 
     def _update_phase(self):
         """ return the phase value ranging from 0 to 1 """
