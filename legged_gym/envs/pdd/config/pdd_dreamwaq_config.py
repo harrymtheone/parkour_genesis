@@ -68,7 +68,7 @@ class PddDreamWaqCfg(PddBaseCfg):
     class rewards:
         base_height_target = 0.6
         feet_height_target = 0.04
-        feet_height_target_max = 0.07
+        feet_height_target_max = 0.05
         use_guidance_terrain = True
         only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 5
@@ -85,36 +85,39 @@ class PddDreamWaqCfg(PddBaseCfg):
         rew_norm_factor = 1.0
 
         class scales:
-            joint_pos = 2.0
-            feet_clearance = 0.2
-            feet_contact_number = 1.6
             # gait
+            joint_pos = 2.
+            feet_contact_number = 1.2
+            feet_clearance = 1.2  # 0.2
             feet_air_time = 1.
-            foot_slip = -0.05
+            foot_slip = -1.
             feet_distance = 0.2
             knee_distance = 0.2
-            # feet_rotation = 0.3
+            feet_rotation = 0.3
+
             # contact
             feet_contact_forces = -0.1
+
             # vel tracking
-            tracking_lin_vel = 1.6
+            tracking_lin_vel = 1.2
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
             low_speed = 0.2
             track_vel_hard = 0.5
+
             # base pos
             default_joint_pos = 0.5
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
+
             # energy
             action_smoothness = -0.003
-            torques = -2e-7
-            dof_vel = -2e-4
-            dof_acc = -5e-8
+            torques = -1e-5
+            dof_vel = -5e-4
+            dof_acc = -1e-7
             collision = -1.
-            stand_still = 2.0
-            # feet_rotation = 0.3
+            # stand_still = 2.0
 
 
 class PddDreamWaqCfgPPO(PddBaseCfgPPO):
@@ -180,21 +183,20 @@ class PddDreamWaqDRCfg(PddDreamWaqCfg):
     class domain_rand(PddDreamWaqCfg.domain_rand):
         switch = True
 
-        push_robots = False
-        action_delay = False
+        push_robots = switch
+        action_delay = switch
         add_dof_lag = False
         add_imu_lag = False
 
-        randomize_base_mass = switch
-        randomize_link_mass = switch
-        randomize_com = switch
         randomize_friction = switch
+
+        randomize_joint_stiffness = False  # for joints with spring behavior
+        randomize_joint_damping = False
+        randomize_joint_friction = False
+        randomize_joint_armature = switch
         randomize_coulomb_friction = False
-        randomize_torque = switch
-        randomize_motor_offset = switch
-        randomize_gains = switch
 
 
 class PddDreamWaqDRCfgPPO(PddDreamWaqCfgPPO):
     class runner(PddDreamWaqCfgPPO.runner):
-        max_iterations = 10000  # number of policy updates
+        max_iterations = 50000  # number of policy updates

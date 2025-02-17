@@ -63,6 +63,8 @@ class GenesisWrapper(BaseWrapper):
     def _create_scene(self, n_rendered_envs):
         """ Creates simulation, terrain and environments
         """
+
+        # compute dt and substeps based on drive mode
         if self.cfg.asset.default_dof_drive_mode == 1:
             self.drive_mode = DriveMode.pos_target
             dt = self.cfg.sim.dt * self.cfg.control.decimation
@@ -91,6 +93,8 @@ class GenesisWrapper(BaseWrapper):
         )
 
         rigid_options = gs.options.RigidOptions(
+            batch_links_info=True,
+            batch_dofs_info=True,
             enable_collision=True,
             enable_joint_limit=True,
             enable_self_collision=True,
@@ -222,6 +226,21 @@ class GenesisWrapper(BaseWrapper):
         self.dof_pos_limits = torch.stack(self._robot.get_dofs_limit(self._dof_indices), dim=1)
         self.torque_limits = self._robot.get_dofs_force_range(self._dof_indices)[1]
 
+        # set joint stiffness
+        joint_stiffness = self.cfg.asset.stiffness + self._zero_tensor(self.num_envs, self.num_dof)
+        self._robot.set_dofs_stiffness(joint_stiffness, self._dof_indices)
+
+        # set joint damping
+        joint_damping = self.cfg.asset.angular_damping + self._zero_tensor(self.num_envs, self.num_dof)
+        self._robot.set_dofs_damping(joint_damping, self._dof_indices)
+
+        # set joint armature
+        joint_armature = self.cfg.asset.armature + self._zero_tensor(self.num_envs, self.num_dof)
+        self._robot.set_dofs_armature(joint_armature, self._dof_indices)
+
+        if self.cfg.asset.friction > 0 and not self.suppress_warning:
+            print(f"[bold red]⚠️ genesis has no joint friction?! [/bold red]")
+
     def create_indices(self, names, is_link):
         indices = self._zero_tensor(len(names), dtype=torch.long)
 
@@ -255,7 +274,7 @@ class GenesisWrapper(BaseWrapper):
             self._robot.set_friction_ratio(self.friction_coeffs.repeat(1, self.num_bodies), self._body_indices.clone(), env_ids)
 
             if not self.suppress_warning:
-                print(f"[bold red]⚠️ Restitution is not supported by Genesis currently?![/bold red]")  # Rich formatting
+                print(f"[bold red]⚠️ Restitution is not supported by Genesis currently?![/bold red]")
 
     # ---------------------------------------------- IO Interface ----------------------------------------------
 
@@ -268,7 +287,7 @@ class GenesisWrapper(BaseWrapper):
         self._robot.set_quat(quat, zero_velocity=True, envs_idx=env_ids)
 
         if not (self.suppress_warning or (lin_vel is None and ang_vel is None)):
-            print(f"[bold red]⚠️ Setting base lin_vel and ang_vel is not supported by Genesis currently![/bold red]")  # Rich formatting
+            print(f"[bold red]⚠️ Setting base lin_vel and ang_vel is not supported by Genesis currently! [/bold red]")
 
     def set_dof_state(self, env_ids, dof_pos, dof_vel):
         self._robot.set_dofs_position(
@@ -284,14 +303,10 @@ class GenesisWrapper(BaseWrapper):
             envs_idx=env_ids,
         )
 
-    def set_kp(self, kp, env_ids=None):
-        if env_ids is None:
-            env_ids = torch.arange(self.num_envs, device=self.device)
+    def set_dof_kp(self, kp, env_ids=None):
         self._robot.set_dofs_kp(kp, self._dof_indices, env_ids)
 
-    def set_kd(self, kd, env_ids=None):
-        if env_ids is None:
-            env_ids = torch.arange(self.num_envs, device=self.device)
+    def set_dof_kv(self, kd, env_ids=None):
         self._robot.set_dofs_kv(kd, self._dof_indices, env_ids)
 
     @property
@@ -338,7 +353,7 @@ class GenesisWrapper(BaseWrapper):
 
     def apply_perturbation(self, force, torque):
         if not self.suppress_warning:
-            print(f"[bold red]⚠️ Apply external force is not implemented yet! [/bold red]")  # Rich formatting
+            print(f"[bold red]⚠️ Apply external force is not implemented yet! [/bold red]")
 
     def control_dof_torque(self, torques):
         self._robot.control_dofs_force(torques, self._dof_indices)

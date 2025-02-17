@@ -48,10 +48,12 @@ class BaseWrapper:
     def set_dof_state(self, env_ids, dof_pos, dof_vel):
         raise NotImplementedError
 
-    def set_kp(self, kp, env_ids=None):
+    def set_dof_kp(self, kp, env_ids=None):
+        # Only used when you use pos_target drive mode
         raise NotImplementedError
 
-    def set_kd(self, kp, env_ids=None):
+    def set_dof_kv(self, kp, env_ids=None):
+        # Only used when you use pos_target drive mode
         raise NotImplementedError
 
     def apply_perturbation(self, force, torque):

@@ -123,7 +123,7 @@ class PddBaseCfg(BaseConfig):
         randomize_start_y = False
         randomize_start_y_range = 0.1  # (0, 0.05)
         randomize_start_pitch = False
-        randomize_start_pitch_range = 0.09  # 5 degree
+        randomize_start_pitch_range = 0.1  # 5 degree
 
         randomize_start_dof_pos = False
         randomize_start_dof_pos_range = 0.15
@@ -136,7 +136,7 @@ class PddBaseCfg(BaseConfig):
                           (-5, 5))
         push_torque_max = (-0, 0)
         push_interval_s = 6
-        push_duration = [0.05, 0.1, 0.15]
+        push_duration = [0., 0.05, 0.1, 0.15]
         push_duration_update_steps = 1000 * 24
 
         action_delay = False
@@ -168,12 +168,18 @@ class PddBaseCfg(BaseConfig):
         friction_range = [0.2, 1.3]
         restitution_range = [0.0, 0.4]
 
+        randomize_joint_friction = False
+        joint_friction_multiplier_range = [0.01, 1.15]
+
+        randomize_joint_damping = False
+        joint_damping_multiplier_range = [0.3, 1.5]
+
+        randomize_joint_armature = False
+        joint_armature_range = [0.0001, 0.05]
+
         randomize_coulomb_friction = False
         joint_coulomb_range = [0.1, 1.0]
         joint_viscous_range = [0.1, 0.9]
-
-        randomize_torque = False
-        torque_multiplier_range = [0.8, 1.2]
 
         randomize_motor_offset = False
         motor_offset_range = [-0.035, 0.035]  # Offset to add to the motor angles
@@ -181,6 +187,9 @@ class PddBaseCfg(BaseConfig):
         randomize_gains = False
         stiffness_multiplier_range = [0.8, 1.2]  # Factor
         damping_multiplier_range = [0.8, 1.2]  # Factor
+
+        randomize_torque = False
+        torque_multiplier_range = [0.8, 1.2]
 
     class init_state:
         pos = [0.0, 0.0, 0.7]
@@ -235,11 +244,13 @@ class PddBaseCfg(BaseConfig):
         flip_visual_attachments = False  # Some .obj meshes must be flipped from y-up to z-up
 
         density = 0.001
-        angular_damping = 0.
-        linear_damping = 0.
+        stiffness = 0.  # joint props
+        angular_damping = 0.  # joint props
+        linear_damping = 0.  # joint props
+        friction = 0.  # joint props
+        armature = 0.1  # joint props
         max_angular_velocity = 1000.
         max_linear_velocity = 1000.
-        armature = 0.1
         thickness = 0.01
 
     class viewer:

@@ -157,8 +157,8 @@ class BaseTask:
 
         # joint positions offsets and PD gains
         self.init_state_dof_pos = self._zero_tensor(1, self.num_dof)
-        self.p_gains = self._zero_tensor(self.num_dof)
-        self.d_gains = self._zero_tensor(self.num_dof)
+        self.p_gains = self._zero_tensor(1, self.num_dof)
+        self.d_gains = self._zero_tensor(1, self.num_dof)
 
         for i, dof_name in enumerate(self.sim.dof_names):
             self.init_state_dof_pos[0, i] = self.cfg.init_state.default_joint_angles[dof_name]
@@ -166,12 +166,17 @@ class BaseTask:
 
             for key in self.cfg.control.stiffness.keys():
                 if key in dof_name:
-                    self.p_gains[i] = self.cfg.control.stiffness[key]
-                    self.d_gains[i] = self.cfg.control.damping[key]
+                    self.p_gains[0, i] = self.cfg.control.stiffness[key]
+                    self.d_gains[0, i] = self.cfg.control.damping[key]
                     found = True
 
             if not found:
                 raise ValueError(f"PD gain of joint {dof_name} were not defined")
+
+        # set the kp and kd value for simulator built-in PD controller
+        if self.sim.drive_mode is not DriveMode.torque:
+            self.sim.set_dof_kp(self.p_gains.repeat(self.num_envs, 1))
+            self.sim.set_dof_kv(self.d_gains.repeat(self.num_envs, 1))
 
         # initialize env reset origin and goals
         self._get_env_origins()
@@ -519,9 +524,9 @@ class BaseTask:
                                                                       (len(env_ids), self.num_dof),
                                                                       device=self.device)
 
-        if self.sim.drive_mode is not DriveMode.torque:
-            self.sim.set_kp(self.p_gain_multiplier[env_ids][0] * self.p_gains)
-            self.sim.set_kd(self.d_gain_multiplier[env_ids][0] * self.d_gains)
+        if (self.sim.drive_mode is not DriveMode.torque) and self.cfg.domain_rand.randomize_gains:
+            self.sim.set_dof_kp(self.p_gain_multiplier[env_ids] * self.p_gains, env_ids)
+            self.sim.set_dof_kv(self.d_gain_multiplier[env_ids] * self.d_gains, env_ids)
 
     # ---------------------------------------------- Reward ----------------------------------------------
 

@@ -13,7 +13,7 @@ from legged_gym.utils.task_registry import TaskRegistry
 
 def train(args):
     args.proj_name = 'parkour_genesis'
-    args.headless = True
+    args.headless = False
     args.simulator = SimulatorType.Genesis
     # args.simulator = SimulatorType.IsaacGym
 

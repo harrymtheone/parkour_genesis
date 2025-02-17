@@ -240,6 +240,11 @@ class IsaacGymWrapper(BaseWrapper):
             self.dof_pos_limits[i, 1] = props["upper"][i].item()
             self.torque_limits[i] = props["effort"][i].item()
 
+            props["stiffness"][i] = self.cfg.asset.stiffness
+            props["damping"][i] = self.cfg.asset.angular_damping
+            props["friction"][i] = self.cfg.asset.friction
+            props["armature"][i] = self.cfg.asset.armature
+
     def _process_rigid_body_props(self, props, env_id):
         # randomize base mass
         if self.cfg.domain_rand.randomize_base_mass:
