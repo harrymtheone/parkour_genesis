@@ -266,10 +266,10 @@ class IsaacGymWrapper(BaseWrapper):
         return indices
 
     def _init_buffers(self):
-        self.gym.refresh_dof_state_tensor(self.sim)
         self.gym.refresh_actor_root_state_tensor(self.sim)
-        self.gym.refresh_net_contact_force_tensor(self.sim)
+        self.gym.refresh_dof_state_tensor(self.sim)
         self.gym.refresh_rigid_body_state_tensor(self.sim)
+        self.gym.refresh_net_contact_force_tensor(self.sim)
         self.gym.refresh_force_sensor_tensor(self.sim)
 
         self._root_state = gymtorch.wrap_tensor(self.gym.acquire_actor_root_state_tensor(self.sim))  # in world frame
@@ -303,9 +303,9 @@ class IsaacGymWrapper(BaseWrapper):
                                               len(env_ids_int32))
 
     def refresh_variable(self):
+        self.gym.refresh_rigid_body_state_tensor(self.sim)
         self.gym.refresh_dof_state_tensor(self.sim)
         self.gym.refresh_actor_root_state_tensor(self.sim)
-        self.gym.refresh_rigid_body_state_tensor(self.sim)
 
         self.gym.refresh_force_sensor_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)

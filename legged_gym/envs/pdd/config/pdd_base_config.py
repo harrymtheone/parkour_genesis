@@ -204,10 +204,10 @@ class PddBaseCfg(BaseConfig):
 
     class control:
         # PD Drive parameters:
-        # stiffness = {'1_joint': 15, '2_joint': 5, '3_joint': 15, '4_joint': 25, '5_joint': 5}
-        # damping = {'1_joint': 1.0, '2_joint': 0.5, '3_joint': 1.5, '4_joint': 2.5, '5_joint': 0.1}
-        stiffness = {'1_joint': 30, '2_joint': 5, '3_joint': 15, '4_joint': 25, '5_joint': 5}
-        damping = {'1_joint': 3.0, '2_joint': 0.5, '3_joint': 1.5, '4_joint': 2.5, '5_joint': 0.1}
+        stiffness = {'1_joint': 15, '2_joint': 5, '3_joint': 15, '4_joint': 25, '5_joint': 5}
+        damping = {'1_joint': 1.0, '2_joint': 0.5, '3_joint': 1.5, '4_joint': 2.5, '5_joint': 0.1}
+        # stiffness = {'1_joint': 30, '2_joint': 5, '3_joint': 15, '4_joint': 25, '5_joint': 5}
+        # damping = {'1_joint': 3.0, '2_joint': 0.5, '3_joint': 1.5, '4_joint': 2.5, '5_joint': 0.1}
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
@@ -229,6 +229,7 @@ class PddBaseCfg(BaseConfig):
         links_to_keep = ['']
         fix_base_link = False  # fixe the base of the robot
         default_dof_drive_mode = 3  # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
+        # default_dof_drive_mode = 1  # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
         self_collisions = 0  # 1 to disable, 0 to enable...bitwise filter
         replace_cylinder_with_capsule = False  # replace collision cylinders with capsules, leads to faster/more stable simulation
         flip_visual_attachments = False  # Some .obj meshes must be flipped from y-up to z-up

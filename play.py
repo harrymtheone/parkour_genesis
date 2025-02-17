@@ -18,8 +18,8 @@ slowmo = 1
 def play(args):
     args.proj_name = 'parkour_genesis'
     log_root = 'logs'
-    args.simulator = SimulatorType.Genesis
-    # args.simulator = SimulatorType.IsaacGym
+    # args.simulator = SimulatorType.Genesis
+    args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
 
@@ -27,9 +27,9 @@ def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
 
     # override some parameters for testing
-    env_cfg.play.control = True
+    env_cfg.play.control = False
     env_cfg.play.use_joystick = True
-    env_cfg.env.num_envs = 1
+    env_cfg.env.num_envs = 3
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
     env_cfg.terrain.num_rows = 10
     env_cfg.terrain.curriculum = True

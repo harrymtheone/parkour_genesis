@@ -259,6 +259,9 @@ class GenesisWrapper(BaseWrapper):
 
     # ---------------------------------------------- IO Interface ----------------------------------------------
 
+    def refresh_variable(self):
+        pass
+
     def set_root_state(self, env_ids, pos, quat, lin_vel, ang_vel):
         self._robot.set_pos(pos, zero_velocity=True, envs_idx=env_ids)
         quat = quat[..., [3, 0, 1, 2]]  # [x, y, z, w] -> [w, x, y, z]
@@ -271,7 +274,7 @@ class GenesisWrapper(BaseWrapper):
         self._robot.set_dofs_position(
             position=dof_pos,
             dofs_idx_local=self._dof_indices,
-            zero_velocity=True,
+            zero_velocity=False,
             envs_idx=env_ids,
         )
 
@@ -281,8 +284,15 @@ class GenesisWrapper(BaseWrapper):
             envs_idx=env_ids,
         )
 
-    def refresh_variable(self):
-        pass
+    def set_kp(self, kp, env_ids=None):
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device)
+        self._robot.set_dofs_kp(kp, self._dof_indices, env_ids)
+
+    def set_kd(self, kd, env_ids=None):
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device)
+        self._robot.set_dofs_kv(kd, self._dof_indices, env_ids)
 
     @property
     def root_pos(self):
@@ -330,15 +340,14 @@ class GenesisWrapper(BaseWrapper):
         if not self.suppress_warning:
             print(f"[bold red]⚠️ Apply external force is not implemented yet! [/bold red]")  # Rich formatting
 
-    def step_environment(self):
-        self._scene.step(update_visualizer=False)
-
     def control_dof_torque(self, torques):
         self._robot.control_dofs_force(torques, self._dof_indices)
 
-    # def _control_dof_position(self, target_dof_pos):
-    #     self.robot.control_dofs_position(target_dof_pos, self._dof_indices_local)
-    #     self.scene.step(update_visualizer=False)
+    def step_environment(self):
+        self._scene.step(update_visualizer=False)
+
+    def control_dof_position(self, target_dof_pos):
+        self._robot.control_dofs_position(target_dof_pos, self._dof_indices)
 
     # ------------------------------------------------ Graphics ------------------------------------------------
 

@@ -5,6 +5,7 @@ import warp as wp
 
 from legged_gym.envs.base.utils import DelayBuffer
 from legged_gym.simulator import get_simulator
+from legged_gym.simulator.base_wrapper import DriveMode
 from legged_gym.utils.helpers import class_to_dict
 from legged_gym.utils.joystick import JoystickHandler, KeyboardHandler
 from legged_gym.utils.math import torch_rand_float, inv_quat, axis_angle_to_quat, quat_to_xyz, transform_quat_by_quat, transform_by_quat, xyz_to_quat
@@ -79,11 +80,11 @@ class BaseTask:
         self.base_ang_vel = self._zero_tensor(self.num_envs, 3)  # in base frame
         self.projected_gravity = self._zero_tensor(self.num_envs, 3)  # # in base frame
         self.gravity_vec = torch.tensor([[0, 0, -1]], dtype=torch.float, device=self.device).repeat(self.num_envs, 1)  # in world frame
+        self.forward_vec = torch.tensor([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
 
         # allocate buffers
         self.actions = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
         self.last_action_output = self._zero_tensor(self.num_envs, self.num_actions)  # network output
-        self.forward_vec = torch.tensor([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
         self.actor_obs, self.critic_obs = None, None
         self.rew_buf = self._zero_tensor(self.num_envs)
         self.reset_buf = self._zero_tensor(self.num_envs, dtype=torch.bool)
@@ -200,22 +201,33 @@ class BaseTask:
             self.action_delay_buf.append(self.actions)
 
         # step the simulator
-        for step_i in range(self.cfg.control.decimation):
-            if self.cfg.domain_rand.action_delay:
-                self.action_delay_buf.step()
-                self.actions[:] = self.action_delay_buf.get()
+        if self.sim.drive_mode is DriveMode.torque:
+            for step_i in range(self.cfg.control.decimation):
+                if self.cfg.domain_rand.action_delay:
+                    self.action_delay_buf.step()
+                    self.actions[:] = self.action_delay_buf.get()
 
-            torques = self._compute_torques()
-            self.sim.control_dof_torque(torques)
+                torques = self._compute_torques()
+                # torques[0] = 1.0
+                self.sim.control_dof_torque(torques)
+                self.sim.step_environment()
+
+                if self.cfg.domain_rand.add_dof_lag:
+                    self.dof_lag_buf.append(torch.stack([self.sim.dof_pos, self.sim.dof_vel], dim=2))
+                    self.dof_lag_buf.step()
+
+                if self.cfg.domain_rand.add_imu_lag:
+                    self.imu_lag_buf.append(torch.stack([self.sim.root_quat, self.sim.root_ang_vel], dim=2))
+                    self.imu_lag_buf.step()
+        else:
+            target_dof_pos = self.actions * self.cfg.control.action_scale + self.init_state_dof_pos
+            self.sim.control_dof_position(target_dof_pos)
             self.sim.step_environment()
 
-            if self.cfg.domain_rand.add_dof_lag:
-                self.dof_lag_buf.append(torch.stack([self.sim.dof_pos, self.sim.dof_vel], dim=2))
-                self.dof_lag_buf.step()
-
-            if self.cfg.domain_rand.add_imu_lag:
-                self.imu_lag_buf.append(torch.stack([self.sim.root_quat, self.sim.root_ang_vel], dim=2))
-                self.imu_lag_buf.step()
+            for step_i in range(self.cfg.control.decimation):
+                if self.cfg.domain_rand.action_delay:
+                    self.action_delay_buf.step()
+                    self.actions[:] = self.action_delay_buf.get()
 
         self._post_physics_step()
 
@@ -293,7 +305,6 @@ class BaseTask:
             # overwrite commands
             self.commands.zero_()
             self.commands[self.lookat_id, :3] = torch.Tensor(self.input_handler.get_control_input())
-            print(self.input_handler.get_control_input())
         else:
             self._update_command()
 
@@ -508,6 +519,10 @@ class BaseTask:
                                                                       self.cfg.domain_rand.joint_viscous_range[1],
                                                                       (len(env_ids), self.num_dof),
                                                                       device=self.device)
+
+        if self.sim.drive_mode is not DriveMode.torque:
+            self.sim.set_kp(self.p_gain_multiplier[env_ids][0] * self.p_gains)
+            self.sim.set_kd(self.d_gain_multiplier[env_ids][0] * self.d_gains)
 
     # ---------------------------------------------- Reward ----------------------------------------------
 

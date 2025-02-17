@@ -1,6 +1,7 @@
+from enum import Enum
+
 import torch
 import warp as wp
-from enum import Enum
 
 from legged_gym.utils.math import torch_rand_float
 
@@ -38,13 +39,19 @@ class BaseWrapper:
 
     # ------------------------------------------------- Simulator Interfaces -------------------------------------------------
 
+    def refresh_variable(self):
+        raise NotImplementedError
+
     def set_root_state(self, env_ids, pos, quat, lin_vel, ang_vel):
         raise NotImplementedError
 
     def set_dof_state(self, env_ids, dof_pos, dof_vel):
         raise NotImplementedError
 
-    def refresh_variable(self):
+    def set_kp(self, kp, env_ids=None):
+        raise NotImplementedError
+
+    def set_kd(self, kp, env_ids=None):
         raise NotImplementedError
 
     def apply_perturbation(self, force, torque):
