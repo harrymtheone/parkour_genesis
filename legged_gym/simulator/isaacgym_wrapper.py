@@ -33,7 +33,7 @@ class IsaacGymWrapper(BaseWrapper):
 
             self.enable_viewer_sync = True
             self.free_cam = False
-            self.lookat_vec = torch.Tensor([-0, 2, 1])
+            self.lookat_vec = torch.tensor([-0, 2, 1], device=self.device)
 
             # if self.cfg.play.control:
             #     self.input_handler = JoystickHandler(self) if self.cfg.play.use_joystick else KeyboardHandler(self)

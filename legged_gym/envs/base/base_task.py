@@ -208,7 +208,6 @@ class BaseTask:
                     self.actions[:] = self.action_delay_buf.get()
 
                 torques = self._compute_torques()
-                # torques[0] = 1.0
                 self.sim.control_dof_torque(torques)
                 self.sim.step_environment()
 

@@ -151,30 +151,30 @@ class BaseWrapper:
             self.friction_coeffs = 1 + self._zero_tensor(self.num_envs, 1)
             self.payload_masses = self._zero_tensor(self.num_envs, 1)
 
-            if self.cfg.domain_rand.randomize_base_mass:
-                self.payload_masses = torch_rand_float(self.cfg.domain_rand.added_mass_range[0],
-                                                       self.cfg.domain_rand.added_mass_range[1],
+        if self.cfg.domain_rand.randomize_base_mass:
+            self.payload_masses = torch_rand_float(self.cfg.domain_rand.added_mass_range[0],
+                                                   self.cfg.domain_rand.added_mass_range[1],
+                                                   (self.num_envs, 1),
+                                                   device=self.device)
+
+        if self.cfg.domain_rand.randomize_link_mass:
+            self.link_mass_multiplier = torch_rand_float(self.cfg.domain_rand.link_mass_multiplier_range[0],
+                                                         self.cfg.domain_rand.link_mass_multiplier_range[1],
+                                                         (self.num_envs, self.num_bodies - 1),
+                                                         device=self.device)
+
+        if self.cfg.domain_rand.randomize_com:
+            self.com_displacements = torch_rand_float(self.cfg.domain_rand.com_displacement_range[0],
+                                                      self.cfg.domain_rand.com_displacement_range[1],
+                                                      (self.num_envs, 3),
+                                                      device=self.device)
+
+        if self.cfg.domain_rand.randomize_friction:
+            self.friction_coeffs[:] = torch_rand_float(self.cfg.domain_rand.friction_range[0],
+                                                       self.cfg.domain_rand.friction_range[1],
                                                        (self.num_envs, 1),
                                                        device=self.device)
-
-            if self.cfg.domain_rand.randomize_link_mass:
-                self.link_mass_multiplier = torch_rand_float(self.cfg.domain_rand.link_mass_multiplier_range[0],
-                                                             self.cfg.domain_rand.link_mass_multiplier_range[1],
-                                                             (self.num_envs, self.num_bodies - 1),
-                                                             device=self.device)
-
-            if self.cfg.domain_rand.randomize_com:
-                self.com_displacements = torch_rand_float(self.cfg.domain_rand.com_displacement_range[0],
-                                                          self.cfg.domain_rand.com_displacement_range[1],
-                                                          (self.num_envs, 3),
-                                                          device=self.device)
-
-            if self.cfg.domain_rand.randomize_friction:
-                self.friction_coeffs[:] = torch_rand_float(self.cfg.domain_rand.friction_range[0],
-                                                           self.cfg.domain_rand.friction_range[1],
-                                                           (self.num_envs, 1),
-                                                           device=self.device)
-                self.restitution_coeffs = torch_rand_float(self.cfg.domain_rand.restitution_range[0],
-                                                           self.cfg.domain_rand.restitution_range[1],
-                                                           (self.num_envs, 1),
-                                                           device=self.device)
+            self.restitution_coeffs = torch_rand_float(self.cfg.domain_rand.restitution_range[0],
+                                                       self.cfg.domain_rand.restitution_range[1],
+                                                       (self.num_envs, 1),
+                                                       device=self.device)
