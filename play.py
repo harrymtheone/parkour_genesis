@@ -29,7 +29,7 @@ def play(args):
     # override some parameters for testing
     env_cfg.play.control = False
     env_cfg.play.use_joystick = True
-    env_cfg.env.num_envs = 3
+    env_cfg.env.num_envs = 1
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
     env_cfg.terrain.num_rows = 10
     env_cfg.terrain.curriculum = True

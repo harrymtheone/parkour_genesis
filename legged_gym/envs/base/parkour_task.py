@@ -421,6 +421,8 @@ class ParkourTask(BaseTask):
         self.commands[env_ids[motion_type == 2], :2] = 0  # yaw
 
     def _update_command(self):
+        super()._update_command()
+
         if self.cfg.terrain.description_type not in ["heightfield", "trimesh"]:
             return
 

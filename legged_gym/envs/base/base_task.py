@@ -21,7 +21,7 @@ class BaseTask:
         self.debug = True
         self.init_done = False
 
-        if hasattr(args, 'drive_mode'):
+        if hasattr(args, 'drive_mode') and args.drive_mode is not None:
             self.cfg.asset.default_dof_drive_mode = args.drive_mode
         if args.simulator is SimulatorType.IsaacGym:
             self.cfg.asset.default_dof_drive_mode = 3
@@ -105,7 +105,7 @@ class BaseTask:
         # Lag buffer
         if self.cfg.domain_rand.action_delay:
             self.action_delay_buf = DelayBuffer(self.num_envs, (self.num_actions,),
-                                                self.cfg.domain_rand.action_delay_range,
+                                                self.cfg.domain_rand.action_delay_range.pop(0),
                                                 self.cfg.domain_rand.randomize_action_delay_each_step,
                                                 device=self.device)
 
@@ -204,7 +204,6 @@ class BaseTask:
         Args:
             actions (torch.Tensor): Tensor of shape (num_envs, num_actions_per_env)
         """
-        self.global_counter += 1
         self.last_action_output[:] = actions
 
         # clip action range
@@ -265,6 +264,8 @@ class BaseTask:
         return torch.clip(torques, -self.sim.torque_limits, self.sim.torque_limits)
 
     def _post_physics_step(self):
+        self.global_counter += 1
+
         self._refresh_variables()
         self._post_physics_pre_step()
 
@@ -308,6 +309,10 @@ class BaseTask:
     def _post_physics_pre_step(self):
         self.episode_length_buf[:] += 1
 
+        if self.cfg.domain_rand.action_delay and (self.global_counter % self.cfg.domain_rand.action_delay_update_steps == 0):
+            if len(self.cfg.domain_rand.action_delay_range) > 0:
+                self.action_delay_buf.update_delay_range(self.cfg.domain_rand.action_delay_range.pop(0))
+
     def _post_physics_mid_step(self):
         if self.cfg.play.control:
             # overwrite commands
@@ -335,7 +340,9 @@ class BaseTask:
         raise NotImplementedError
 
     def _update_command(self):
-        raise NotImplementedError
+        # resample command target
+        env_ids = self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt) == 0
+        self._resample_commands(torch.arange(self.num_envs, device=self.device)[env_ids])
 
     def _check_termination(self):
         """ Check if environments need to be reset

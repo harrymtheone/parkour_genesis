@@ -142,8 +142,8 @@ class PddBaseCfg(BaseConfig):
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
         randomize_action_delay_each_step = False
-        action_delay_range = (1, 20)
-        # action_delay_range = (10, 70)
+        action_delay_range = [(1, 20), (10, 70)]
+        action_delay_update_steps = 3000 * 24
 
         add_dof_lag = False
         randomize_dof_lag = True  # if False, max delay will be used

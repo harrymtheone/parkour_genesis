@@ -141,6 +141,25 @@ class DelayBuffer:
         self._cols = torch.arange(self.buf_len, device=device).unsqueeze(0)
         self._mask = self._cols >= self.delay
 
+    def update_delay_range(self, delay_range):
+        self.delay_range = delay_range
+
+        n_envs = self.buf.size(0)
+        old_buf_len = self.buf_len
+        data_shape = self.buf.shape[2:]
+
+        self.buf_len = 1 + 1 + delay_range[1]
+        assert self.buf_len >= old_buf_len
+        old_buf = self.buf
+        self.buf = torch.zeros((n_envs, self.buf_len, *data_shape), dtype=old_buf.dtype, device=old_buf.device)
+
+        self.buf[:, :old_buf_len] = old_buf
+
+        # delay should +1 because you should call step before get
+        self.delay = 1 + torch.randint(delay_range[0], delay_range[1] + 1, (self.n_envs, 1), device=old_buf.device)
+        self._cols = torch.arange(self.buf_len, device=old_buf.device).unsqueeze(0)
+        self._mask = self._cols >= self.delay
+
     def append(self, data: torch.Tensor):
         if self.rand_per_step:
             self.delay[:] = 1 + torch.randint_like(self.delay, self.delay_range[0], self.delay_range[1] + 1)
@@ -149,7 +168,7 @@ class DelayBuffer:
         self.buf[self._mask] = data.unsqueeze(1).expand_as(self.buf)[self._mask]
 
     def step(self):
-        self.buf[:, :-1] = self.buf[:, 1:]
+        self.buf[:, :-1] = self.buf[:, 1:].clone()
 
     def get(self):
         return self.buf[:, 0].clone()

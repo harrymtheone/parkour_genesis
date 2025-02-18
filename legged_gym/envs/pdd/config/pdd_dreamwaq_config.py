@@ -76,7 +76,7 @@ class PddDreamWaqCfg(PddBaseCfg):
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = switch
-        randomize_coulomb_friction = False
+        randomize_coulomb_friction = True
 
     class rewards:
         base_height_target = 0.6
