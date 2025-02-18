@@ -15,11 +15,15 @@ class VAE(nn.Module):
 
         self.mlp_mu = make_linear_layers(gru_hidden_size, 128, encoder_output_size,
                                          activation_func=activation)
+        self.mlp_mu.pop(-1)
+
         self.mlp_logvar = make_linear_layers(gru_hidden_size, 128, encoder_output_size,
                                              activation_func=activation)
+        self.mlp_logvar.pop(-1)
 
         self.decoder = make_linear_layers(encoder_output_size, 64, env_cfg.n_proprio,
                                           activation_func=activation)
+        self.decoder.pop(-1)
 
     def forward(self, obs_enc, mu_only=False):
         if mu_only:
@@ -42,18 +46,18 @@ class Actor(nn.Module):
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        activation = nn.ELU()
+        self.activation = nn.ELU()
 
         # construct actor network
         channel_size = 16
 
         self.obs_enc = nn.Sequential(
             nn.Conv1d(in_channels=env_cfg.n_proprio, out_channels=2 * channel_size, kernel_size=8, stride=4),
-            activation,
+            self.activation,
             nn.Conv1d(in_channels=2 * channel_size, out_channels=4 * channel_size, kernel_size=6, stride=1),
-            activation,
+            self.activation,
             nn.Conv1d(in_channels=4 * channel_size, out_channels=8 * channel_size, kernel_size=6, stride=1),
-            activation,
+            self.activation,
             nn.Flatten()
         )
         self.vae = VAE(env_cfg, policy_cfg)
@@ -62,7 +66,7 @@ class Actor(nn.Module):
         self.actor_backbone = make_linear_layers(env_cfg.n_proprio + encoder_output_size,
                                                  *policy_cfg.actor_hidden_dims,
                                                  env_cfg.num_actions,
-                                                 activation_func=activation)
+                                                 activation_func=self.activation)
         self.actor_backbone.pop(-1)
         self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
         self.distribution = None
@@ -73,7 +77,7 @@ class Actor(nn.Module):
     def act(self, obs, eval_=False, **kwargs):
         obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
         est_mu = self.vae(obs_enc, mu_only=True)
-        actor_input = torch.cat((obs.proprio, est_mu), dim=1)
+        actor_input = torch.cat((obs.proprio, self.activation(est_mu)), dim=1)
         mean = self.actor_backbone(actor_input)
 
         if eval_:
@@ -85,7 +89,7 @@ class Actor(nn.Module):
     def train_act(self, obs, **kwargs):
         obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
         ot1, est_mu, est_logvar = self.vae(obs_enc, mu_only=False)
-        actor_input = torch.cat((obs.proprio, est_mu), dim=1)
+        actor_input = torch.cat((obs.proprio, self.activation(est_mu)), dim=1)
         mean = self.actor_backbone(actor_input)
         self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
         return ot1, est_mu, est_logvar
@@ -115,7 +119,7 @@ class ActorGRU(nn.Module):
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        activation = nn.ELU()
+        self.activation = nn.ELU()
 
         gru_num_layers = 1
         self.gru = nn.GRU(input_size=env_cfg.n_proprio, hidden_size=gru_hidden_size, num_layers=gru_num_layers)
@@ -126,7 +130,7 @@ class ActorGRU(nn.Module):
         self.actor_backbone = make_linear_layers(encoder_output_size + env_cfg.n_proprio,
                                                  *policy_cfg.actor_hidden_dims,
                                                  env_cfg.num_actions,
-                                                 activation_func=activation)
+                                                 activation_func=self.activation)
         self.actor_backbone.pop(-1)
 
         # Action noise
@@ -140,7 +144,7 @@ class ActorGRU(nn.Module):
         # inference forward
         obs_enc, self.hidden_states = self.gru(obs.proprio.unsqueeze(0), self.hidden_states)
         est_mu = self.vae(obs_enc.squeeze(0), mu_only=True)
-        actor_input = torch.cat([obs.proprio, est_mu], dim=1)
+        actor_input = torch.cat([obs.proprio, self.activation(est_mu)], dim=1)
         mean = self.actor_backbone(actor_input)
 
         if eval_:
@@ -150,26 +154,14 @@ class ActorGRU(nn.Module):
         return self.distribution.sample()
 
     def train_act(self, obs, hidden_states, **kwargs):
-        # if hidden_states is None:
-        #     # inference forward
-        #     obs_enc, self.hidden_states = self.gru(proprio.unsqueeze(0), self.hidden_states)
-        #     return self.mlp_mu(obs_enc.squeeze(0))
-        # else:
-        #     # update forward
-        #     n_steps = len(proprio)
-        #     raise NotImplementedError
-        #     obs_enc, _ = self.gru(proprio, hidden_states)
-        #
-        #     est_mu = self.mlp_mu(obs_enc)
-        #     est_logvar = self.mlp_logvar(obs_enc)
-        #     ot1 = self.decoder(self.reparameterize(est_mu, est_logvar))
-        #
-        #     return ot1, est_mu, est_logvar
         n_steps = obs.proprio.size(0)
         obs_enc, _ = self.gru(obs.proprio, hidden_states)
+
         ot1, est_mu, est_logvar = self.vae(obs_enc.flatten(0, 1))
-        actor_input = torch.cat([obs.proprio.flatten(0, 1), est_mu], dim=1)
+
+        actor_input = torch.cat([obs.proprio.flatten(0, 1), self.activation(est_mu)], dim=1)
         mean = self.actor_backbone(actor_input).unflatten(0, (n_steps, -1))
+
         self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
         return (ot1.unflatten(0, (n_steps, -1)),
                 est_mu.unflatten(0, (n_steps, -1)),
