@@ -13,7 +13,7 @@ from legged_gym.utils.task_registry import TaskRegistry
 
 def train(args):
     args.proj_name = 'parkour_genesis'
-    args.headless = False
+    args.headless = True
     args.simulator = SimulatorType.Genesis
     # args.simulator = SimulatorType.IsaacGym
 
@@ -33,7 +33,7 @@ def train(args):
         mode = "disabled"
         env_cfg.terrain.num_rows = 10
         env_cfg.terrain.num_cols = 2
-        env_cfg.env.num_envs = 16
+        env_cfg.env.num_envs = 64
     else:
         mode = "online"
 

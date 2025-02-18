@@ -4,32 +4,66 @@ from torch.distributions import Normal
 
 from .utils import make_linear_layers
 
+gru_hidden_size = 128
+encoder_output_size = 3 + 64  # v_t, z_t
+
+
+class VAE(nn.Module):
+    def __init__(self, env_cfg, policy_cfg):
+        super().__init__()
+        activation = nn.ELU()
+
+        self.mlp_mu = make_linear_layers(gru_hidden_size, 128, encoder_output_size,
+                                         activation_func=activation)
+        self.mlp_logvar = make_linear_layers(gru_hidden_size, 128, encoder_output_size,
+                                             activation_func=activation)
+
+        self.decoder = make_linear_layers(encoder_output_size, 64, env_cfg.n_proprio,
+                                          activation_func=activation)
+
+    def forward(self, obs_enc, mu_only=False):
+        if mu_only:
+            return self.mlp_mu(obs_enc)
+
+        est_mu = self.mlp_mu(obs_enc)
+        est_logvar = self.mlp_logvar(obs_enc)
+        ot1 = self.decoder(self.reparameterize(est_mu, est_logvar))
+        return ot1, est_mu, est_logvar
+
+    @staticmethod
+    def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return eps * std + mu
+
 
 class Actor(nn.Module):
     is_recurrent = False
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-
         activation = nn.ELU()
 
         # construct actor network
         channel_size = 16
 
-        self.net = nn.Sequential(
+        self.obs_enc = nn.Sequential(
             nn.Conv1d(in_channels=env_cfg.n_proprio, out_channels=2 * channel_size, kernel_size=8, stride=4),
             activation,
             nn.Conv1d(in_channels=2 * channel_size, out_channels=4 * channel_size, kernel_size=6, stride=1),
             activation,
             nn.Conv1d(in_channels=4 * channel_size, out_channels=8 * channel_size, kernel_size=6, stride=1),
             activation,
-            nn.Flatten(),
-            nn.Linear(8 * channel_size, 4 * channel_size),
-            activation,
-            nn.Linear(4 * channel_size, env_cfg.num_actions),
+            nn.Flatten()
         )
+        self.vae = VAE(env_cfg, policy_cfg)
 
         # Action noise
+        self.actor_backbone = make_linear_layers(env_cfg.n_proprio + encoder_output_size,
+                                                 *policy_cfg.actor_hidden_dims,
+                                                 env_cfg.num_actions,
+                                                 activation_func=activation)
+        self.actor_backbone.pop(-1)
         self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
         self.distribution = None
 
@@ -37,13 +71,24 @@ class Actor(nn.Module):
         Normal.set_default_validate_args = False
 
     def act(self, obs, eval_=False, **kwargs):
-        mean = self.net(obs.prop_his.transpose(1, 2))
+        obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
+        est_mu = self.vae(obs_enc, mu_only=True)
+        actor_input = torch.cat((obs.proprio, est_mu), dim=1)
+        mean = self.actor_backbone(actor_input)
 
         if eval_:
             return mean
 
         self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
         return self.distribution.sample()
+
+    def train_act(self, obs, **kwargs):
+        obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
+        ot1, est_mu, est_logvar = self.vae(obs_enc, mu_only=False)
+        actor_input = torch.cat((obs.proprio, est_mu), dim=1)
+        mean = self.actor_backbone(actor_input)
+        self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
+        return ot1, est_mu, est_logvar
 
     @property
     def action_mean(self):
@@ -64,11 +109,102 @@ class Actor(nn.Module):
         new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
         self.log_std.data = new_log_std.data
 
-    def detach_hidden_state(self):
-        pass
+
+class ActorGRU(nn.Module):
+    is_recurrent = True
+
+    def __init__(self, env_cfg, policy_cfg):
+        super().__init__()
+        activation = nn.ELU()
+
+        gru_num_layers = 1
+        self.gru = nn.GRU(input_size=env_cfg.n_proprio, hidden_size=gru_hidden_size, num_layers=gru_num_layers)
+        self.hidden_states = None
+
+        self.vae = VAE(env_cfg, policy_cfg)
+
+        self.actor_backbone = make_linear_layers(encoder_output_size + env_cfg.n_proprio,
+                                                 *policy_cfg.actor_hidden_dims,
+                                                 env_cfg.num_actions,
+                                                 activation_func=activation)
+        self.actor_backbone.pop(-1)
+
+        # Action noise
+        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
+        self.distribution = None
+
+        # disable args validation for speedup
+        Normal.set_default_validate_args = False
+
+    def act(self, obs, eval_=False, **kwargs):
+        # inference forward
+        obs_enc, self.hidden_states = self.gru(obs.proprio.unsqueeze(0), self.hidden_states)
+        est_mu = self.vae(obs_enc.squeeze(0), mu_only=True)
+        actor_input = torch.cat([obs.proprio, est_mu], dim=1)
+        mean = self.actor_backbone(actor_input)
+
+        if eval_:
+            return mean
+
+        self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
+        return self.distribution.sample()
+
+    def train_act(self, obs, hidden_states, **kwargs):
+        # if hidden_states is None:
+        #     # inference forward
+        #     obs_enc, self.hidden_states = self.gru(proprio.unsqueeze(0), self.hidden_states)
+        #     return self.mlp_mu(obs_enc.squeeze(0))
+        # else:
+        #     # update forward
+        #     n_steps = len(proprio)
+        #     raise NotImplementedError
+        #     obs_enc, _ = self.gru(proprio, hidden_states)
+        #
+        #     est_mu = self.mlp_mu(obs_enc)
+        #     est_logvar = self.mlp_logvar(obs_enc)
+        #     ot1 = self.decoder(self.reparameterize(est_mu, est_logvar))
+        #
+        #     return ot1, est_mu, est_logvar
+        n_steps = obs.proprio.size(0)
+        obs_enc, _ = self.gru(obs.proprio, hidden_states)
+        ot1, est_mu, est_logvar = self.vae(obs_enc.flatten(0, 1))
+        actor_input = torch.cat([obs.proprio.flatten(0, 1), est_mu], dim=1)
+        mean = self.actor_backbone(actor_input).unflatten(0, (n_steps, -1))
+        self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
+        return (ot1.unflatten(0, (n_steps, -1)),
+                est_mu.unflatten(0, (n_steps, -1)),
+                est_logvar.unflatten(0, (n_steps, -1)))
+
+    @property
+    def action_mean(self):
+        return self.distribution.mean
+
+    @property
+    def action_std(self):
+        return self.distribution.stddev
+
+    @property
+    def entropy(self):
+        return self.distribution.entropy().sum(dim=-1)
+
+    def get_actions_log_prob(self, actions):
+        return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
+
+    def reset_std(self, std, device):
+        new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
+        self.log_std.data = new_log_std.data
+
+    def get_hidden_states(self):
+        if self.hidden_states is None:
+            return None
+        return self.hidden_states.detach()
+
+    def detach_hidden_states(self):
+        if self.hidden_states is not None:
+            self.hidden_states = self.hidden_states.detach()
 
     def reset(self, dones):
-        pass
+        self.hidden_states[:, dones] = 0
 
 
 class Critic(nn.Module):
@@ -92,6 +228,17 @@ class Critic(nn.Module):
         self.critic.pop(-1)
 
     def evaluate(self, obs):
-        priv_latent = self.priv_enc(obs.priv_his.transpose(1, 2))
+        if obs.priv_his.ndim == 4:
+            n_steps = obs.priv_his.size(0)
+            priv_his = obs.priv_his.flatten(0, 1).transpose(1, 2)
+            scan = obs.scan.flatten(0, 1).flatten(1)
+            priv_latent = self.priv_enc(priv_his)
+            value = self.critic(torch.cat([priv_latent, scan], dim=1))
+            return value.unflatten(0, (n_steps, -1))
 
-        return self.critic(torch.cat([priv_latent, obs.scan.flatten(1)], dim=1))
+        else:
+            priv_his = obs.priv_his.transpose(1, 2)
+            scan = obs.scan.flatten(1)
+            priv_latent = self.priv_enc(priv_his)
+            value = self.critic(torch.cat([priv_latent, scan], dim=1))
+            return value

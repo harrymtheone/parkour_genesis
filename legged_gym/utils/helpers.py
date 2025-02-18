@@ -78,6 +78,7 @@ def get_args():
         {"name": "--headless", "action": "store_true"},
         {"name": "--simulator", "type": str},
         {"name": "--device", "type": str},
+        {"name": "--drive_mode", "type": int},
 
         {"name": "--debug", "action": "store_true"},
     ]

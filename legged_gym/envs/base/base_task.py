@@ -4,7 +4,7 @@ import torch
 import warp as wp
 
 from legged_gym.envs.base.utils import DelayBuffer
-from legged_gym.simulator import get_simulator
+from legged_gym.simulator import get_simulator, SimulatorType
 from legged_gym.simulator.base_wrapper import DriveMode
 from legged_gym.utils.helpers import class_to_dict
 from legged_gym.utils.joystick import JoystickHandler, KeyboardHandler
@@ -13,9 +13,18 @@ from legged_gym.utils.math import torch_rand_float, inv_quat, axis_angle_to_quat
 
 class BaseTask:
     def __init__(self, cfg, args):
+        # optimization flags for pytorch JIT
+        torch._C._jit_set_profiling_mode(False)
+        torch._C._jit_set_profiling_executor(False)
+
         self.cfg = cfg
         self.debug = True
         self.init_done = False
+
+        if hasattr(args, 'drive_mode'):
+            self.cfg.asset.default_dof_drive_mode = args.drive_mode
+        if args.simulator is SimulatorType.IsaacGym:
+            self.cfg.asset.default_dof_drive_mode = 3
 
         # prepare simulator
         simulator_class = get_simulator(args.simulator)
@@ -228,11 +237,6 @@ class BaseTask:
             self.sim.control_dof_position(target_dof_pos)
             self.sim.step_environment()
 
-            for step_i in range(self.cfg.control.decimation):
-                if self.cfg.domain_rand.action_delay:
-                    self.action_delay_buf.step()
-                    self.actions[:] = self.action_delay_buf.get()
-
         self._post_physics_step()
 
         return self.actor_obs, self.critic_obs, self.rew_buf.clone(), self.reset_buf.clone(), self.extras
@@ -365,8 +369,8 @@ class BaseTask:
 
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. """
-        apply_force = self._zero_tensor((self.num_envs, self.sim.num_bodies, 3))
-        apply_torque = self._zero_tensor((self.num_envs, self.sim.num_bodies, 3))
+        apply_force = self._zero_tensor(self.num_envs, self.sim.num_bodies, 3)
+        apply_torque = self._zero_tensor(self.num_envs, self.sim.num_bodies, 3)
 
         if self.global_counter % self.push_interval == 0:
             self.ext_force[:, 0] = torch_rand_float(self.cfg.domain_rand.push_force_max[0][0],
@@ -483,11 +487,26 @@ class BaseTask:
         if not self.init_done:
             if self.cfg.domain_rand.randomize_torque:
                 self.torque_mul = self._zero_tensor(self.num_envs, self.num_dof)
-            if self.cfg.domain_rand.randomize_motor_offset:
-                self.motor_offsets = self._zero_tensor(self.num_envs, self.num_dof)
+
             if self.cfg.domain_rand.randomize_gains:
                 self.p_gain_multiplier = self._zero_tensor(self.num_envs, self.num_dof)
+
+            if self.cfg.domain_rand.randomize_motor_offset:
+                self.motor_offsets = self._zero_tensor(self.num_envs, self.num_dof)
                 self.d_gain_multiplier = self._zero_tensor(self.num_envs, self.num_dof)
+
+            if self.cfg.domain_rand.randomize_joint_stiffness:
+                raise NotImplementedError
+
+            if self.cfg.domain_rand.randomize_joint_damping:
+                self.joint_damping_multiplier = self._zero_tensor(self.num_envs)
+
+            if self.cfg.domain_rand.randomize_joint_friction:
+                self.joint_friction_multiplier = self._zero_tensor(self.num_envs)
+
+            if self.cfg.domain_rand.randomize_joint_armature:
+                self.joint_armatures = self._zero_tensor(self.num_envs)
+
             if self.cfg.domain_rand.randomize_coulomb_friction:
                 self.randomized_joint_coulomb = self._zero_tensor(self.num_envs, self.num_dof)
                 self.randomized_joint_viscous = self._zero_tensor(self.num_envs, self.num_dof)
@@ -498,12 +517,6 @@ class BaseTask:
                                                         (len(env_ids), self.num_dof),
                                                         device=self.device)
 
-        if self.cfg.domain_rand.randomize_motor_offset:
-            self.motor_offsets[env_ids] = torch_rand_float(self.cfg.domain_rand.motor_offset_range[0],
-                                                           self.cfg.domain_rand.motor_offset_range[1],
-                                                           (len(env_ids), self.num_dof),
-                                                           device=self.device)
-
         if self.cfg.domain_rand.randomize_gains:
             self.p_gain_multiplier[env_ids] = torch_rand_float(self.cfg.domain_rand.stiffness_multiplier_range[0],
                                                                self.cfg.domain_rand.stiffness_multiplier_range[1],
@@ -513,6 +526,40 @@ class BaseTask:
                                                                self.cfg.domain_rand.damping_multiplier_range[1],
                                                                (len(env_ids), self.num_dof),
                                                                device=self.device)
+            if self.sim.drive_mode is not DriveMode.torque:
+                self.sim.set_dof_kp(self.p_gain_multiplier[env_ids] * self.p_gains, env_ids)
+                self.sim.set_dof_kv(self.d_gain_multiplier[env_ids] * self.d_gains, env_ids)
+
+        if self.cfg.domain_rand.randomize_motor_offset:
+            self.motor_offsets[env_ids] = torch_rand_float(self.cfg.domain_rand.motor_offset_range[0],
+                                                           self.cfg.domain_rand.motor_offset_range[1],
+                                                           (len(env_ids), self.num_dof),
+                                                           device=self.device)
+
+        if self.cfg.domain_rand.randomize_joint_damping:
+            self.joint_damping_multiplier[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_damping_multiplier_range[0],
+                                                                      self.cfg.domain_rand.joint_damping_multiplier_range[1],
+                                                                      (len(env_ids), 1),
+                                                                      device=self.device).squeeze(1)
+            damping_multiplier_all = self.joint_damping_multiplier[env_ids].unsqueeze(1).repeat(1, self.num_dof)
+            self.sim.set_dof_friction_coef(damping_multiplier_all, env_ids)
+
+        if self.cfg.domain_rand.randomize_joint_friction:
+            self.joint_friction_multiplier[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_friction_multiplier_range[0],
+                                                                       self.cfg.domain_rand.joint_friction_multiplier_range[1],
+                                                                       (len(env_ids), 1),
+                                                                       device=self.device).squeeze(1)
+            friction_multiplier_all = self.joint_friction_multiplier[env_ids].unsqueeze(1).repeat(1, self.num_dof)
+            # TODO: you cannot run this multiple time, because friction * 1.1 * 1.1 will explode!!!!!!!!!!!
+            self.sim.set_dof_friction_coef(friction_multiplier_all, env_ids)
+
+        if self.cfg.domain_rand.randomize_joint_armature:
+            self.joint_armatures[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_armature_range[0],
+                                                             self.cfg.domain_rand.joint_armature_range[1],
+                                                             (len(env_ids), 1),
+                                                             device=self.device).squeeze(1)
+            armatures = self.joint_armatures[env_ids].unsqueeze(1).repeat(1, self.num_dof)
+            self.sim.set_dof_armature(armatures, env_ids)
 
         if self.cfg.domain_rand.randomize_coulomb_friction:
             self.randomized_joint_coulomb[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_coulomb_range[0],
@@ -523,10 +570,6 @@ class BaseTask:
                                                                       self.cfg.domain_rand.joint_viscous_range[1],
                                                                       (len(env_ids), self.num_dof),
                                                                       device=self.device)
-
-        if (self.sim.drive_mode is not DriveMode.torque) and self.cfg.domain_rand.randomize_gains:
-            self.sim.set_dof_kp(self.p_gain_multiplier[env_ids] * self.p_gains, env_ids)
-            self.sim.set_dof_kv(self.d_gain_multiplier[env_ids] * self.d_gains, env_ids)
 
     # ---------------------------------------------- Reward ----------------------------------------------
 

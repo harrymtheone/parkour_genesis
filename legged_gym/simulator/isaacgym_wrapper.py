@@ -307,6 +307,38 @@ class IsaacGymWrapper(BaseWrapper):
                                               gymtorch.unwrap_tensor(env_ids_int32),
                                               len(env_ids_int32))
 
+    def _set_dof_prop(self, prop_name, value, env_ids=None, multiplier=False):
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs)
+
+        for i, env_id in enumerate(env_ids):
+            dof_props = self.gym.get_actor_dof_properties(self._envs[env_id], self._actor_handles[env_id])
+
+            for dof_i in range(self.num_dof):
+                if multiplier:
+                    dof_props[dof_i][prop_name] *= value[i, dof_i]
+                else:
+                    dof_props[dof_i][prop_name] = value[i, dof_i]
+
+            self.gym.set_actor_dof_properties(self._envs[env_id], self._actor_handles[env_id], dof_props)
+
+    def set_dof_kp(self, kp, env_ids=None):
+        # Only used when you use pos_target drive mode
+        raise NotImplementedError
+
+    def set_dof_kv(self, kp, env_ids=None):
+        # Only used when you use pos_target drive mode
+        raise NotImplementedError
+
+    def set_dof_damping_coef(self, damping_coef, env_ids=None):
+        self._set_dof_prop('damping', damping_coef, env_ids, multiplier=True)
+
+    def set_dof_friction_coef(self, friction_coef, env_ids=None):
+        self._set_dof_prop('friction', friction_coef, env_ids, multiplier=True)
+
+    def set_dof_armature(self, armature, env_ids=None):
+        self._set_dof_prop('armature', armature, env_ids)
+
     def refresh_variable(self):
         self.gym.refresh_rigid_body_state_tensor(self.sim)
         self.gym.refresh_dof_state_tensor(self.sim)

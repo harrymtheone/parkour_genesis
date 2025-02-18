@@ -6,14 +6,16 @@ from ..base.utils import ObsBase, HistoryBuffer
 
 
 class ActorObs(ObsBase):
-    def __init__(self, prop_his):
+    def __init__(self, proprio, prop_his):
         super().__init__()
+        self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_his, scan):
+    def __init__(self, priv, priv_his, scan):
         super().__init__()
+        self.priv = priv.clone()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
 
@@ -74,7 +76,7 @@ class PddDreamWaqEnvironment(PddBaseEnvironment):
 
         # explicit privileged information
         priv_obs = torch.cat((
-            command_input,
+            command_input,  # 5D
             (self.sim.dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
             self.sim.dof_vel * self.obs_scales.dof_vel,  # 10D
             self.last_action_output,  # 10D
@@ -95,10 +97,10 @@ class PddDreamWaqEnvironment(PddBaseEnvironment):
         # compose actor observation
         reset_flag = self.episode_length_buf <= 1
         self.prop_his_buf.append(proprio, reset_flag)
-        self.actor_obs = ActorObs(self.prop_his_buf.get())
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get())
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan)
+        self.critic_obs = CriticObs(priv_obs, self.critic_his_buf.get(), scan)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)

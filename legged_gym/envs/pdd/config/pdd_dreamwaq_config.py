@@ -20,8 +20,7 @@ class PddDreamWaqCfg(PddBaseCfg):
 
     class terrain(PddBaseCfg.terrain):
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
-        # num_cols = 20  # number of terrain cols (types)
-        num_cols = 1  # number of terrain cols (types)
+        num_cols = 20  # number of terrain cols (types)
 
         scan_pts_x = np.linspace(-0.5, 1.1, 32)
         scan_pts_y = np.linspace(-0.4, 0.4, 16)
@@ -29,9 +28,9 @@ class PddDreamWaqCfg(PddBaseCfg):
         curriculum = False
 
         terrain_dict = {
-            'smooth_slope': 0,
+            'smooth_slope': 1,
             'rough_slope': 0,
-            'stairs_up': 1,
+            'stairs_up': 0,
             'stairs_down': 0,
             'discrete': 0,
             'stepping_stone': 0,
@@ -46,24 +45,38 @@ class PddDreamWaqCfg(PddBaseCfg):
         }
 
     class noise(PddBaseCfg.noise):
-        add_noise = False
+        add_noise = True
 
     class domain_rand(PddBaseCfg.domain_rand):
-        randomize_base_mass = True
-        randomize_link_mass = True
-        randomize_com = True
-        randomize_torque = True
-        randomize_motor_offset = True
-        randomize_gains = True
+        switch = True
 
-        randomize_start_pos = True
-        randomize_start_y = True
-        randomize_start_yaw = True
-        randomize_start_vel = True
-        randomize_start_pitch = True
+        randomize_start_pos = switch
+        randomize_start_y = switch
+        randomize_start_yaw = switch
+        randomize_start_vel = switch
+        randomize_start_pitch = switch
 
-        randomize_start_dof_pos = False
-        randomize_start_dof_vel = False
+        randomize_start_dof_pos = True
+        randomize_start_dof_vel = True
+
+        randomize_friction = switch
+        randomize_base_mass = switch
+        randomize_link_mass = switch
+        randomize_com = switch
+
+        push_robots = switch
+        action_delay = switch
+        add_dof_lag = False
+        add_imu_lag = False
+
+        randomize_torque = switch
+        randomize_gains = switch
+        randomize_motor_offset = switch
+        randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
+        randomize_joint_damping = False
+        randomize_joint_friction = False
+        randomize_joint_armature = switch
+        randomize_coulomb_friction = False
 
     class rewards:
         base_height_target = 0.6
@@ -127,6 +140,7 @@ class PddDreamWaqCfgPPO(PddBaseCfgPPO):
 
     class policy:
         init_noise_std = 1.0
+        use_recurrent_policy = False
         actor_hidden_dims = [512, 256, 128]
         critic_hidden_dims = [512, 256, 128]
         activation = 'elu'  # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
@@ -150,53 +164,12 @@ class PddDreamWaqCfgPPO(PddBaseCfgPPO):
         continue_from_last_std = True
 
     class runner(PddBaseCfgPPO.runner):
-        max_iterations = 3000  # number of policy updates
+        max_iterations = 50000  # number of policy updates
 
         # logging
         save_interval = 100  # check for potential saves every this many iterations
 
 
-class PddDreamWaqDRCfg(PddDreamWaqCfg):
-    class terrain(PddDreamWaqCfg.terrain):
-        curriculum = True
-
-        terrain_dict = {
-            'smooth_slope': 1,
-            'rough_slope': 0,
-            'stairs_up': 0,
-            'stairs_down': 0,
-            'discrete': 0,
-            'stepping_stone': 0,
-            'gap': 0,
-            'pit': 0,
-            'parkour': 0,
-            'parkour_gap': 0,
-            'parkour_box': 0,
-            'parkour_step': 0,
-            'parkour_stair': 0,
-            'parkour_flat': 0,
-        }
-
-    class noise(PddDreamWaqCfg.noise):
-        add_noise = True
-
-    class domain_rand(PddDreamWaqCfg.domain_rand):
-        switch = True
-
-        push_robots = switch
-        action_delay = switch
-        add_dof_lag = False
-        add_imu_lag = False
-
-        randomize_friction = switch
-
-        randomize_joint_stiffness = False  # for joints with spring behavior
-        randomize_joint_damping = False
-        randomize_joint_friction = False
-        randomize_joint_armature = switch
-        randomize_coulomb_friction = False
-
-
-class PddDreamWaqDRCfgPPO(PddDreamWaqCfgPPO):
-    class runner(PddDreamWaqCfgPPO.runner):
-        max_iterations = 50000  # number of policy updates
+class PddDreamWaqGRUCfgPPO(PddDreamWaqCfgPPO):
+    class policy(PddDreamWaqCfgPPO.policy):
+        use_recurrent_policy = True

@@ -203,8 +203,9 @@ class GenesisWrapper(BaseWrapper):
         self.edge_mask = torch.tensor(self.terrain.edge_mask, dtype=torch.float, device=self.device)
 
     def _process_robot_props(self):
-        self.num_bodies = self._robot.n_links
+        self.rigid_solver = self._robot.solver
 
+        self.num_bodies = self._robot.n_links
         self._body_names = [link.name for link in self._robot.links]
         self._dof_names = []
         for n in self.cfg.init_state.default_joint_angles:
@@ -218,7 +219,8 @@ class GenesisWrapper(BaseWrapper):
         self.num_dof = len(self._dof_names)
 
         # create indices
-        self._base_idx = self.create_indices([self.cfg.asset.base_link_name], True)
+        self._base_idx = torch.tensor([self._robot.get_link(self.cfg.asset.base_link_name).idx_local], dtype=torch.long, device=self.device)
+        self._base_idx_scene_level = torch.tensor([self._robot.get_link(self.cfg.asset.base_link_name).idx], dtype=torch.long, device=self.device)
         self._body_indices = self.create_indices(self._body_names, True)  # contains base link!
         self._dof_indices = self.create_indices(self._dof_names, False)
 
@@ -309,6 +311,17 @@ class GenesisWrapper(BaseWrapper):
     def set_dof_kv(self, kd, env_ids=None):
         self._robot.set_dofs_kv(kd, self._dof_indices, env_ids)
 
+    def set_dof_damping_coef(self, damping_coef, env_ids=None):
+        damping = self._robot.get_dofs_damping(self._dof_indices, env_ids)
+        self._robot.set_dofs_damping(damping * damping_coef, self._dof_indices, env_ids)
+
+    def set_dof_friction_coef(self, friction_coef, env_ids=None):
+        if not self.suppress_warning:
+            print(f"[bold red]⚠️ genesis has no joint friction?! [/bold red]")
+
+    def set_dof_armature(self, armature, env_ids=None):
+        self._robot.set_dofs_armature(armature, self._dof_indices, env_ids)
+
     @property
     def root_pos(self):
         return self._robot.get_pos()
@@ -351,9 +364,9 @@ class GenesisWrapper(BaseWrapper):
 
     # ---------------------------------------------- Step Interface ----------------------------------------------
 
-    def apply_perturbation(self, force, torque):
-        if not self.suppress_warning:
-            print(f"[bold red]⚠️ Apply external force is not implemented yet! [/bold red]")
+    def apply_perturbation(self, force, torque, env_ids=None):
+        self.rigid_solver.apply_links_external_force(force[:, :1], self._base_idx_scene_level, env_ids)
+        self.rigid_solver.apply_links_external_torque(torque[:, :1], self._base_idx_scene_level, env_ids)
 
     def control_dof_torque(self, torques):
         self._robot.control_dofs_force(torques, self._dof_indices)

@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import kl_divergence, Normal
 
-from rsl_rl.modules.model_dreamwaq import Actor, Critic
-from rsl_rl.storage import RolloutStorage
+from rsl_rl.modules.model_dreamwaq import Actor, ActorGRU, Critic
+from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from .alg_base import BaseAlgorithm
 
 try:
@@ -14,9 +14,11 @@ except ImportError:
 
 
 class Transition:
-    def __init__(self):
+    def __init__(self, is_recurrent):
         self.observations = None
         self.critic_observations = None
+        if is_recurrent:
+            self.hidden_states = None
         self.actions = None
         self.rewards = None
         self.dones = None
@@ -30,7 +32,8 @@ class Transition:
         return self.__dict__.items()
 
     def clear(self):
-        self.__init__()
+        for key in self.__dict__:
+            setattr(self, key, None)
 
 
 class PPODreamWaQ(BaseAlgorithm):
@@ -41,27 +44,33 @@ class PPODreamWaQ(BaseAlgorithm):
         self.device = device
 
         # PPO components
-        self.actor = Actor(env_cfg, train_cfg.policy).to(self.device)
+        if train_cfg.policy.use_recurrent_policy:
+            self.actor = ActorGRU(env_cfg, train_cfg.policy).to(self.device)
+        else:
+            self.actor = Actor(env_cfg, train_cfg.policy).to(self.device)
         self.critic = Critic(env_cfg, train_cfg.policy).to(self.device)
-        self.optimizer_actor = optim.Adam(self.actor.parameters(), lr=self.learning_rate)
-        self.optimizer_critic = optim.Adam(self.critic.parameters(), lr=self.learning_rate)
-        self.scaler_actor = GradScaler(enabled=self.cfg.use_amp)
-        self.scaler_critic = GradScaler(enabled=self.cfg.use_amp)
+        self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
+        self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
         # reconstructor
         self.mse_loss = nn.MSELoss()
-        self.l1_loss = nn.L1Loss()
 
         # Rollout Storage
-        self.transition = Transition()
+        self.transition = Transition(self.actor.is_recurrent)
         self.storage = RolloutStorage(env_cfg.num_envs, train_cfg.runner.num_steps_per_env, self.device)
 
     def act(self, obs, obs_critic, use_estimated_values=None, **kwargs):
         # store observations
         self.transition.observations = obs
         self.transition.critic_observations = obs_critic
+        if self.actor.is_recurrent:
+            self.transition.hidden_states = self.actor.get_hidden_states()
 
         actions = self.actor.act(obs, use_estimated_values=use_estimated_values).detach()
+
+        if self.actor.is_recurrent and self.transition.hidden_states is None:
+            # only for the first step where hidden_state is None
+            self.transition.hidden_states = 0 * self.actor.get_hidden_states()
 
         # store
         self.transition.actions = actions
@@ -70,8 +79,6 @@ class PPODreamWaQ(BaseAlgorithm):
         self.transition.action_mean = self.actor.action_mean.detach()
         self.transition.action_sigma = self.actor.action_std.detach()
         self.transition.use_estimated_values = use_estimated_values
-
-        self.actor.detach_hidden_state()
         return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
@@ -89,8 +96,9 @@ class PPODreamWaQ(BaseAlgorithm):
 
         # Record the transition
         self.storage.add_transitions(self.transition)
-        self.transition.clear()
-        self.actor.reset(dones)
+        if self.actor.is_recurrent:
+            self.transition.clear()
+            self.actor.reset(dones)
 
     def compute_returns(self, last_critic_obs):
         last_values = self.critic.evaluate(last_critic_obs).detach()
@@ -101,45 +109,51 @@ class PPODreamWaQ(BaseAlgorithm):
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
-        mean_symmetry_loss = 0
+        # mean_symmetry_loss = 0
+        mean_estimation_loss = 0
+        mean_vae_loss = 0
 
         kl_change = []
         num_updates = 0
 
-        for batch in self.storage.mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs):
-            kl_mean, surrogate_loss, value_loss, entropy_loss, symmetry_loss = self._compute_loss(batch)
+        if self.actor.is_recurrent:
+            generator = self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
+        else:
+            generator = self.storage.mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
+
+        for batch in generator:
+            loss, kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, vae_loss = self._compute_loss(batch, update_est)
 
             kl_change.append(kl_mean)
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-                for param_group in self.optimizer_actor.param_groups:
+                for param_group in self.optimizer.param_groups:
                     param_group['lr'] = self.learning_rate
 
             # Gradient step
-            self.optimizer_actor.zero_grad()
-            self.scaler_actor.scale(surrogate_loss - entropy_loss).backward()
-            self.scaler_actor.step(self.optimizer_actor)
-            self.scaler_actor.update()
-
-            self.optimizer_critic.zero_grad()
-            self.scaler_critic.scale(self.cfg.value_loss_coef * value_loss).backward()
-            self.scaler_critic.step(self.optimizer_critic)
-            self.scaler_critic.update()
+            self.optimizer.zero_grad()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
             num_updates += 1
-            mean_value_loss += value_loss.item()
-            mean_surrogate_loss += surrogate_loss.item()
-            mean_entropy_loss += entropy_loss.item()
+            mean_value_loss += value_loss
+            mean_surrogate_loss += surrogate_loss
+            mean_entropy_loss += entropy_loss
             mean_kl += kl_mean
             if update_est:
-                mean_symmetry_loss += symmetry_loss
+                # mean_symmetry_loss += symmetry_loss
+                mean_estimation_loss += estimation_loss
+                mean_vae_loss += vae_loss
 
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
         mean_kl /= num_updates
-        mean_symmetry_loss /= num_updates
+        # mean_symmetry_loss /= num_updates
+        mean_estimation_loss /= num_updates
+        mean_vae_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -154,17 +168,21 @@ class PPODreamWaQ(BaseAlgorithm):
             'Loss/kl_div': mean_kl,
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
-            'Loss/symmetry_loss': mean_symmetry_loss,
+            # 'Loss/symmetry_loss': mean_symmetry_loss,
+            'Loss/estimation_loss': mean_estimation_loss,
+            'Loss/vae_loss': mean_vae_loss,
             'Policy/noise_std': self.actor.log_std.exp().mean().item(),
         }
 
     # @torch.compile()
-    def _compute_loss(self, batch: dict):
+    def _compute_loss(self, batch: dict, update_est: bool):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
             critic_obs_batch = batch['critic_observations']
+            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
+            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
             actions_batch = batch['actions']
-            values_batch = batch['values']
+            target_values_batch = batch['values']
             advantages_batch = batch['advantages']
             returns_batch = batch['returns']
             old_mu_batch = batch['action_mean']
@@ -172,7 +190,9 @@ class PPODreamWaQ(BaseAlgorithm):
             old_actions_log_prob_batch = batch['actions_log_prob']
             use_estimated_values_batch = batch['use_estimated_values']
 
-            self.actor.act(obs_batch, use_estimated_values=use_estimated_values_batch)
+            ot1, est_mu, est_logvar = self.actor.train_act(obs_batch,
+                                                           hidden_states=hidden_states_batch,
+                                                           use_estimated_values=use_estimated_values_batch)
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -180,7 +200,7 @@ class PPODreamWaQ(BaseAlgorithm):
                     kl_mean = kl_divergence(
                         Normal(old_mu_batch, old_sigma_batch),
                         Normal(self.actor.action_mean, self.actor.action_std)
-                    ).sum(dim=-1).mean().item()
+                    )[mask_batch].sum(dim=-1).mean().item()
 
                     if kl_mean > self.cfg.desired_kl * 2.0:
                         self.learning_rate = max(1e-5, self.learning_rate / 1.5)
@@ -194,20 +214,38 @@ class PPODreamWaQ(BaseAlgorithm):
             ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
             surrogate = -advantages_batch * ratio
             surrogate_clipped = -advantages_batch * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
-            surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
+            surrogate_loss = torch.max(surrogate, surrogate_clipped)[mask_batch].mean()
 
             # Value function loss
             if self.cfg.use_clipped_value_loss:
+                value_clipped = target_values_batch + (evaluation - target_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
                 value_losses = (evaluation - returns_batch).pow(2)
-                evaluation_clipped = values_batch + (evaluation - values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_losses_clipped = (evaluation_clipped - returns_batch).pow(2)
-                value_loss = torch.maximum(value_losses, value_losses_clipped).mean()
+                value_losses_clipped = (value_clipped - returns_batch).pow(2)
+                value_loss = torch.max(value_losses, value_losses_clipped)[mask_batch].mean()
             else:
-                value_loss = (evaluation - returns_batch).pow(2).mean()
+                value_loss = (evaluation - returns_batch)[mask_batch].pow(2).mean()
 
-            entropy_loss = self.cfg.entropy_coef * self.actor.entropy.mean()
+            entropy_loss = self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
-            return kl_mean, surrogate_loss, value_loss, entropy_loss, 0.
+            loss = (surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss)
+
+            if update_est:
+                batch_size = 6
+                mask_batch = mask_batch[:, :batch_size]
+                est_mu = est_mu[:, :batch_size]
+                est_logvar = est_logvar[:, :batch_size]
+
+                # privileged information estimation loss
+                estimation_loss = self.mse_loss(
+                    est_mu[:, :batch_size, :3][mask_batch],
+                    critic_obs_batch.priv[:, :batch_size, 35:38][mask_batch],
+                )
+                vae_loss = -0.5 * torch.sum(1 + est_logvar - est_mu.pow(2) - est_logvar.exp(), dim=2)[mask_batch].mean()
+
+                loss += estimation_loss + vae_loss
+                return loss, kl_mean, value_loss.item(), surrogate_loss.item(), entropy_loss.item(), estimation_loss.item(), vae_loss.item()
+
+            return loss, kl_mean, value_loss.item(), surrogate_loss.item(), entropy_loss.item(), 0., 0.
 
     def play_act(self, obs, use_estimated_values=True):
         return self.actor.act(obs.float(), use_estimated_values=use_estimated_values, eval_=True)
@@ -221,8 +259,7 @@ class PPODreamWaQ(BaseAlgorithm):
         self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
         if load_optimizer:
-            self.optimizer_actor.load_state_dict(loaded_dict['optimizer_actor_state_dict'])
-            self.optimizer_critic.load_state_dict(loaded_dict['optimizer_critic_state_dict'])
+            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
@@ -233,6 +270,5 @@ class PPODreamWaQ(BaseAlgorithm):
         return {
             'actor_state_dict': self.actor.state_dict(),
             'critic_state_dict': self.critic.state_dict(),
-            'optimizer_actor_state_dict': self.optimizer_actor.state_dict(),
-            'optimizer_critic_state_dict': self.optimizer_critic.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
         }

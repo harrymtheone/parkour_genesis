@@ -56,6 +56,15 @@ class BaseWrapper:
         # Only used when you use pos_target drive mode
         raise NotImplementedError
 
+    def set_dof_damping_coef(self, damping_coef, env_ids=None):
+        raise NotImplementedError
+
+    def set_dof_friction_coef(self, friction_coef, env_ids=None):
+        raise NotImplementedError
+
+    def set_dof_armature(self, armature, env_ids=None):
+        raise NotImplementedError
+
     def apply_perturbation(self, force, torque):
         raise NotImplementedError
 

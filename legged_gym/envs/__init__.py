@@ -1,4 +1,4 @@
-from .pdd.config.pdd_dreamwaq_config import PddDreamWaqCfg, PddDreamWaqCfgPPO, PddDreamWaqDRCfg, PddDreamWaqDRCfgPPO
+from .pdd.config.pdd_dreamwaq_config import PddDreamWaqCfg, PddDreamWaqCfgPPO, PddDreamWaqGRUCfgPPO
 from .pdd.config.pdd_scan_config import PddScanCfg, PddScanCfgPPO, PddScanStairCfg, PddScanStairCfgPPO
 from .pdd.config.pdd_zju_config import PddZJUCfg, PddZJUCfgPPO
 from .pdd.pdd_dreamwaq_environment import PddDreamWaqEnvironment
@@ -11,7 +11,7 @@ task_list = [
     ['pdd_scan_stair', PddScanEnvironment, PddScanStairCfg(), PddScanStairCfgPPO()],
 
     ['pdd_dreamwaq', PddDreamWaqEnvironment, PddDreamWaqCfg(), PddDreamWaqCfgPPO()],
-    ['pdd_dreamwaq_dr', PddDreamWaqEnvironment, PddDreamWaqDRCfg(), PddDreamWaqDRCfgPPO()],
+    ['pdd_dreamwaq_gru', PddDreamWaqEnvironment, PddDreamWaqCfg(), PddDreamWaqGRUCfgPPO()],
 
     ['pdd_zju', PddZJUEnvironment, PddZJUCfg(), PddZJUCfgPPO()],
 

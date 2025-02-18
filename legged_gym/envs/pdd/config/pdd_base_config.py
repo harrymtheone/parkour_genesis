@@ -87,8 +87,8 @@ class PddBaseCfg(BaseConfig):
         sw_switch = True
 
         class flat_ranges:
-            lin_vel_x = [-0.5, 1.0]
-            lin_vel_y = [-0.5, 0.5]
+            lin_vel_x = [-0.3, 0.5]
+            lin_vel_y = [-0.2, 0.2]
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
@@ -107,7 +107,7 @@ class PddBaseCfg(BaseConfig):
 
         class noise_scales:
             dof_pos = 0.02
-            dof_vel = 0.5
+            dof_vel = 1.5
             lin_vel = 0.1
             ang_vel = 0.2
             gravity = 0.05

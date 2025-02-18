@@ -7,7 +7,7 @@ import torchvision
 import warp as wp
 
 from legged_gym.utils.helpers import class_to_dict
-from legged_gym.utils.math import torch_rand_float, axis_angle_to_quat, transform_by_quat, transform_by_yaw, wrap_to_pi
+from legged_gym.utils.math import torch_rand_float, transform_by_yaw, wrap_to_pi
 from legged_gym.utils.terrain import Terrain
 from .base_task import BaseTask
 from .utils import DepthBuffer
