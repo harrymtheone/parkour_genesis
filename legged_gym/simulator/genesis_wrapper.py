@@ -1,6 +1,7 @@
 import os
 
 import genesis as gs
+import numpy as np
 import torch
 from genesis.ext.isaacgym import terrain_utils
 from rich import print
@@ -27,36 +28,14 @@ class GenesisWrapper(BaseWrapper):
 
         if not self.headless:
             self.viewer = self._scene.visualizer.viewer
-
             self.enable_viewer_sync = True
-            self.free_cam = True
-            self.lookat_vec = torch.Tensor([-0, 2, 1])
-
-            # if self.cfg.play.control:
-            #     self.input_handler = JoystickHandler(self) if self.cfg.play.use_joystick else KeyboardHandler(self)
-            # else:
-            #     self.input_handler = BaseHandler(self)
+            self.free_cam = False
+            self.lookat_vec = np.array([-0, 2, 1])
+            self.last_lookat_pos = np.array([0, 0, 0])
 
         self.lookat_id = 0
 
         self.init_done = True
-
-        # # if running with a viewer, set up keyboard shortcuts and camera
-        # if self.headless:
-        #     self.viewer = None
-        # else:
-        #     self.viewer = self.scene.visualizer.viewer
-        #
-        #     self.enable_viewer_sync = True
-        #     self.free_cam = True
-        #     self.lookat_vec = np.array([-0, 2, 1])
-        #
-        #     if self.cfg.play.control:
-        #         self.input_handler = JoystickHandler(self) if self.cfg.play.use_joystick else KeyboardHandler(self)
-        #     else:
-        #         self.input_handler = BaseHandler(self)
-        #
-        # self.lookat_id = 0
 
     # ---------------------------------------------- Sim Creation ----------------------------------------------
 
@@ -390,20 +369,15 @@ class GenesisWrapper(BaseWrapper):
         if not self.free_cam:
             self.lookat(self.lookat_id)
 
-        # check for keyboard events
-        # self.input_handler.handle_device_input()
+        if self.enable_viewer_sync:
+            self.viewer.update()
 
-        self.viewer.update()
-
-        if not self.free_cam:
-            self.lookat_vec = self.viewer.camera_pos - self._base_pos[self.lookat_id, :3].cpu().clone().numpy()
+        self.last_lookat_pos = self._robot.get_pos()[self.lookat_id].cpu().numpy()
 
     def lookat(self, i):
-        look_at_pos = self.root_pos[i, :3].clone()
-        cam_pos = look_at_pos + self.lookat_vec
-        self.set_camera(cam_pos, look_at_pos)
+        self.lookat_id = i % self.num_envs
 
-    def set_camera(self, position, lookat):
-        """ Set camera position and direction
-        """
-        self.viewer.set_camera_pose(pos=position, lookat=lookat)
+        self.lookat_vec = self.viewer.camera_pos - self.last_lookat_pos
+        look_at_pos = self._robot.get_pos()[self.lookat_id].cpu().numpy()
+        cam_pos = look_at_pos + self.lookat_vec
+        self.viewer.set_camera_pose(pos=cam_pos, lookat=look_at_pos)

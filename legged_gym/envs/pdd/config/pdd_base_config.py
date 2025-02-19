@@ -7,8 +7,6 @@ from legged_gym.envs.base.base_config import BaseConfig
 class PddBaseCfg(BaseConfig):
     class play:
         control = False  # manually control or automatically
-        use_joystick = False  # use joystick or keyboard
-        plot_flag = False
 
     class env:
         env_spacing = 3.  # not used with heightfields/trimeshes

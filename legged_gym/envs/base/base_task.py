@@ -7,7 +7,7 @@ from legged_gym.envs.base.utils import DelayBuffer
 from legged_gym.simulator import get_simulator, SimulatorType
 from legged_gym.simulator.base_wrapper import DriveMode
 from legged_gym.utils.helpers import class_to_dict
-from legged_gym.utils.joystick import JoystickHandler, KeyboardHandler
+from legged_gym.utils.joystick import JoystickHandler
 from legged_gym.utils.math import torch_rand_float, inv_quat, axis_angle_to_quat, quat_to_xyz, transform_quat_by_quat, transform_by_quat, xyz_to_quat
 
 
@@ -50,6 +50,10 @@ class BaseTask:
 
     def get_critic_observations(self):
         return self.critic_obs
+
+    @property
+    def lookat_id(self):
+        return self.sim.lookat_id
 
     # ------------------------------------------------- Utils -------------------------------------------------
     def _zero_tensor(self, *shape, dtype=torch.float, requires_grad=False):
@@ -128,9 +132,8 @@ class BaseTask:
         self.global_counter = 0
         self.extras = {}
 
-        self.lookat_id = 0
         if not self.sim.headless and self.cfg.play.control:
-            self.input_handler = JoystickHandler(self) if self.cfg.play.use_joystick else KeyboardHandler(self)
+            self.joystick_handler = JoystickHandler(self.sim)
 
     # ---------------------------------------------- Robots Creation ----------------------------------------------
 
@@ -317,7 +320,7 @@ class BaseTask:
         if self.cfg.play.control:
             # overwrite commands
             self.commands.zero_()
-            self.commands[self.lookat_id, :3] = torch.Tensor(self.input_handler.get_control_input())
+            self.commands[self.lookat_id, :3] = torch.Tensor(self.joystick_handler.get_control_input())
         else:
             self._update_command()
 
@@ -358,9 +361,6 @@ class BaseTask:
         self.reset_buf[:] |= pitch_cutoff
         self.reset_buf[:] |= height_cutoff
 
-        if self.reset_buf[self.lookat_id]:
-            print()
-
     def _resample_commands(self, env_ids: torch.Tensor):
         raise NotImplementedError
 
@@ -375,7 +375,7 @@ class BaseTask:
         self.sim.render()
 
         if not self.sim.headless and self.cfg.play.control:
-            self.input_handler.handle_device_input()
+            self.joystick_handler.handle_device_input()
 
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. """
@@ -412,24 +412,10 @@ class BaseTask:
 
         # reset robot states
         self.sim.control_dof_torque(self._zero_tensor(self.num_envs, self.num_dof))
-        self.sim.step_environment()
-        if torch.any(self.sim.root_pos.isnan()):
-            print()
-
         self._reset_dof_state(env_ids)
-        self.sim.step_environment()
-        if torch.any(self.sim.root_pos.isnan()):
-            print()
-
         self._reset_root_state(env_ids)
-        self.sim.step_environment()
-        if torch.any(self.sim.root_pos.isnan()):
-            print()
-
         self._resample_commands(env_ids)
         self.sim.step_environment()
-        if torch.any(self.sim.root_pos.isnan()):
-            print()
 
         if self.cfg.domain_rand.action_delay:
             self.action_delay_buf.reset(env_ids)

@@ -28,19 +28,13 @@ class IsaacGymWrapper(BaseWrapper):
         self.gym.prepare_sim(self.sim)
         self._init_buffers()
 
+        self.lookat_id = 0
         if not self.headless:
             self.viewer = self.gym.create_viewer(self.sim, gymapi.CameraProperties())
 
             self.enable_viewer_sync = True
             self.free_cam = False
             self.lookat_vec = torch.tensor([-0, 2, 1], device=self.device)
-
-            # if self.cfg.play.control:
-            #     self.input_handler = JoystickHandler(self) if self.cfg.play.use_joystick else KeyboardHandler(self)
-            # else:
-            #     self.input_handler = BaseHandler(self)
-
-        self.lookat_id = 0
 
         self.init_done = True
 
@@ -411,7 +405,7 @@ class IsaacGymWrapper(BaseWrapper):
 
     # ------------------------------------------------ Graphics ------------------------------------------------
 
-    def render(self, sync_frame_time=True):
+    def render(self):
         if self.headless:
             return
 
@@ -421,11 +415,6 @@ class IsaacGymWrapper(BaseWrapper):
 
         if not self.free_cam:
             self.lookat(self.lookat_id)
-
-        # # check for keyboard events
-        # self.handle_key_event(self.gym.query_viewer_action_events(self.viewer))
-        # if self.cfg.play.control:
-        #     self.input_handler.handle_device_input()
 
         # fetch results
         if self.device != 'cpu':
@@ -437,8 +426,7 @@ class IsaacGymWrapper(BaseWrapper):
         if self.enable_viewer_sync:
             self.gym.step_graphics(self.sim)
             self.gym.draw_viewer(self.viewer, self.sim, True)
-            if sync_frame_time:
-                self.gym.sync_frame_time(self.sim)
+            self.gym.sync_frame_time(self.sim)
         else:
             self.gym.poll_viewer_events(self.viewer)
 
@@ -449,13 +437,7 @@ class IsaacGymWrapper(BaseWrapper):
             self.lookat_vec = cam_trans - look_at_pos
 
     def lookat(self, i):
-        look_at_pos = self._root_state[i, :3].clone()
+        self.lookat_id = i % self.num_envs
+        look_at_pos = self._root_state[self.lookat_id, :3].clone()
         cam_pos = look_at_pos + self.lookat_vec
-        self.set_camera(cam_pos, look_at_pos)
-
-    def set_camera(self, position, lookat):
-        """ Set camera position and direction
-        """
-        cam_pos = gymapi.Vec3(position[0], position[1], position[2])
-        cam_target = gymapi.Vec3(lookat[0], lookat[1], lookat[2])
-        self.gym.viewer_camera_look_at(self.viewer, None, cam_pos, cam_target)
+        self.gym.viewer_camera_look_at(self.viewer, None, gymapi.Vec3(*cam_pos), gymapi.Vec3(*look_at_pos))
