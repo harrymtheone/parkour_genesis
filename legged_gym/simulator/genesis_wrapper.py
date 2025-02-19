@@ -93,7 +93,6 @@ class GenesisWrapper(BaseWrapper):
         )
 
         rigid_options = gs.options.RigidOptions(
-            batch_links_info=True,
             batch_dofs_info=True,
             enable_collision=True,
             enable_joint_limit=True,
@@ -145,7 +144,8 @@ class GenesisWrapper(BaseWrapper):
             gs.morphs.URDF(
                 file=self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR),
                 merge_fixed_links=self.cfg.asset.collapse_fixed_joints,
-                links_to_keep=self.cfg.asset.links_to_keep
+                links_to_keep=self.cfg.asset.links_to_keep,
+                pos=(0., 0., 1.0)
             ),
             visualize_contact=self.debug
         )
@@ -156,19 +156,20 @@ class GenesisWrapper(BaseWrapper):
     def _create_heightfield(self):
         """ Adds a heightfield terrain to the simulation, sets parameters based on the cfg.
         """
+        horizontal_scale = self.cfg.terrain.horizontal_scale
         self._scene.add_entity(gs.morphs.Terrain(
-            pos=(-self.terrain.border, -self.terrain.border, 0.0),
-            horizontal_scale=self.cfg.terrain.horizontal_scale,
+            pos=(-self.terrain.border * horizontal_scale, -self.terrain.border * horizontal_scale, 0.0),
+            horizontal_scale=horizontal_scale,
             vertical_scale=self.cfg.terrain.vertical_scale,
             height_field=self.terrain.height_field_raw,
         ))
 
-        # terrain_entity = self.scene.add_entity(gs.morphs.Terrain(
+        # self._scene.add_entity(gs.morphs.Terrain(
         #     n_subterrains=(5, 1),
         #     subterrain_size=(8, 8),
         #     horizontal_scale=0.25,
         #     vertical_scale=0.005,
-        #     subterrain_types=[['pyramid_sloped_terrain', ]] * 5,
+        #     subterrain_types=[['random_uniform_terrain', ]] * 5,
         # ))
         self.height_samples = torch.tensor(self.terrain.height_field_raw, dtype=torch.float, device=self.device)
         self.height_guidance = torch.tensor(self.terrain.height_field_guidance, dtype=torch.float, device=self.device)
@@ -398,7 +399,7 @@ class GenesisWrapper(BaseWrapper):
             self.lookat_vec = self.viewer.camera_pos - self._base_pos[self.lookat_id, :3].cpu().clone().numpy()
 
     def lookat(self, i):
-        look_at_pos = self._base_pos[i, :3].clone()
+        look_at_pos = self.root_pos[i, :3].clone()
         cam_pos = look_at_pos + self.lookat_vec
         self.set_camera(cam_pos, look_at_pos)
 

@@ -25,11 +25,9 @@ class PddDreamWaqCfg(PddBaseCfg):
         scan_pts_x = np.linspace(-0.5, 1.1, 32)
         scan_pts_y = np.linspace(-0.4, 0.4, 16)
 
-        curriculum = False
-
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 0,
+            'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
             'discrete': 0,
@@ -76,7 +74,7 @@ class PddDreamWaqCfg(PddBaseCfg):
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = switch
-        randomize_coulomb_friction = True
+        randomize_coulomb_friction = switch
 
     class rewards:
         base_height_target = 0.6

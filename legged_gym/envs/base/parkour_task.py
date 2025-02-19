@@ -300,12 +300,12 @@ class ParkourTask(BaseTask):
 
         # curriculum logic for flat terrain
         env_is_flat = self.env_class[env_ids] < 2
-        # if len(env_is_flat) > 0:
-        #     # move_up[env_is_flat] = torch.logical_or(self.time_out_buf[env_ids][env_is_flat],
-        #     #                                         dis_to_origin[env_is_flat] > self.cfg.terrain.terrain_size[0] / 2)
-        #     # move_down[env_is_flat] = ~move_up[env_is_flat]
-        #     move_up[env_is_flat] = dis_to_origin[env_is_flat] > self.cfg.terrain.terrain_size[0] / 2
-        #     move_down[env_is_flat] = dis_to_origin[env_is_flat] < self.cfg.terrain.terrain_size[0] / 8
+        if len(env_is_flat) > 0:
+            # move_up[env_is_flat] = torch.logical_or(self.time_out_buf[env_ids][env_is_flat],
+            #                                         dis_to_origin[env_is_flat] > self.cfg.terrain.terrain_size[0] / 2)
+            # move_down[env_is_flat] = ~move_up[env_is_flat]
+            move_up[env_is_flat] = dis_to_origin[env_is_flat] > self.cfg.terrain.terrain_size[0] / 4  # half of one-side of the terrain
+            move_down[env_is_flat] = dis_to_origin[env_is_flat] < self.cfg.terrain.terrain_size[0] / 8
 
         # curriculum logic for stair terrain
         env_is_stair = torch.logical_and(self.env_class[env_ids] >= 2, self.env_class[env_ids] < 4)
@@ -341,7 +341,7 @@ class ParkourTask(BaseTask):
         )  # (the minimum level is zero)
 
         # randomize the terrain level for flat terrain
-        self.env_levels[env_ids[env_is_flat]] = torch.randint_like(self.env_levels[env_ids[env_is_flat]], self.max_terrain_level)
+        # self.env_levels[env_ids[env_is_flat]] = torch.randint_like(self.env_levels[env_ids[env_is_flat]], self.max_terrain_level)
         self.env_origins[env_ids] = self.terrain_origins[self.env_levels[env_ids], self.env_cols[env_ids]]
         self.env_class[env_ids] = self.terrain_class[self.env_levels[env_ids], self.env_cols[env_ids]]
         self.env_goals[:] = self.terrain_goals[self.env_levels, self.env_cols]

@@ -1,8 +1,5 @@
-import noise
 import numpy as np
 from pydelatin import Delatin
-
-from legged_gym.utils.terrain.make_terrain import SubTerrain
 
 
 def convert_heightfield_to_trimesh(height_field_raw, horizontal_scale, vertical_scale, slope_threshold=None):
@@ -94,47 +91,30 @@ def convert_heightfield_to_trimesh_delatin(height_field_raw, horizontal_scale, v
     return vertices, mesh.triangles
 
 
-def add_fractal_roughness(terrain: SubTerrain, difficulty=1):
+def add_fractal_roughness(terrain, levels=8, scale=1.0):
     """
-        Generate 2D fractal noise using Perlin noise.
+    Generates a fractal terrain
 
-        Parameters:
-        - shape: tuple (height, width) of the 2D array
-        - scale: scaling factor for the noise
-        - octaves: number of octaves (layers of noise)
-        - persistence: controls the amplitude of each octave
-        - lacunarity: controls the frequency of each octave
+    Parameters
+        terrain (SubTerrain): the terrain
+        levels (int, optional): granurarity of the fractal terrain. Defaults to 8.
+        scale (float, optional): scales vertical variation. Defaults to 1.0.
     """
+    width = terrain.width
+    length = terrain.length
+    height = np.zeros((width, length))
+    for level in range(1, levels + 1):
+        step = 2 ** (levels - level)
+        for y in range(0, width, step):
+            y_skip = (1 + y // step) % 2
+            for x in range(step * y_skip, length, step * (1 + y_skip)):
+                x_skip = (1 + x // step) % 2
+                xref = step * (1 - x_skip)
+                yref = step * (1 - y_skip)
+                mean = height[y - yref: y + yref + 1: 2 * step, x - xref: x + xref + 1: 2 * step].mean()
+                variation = 2 ** (-level) * np.random.uniform(-1, 1)
+                height[y, x] = mean + scale * variation
 
-    # flat terrain  (from Zipeng Fu)
-    # for structured gait emergence:
-    #     number of octaves = 2, fractal lacunarity = 2.0, fractal gain = 0.25, frequency = 10Hz, amplitude = 0.23 m;
-    # uneven terrain
-    # for unstructured gait emergence:
-    #     number of octaves = 2, fractal lacunarity = 2.0, fractal gain = 0.25, frequency = 20Hz, amplitude = 0.27m
-
-    octaves = 2
-    lacunarity = 2.0
-    gain = 0.25
-    frequency = 10 + difficulty * 10
-    amplitude = (0.1 + 0.1 * difficulty) / terrain.vertical_scale
-
-    height, width = terrain.height_field_raw.shape
-    noise_array = np.zeros((height, width), dtype=terrain.height_field_raw.dtype)
-
-    # Generate Perlin noise at different scales
-    for y in range(height):
-        for x in range(width):
-            noise_value = 0
-            amp = amplitude
-            freq = frequency
-
-            # Accumulate noise for each octave
-            for i in range(octaves):
-                noise_value += amp * noise.pnoise2(x / freq, y / freq, octaves=octaves, persistence=gain, lacunarity=lacunarity)
-                freq *= lacunarity
-                amp *= gain
-
-            noise_array[y][x] = noise_value
-
-    terrain.height_field_raw += noise_array
+    height /= terrain.vertical_scale
+    terrain.height_field_raw += height.astype(np.int16)
+    return terrain

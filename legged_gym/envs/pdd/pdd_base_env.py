@@ -44,7 +44,6 @@ class PddBaseEnvironment(ParkourTask):
         self.gait_start[env_ids] = 0.5 * torch.randint(0, 2, (len(env_ids),), device=self.device)
 
         self.last_feet_vel_xy[env_ids] = 0.
-        self.feet_euler_xyz[:] = quat_to_xyz(self.sim.link_quat)[:, self.feet_indices]
 
     def _refresh_variables(self):
         super()._refresh_variables()
@@ -54,9 +53,8 @@ class PddBaseEnvironment(ParkourTask):
 
         # update feet height
         feet_pos = self.sim.link_pos[:, self.feet_indices]
-        feet_z = feet_pos[:, :, 2] - 0.02
         proj_ground_height = self._get_heights(feet_pos + self.cfg.terrain.border_size, use_guidance=self.cfg.rewards.use_guidance_terrain)
-        self.feet_height[:] = feet_z - proj_ground_height
+        self.feet_height[:] = feet_pos[:, :, 2] + self.cfg.asset.feet_height_correction - proj_ground_height
         self.feet_euler_xyz[:] = quat_to_xyz(self.sim.link_quat[:, self.feet_indices])
 
     def _post_physics_pre_step(self):
@@ -467,6 +465,8 @@ class PddBaseEnvironment(ParkourTask):
     def _reward_feet_rotation(self):
         # rotation = torch.sum(torch.square(self.feet_euler_xyz[:,:,:2]),dim=[1,2])
         pitch = torch.sum(torch.square(self.feet_euler_xyz[:, :, 1]), dim=1)
+
+        tracking_sigma = self.feet_height
         return torch.exp(-(pitch / 1.).square())
 
     def _reward_feet_stumble(self):

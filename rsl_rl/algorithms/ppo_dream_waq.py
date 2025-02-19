@@ -19,6 +19,7 @@ class Transition:
         self.critic_observations = None
         if is_recurrent:
             self.hidden_states = None
+        self.observations_next = None
         self.actions = None
         self.rewards = None
         self.dones = None
@@ -82,6 +83,7 @@ class PPODreamWaQ(BaseAlgorithm):
         return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
+        self.transition.observations_next = args[0].as_obs_next()
         self.transition.rewards = rewards.clone().unsqueeze(1)
         self.transition.dones = dones.unsqueeze(1)
 
@@ -111,6 +113,7 @@ class PPODreamWaQ(BaseAlgorithm):
         mean_kl = 0
         # mean_symmetry_loss = 0
         mean_estimation_loss = 0
+        mean_ot1_prediction_loss = 0
         mean_vae_loss = 0
 
         kl_change = []
@@ -122,7 +125,7 @@ class PPODreamWaQ(BaseAlgorithm):
             generator = self.storage.mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
 
         for batch in generator:
-            loss, kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, vae_loss = self._compute_loss(batch, update_est)
+            loss, kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, ot1_prediction_loss, vae_loss = self._compute_loss(batch, update_est)
 
             kl_change.append(kl_mean)
 
@@ -145,6 +148,7 @@ class PPODreamWaQ(BaseAlgorithm):
             if update_est:
                 # mean_symmetry_loss += symmetry_loss
                 mean_estimation_loss += estimation_loss
+                mean_ot1_prediction_loss += ot1_prediction_loss
                 mean_vae_loss += vae_loss
 
         mean_value_loss /= num_updates
@@ -153,6 +157,7 @@ class PPODreamWaQ(BaseAlgorithm):
         mean_kl /= num_updates
         # mean_symmetry_loss /= num_updates
         mean_estimation_loss /= num_updates
+        mean_ot1_prediction_loss /= num_updates
         mean_vae_loss /= num_updates
 
         kl_str = 'kl: '
@@ -170,6 +175,7 @@ class PPODreamWaQ(BaseAlgorithm):
             'Loss/entropy_loss': mean_entropy_loss,
             # 'Loss/symmetry_loss': mean_symmetry_loss,
             'Loss/estimation_loss': mean_estimation_loss,
+            'Loss/ot1_prediction_loss': mean_ot1_prediction_loss,
             'Loss/vae_loss': mean_vae_loss,
             'Policy/noise_std': self.actor.log_std.exp().mean().item(),
         }
@@ -181,6 +187,7 @@ class PPODreamWaQ(BaseAlgorithm):
             critic_obs_batch = batch['critic_observations']
             hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
             mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
+            obs_next_batch = batch['observations_next']
             actions_batch = batch['actions']
             target_values_batch = batch['values']
             advantages_batch = batch['advantages']
@@ -232,20 +239,37 @@ class PPODreamWaQ(BaseAlgorithm):
             if update_est:
                 batch_size = 6
                 mask_batch = mask_batch[:, :batch_size]
+                ot1 = ot1[:, :batch_size]
                 est_mu = est_mu[:, :batch_size]
                 est_logvar = est_logvar[:, :batch_size]
+                obs_next_batch = obs_next_batch.proprio[:, :batch_size]
 
                 # privileged information estimation loss
                 estimation_loss = self.mse_loss(
                     est_mu[:, :batch_size, :3][mask_batch],
                     critic_obs_batch.priv[:, :batch_size, 35:38][mask_batch],
                 )
+
+                # Ot+1 prediction loss
+                ot1_prediction_loss = self.mse_loss(
+                    obs_next_batch[mask_batch],
+                    ot1[mask_batch]
+                )
+
+                # VAE loss
                 vae_loss = -0.5 * torch.sum(1 + est_logvar - est_mu.pow(2) - est_logvar.exp(), dim=2)[mask_batch].mean()
 
-                loss += estimation_loss + vae_loss
-                return loss, kl_mean, value_loss.item(), surrogate_loss.item(), entropy_loss.item(), estimation_loss.item(), vae_loss.item()
+                loss += estimation_loss + ot1_prediction_loss + vae_loss
+                return (loss,
+                        kl_mean,
+                        value_loss.item(),
+                        surrogate_loss.item(),
+                        entropy_loss.item(),
+                        estimation_loss.item(),
+                        ot1_prediction_loss.item(),
+                        vae_loss.item())
 
-            return loss, kl_mean, value_loss.item(), surrogate_loss.item(), entropy_loss.item(), 0., 0.
+            return loss, kl_mean, value_loss.item(), surrogate_loss.item(), entropy_loss.item(), 0., 0., 0.
 
     def play_act(self, obs, use_estimated_values=True):
         return self.actor.act(obs.float(), use_estimated_values=use_estimated_values, eval_=True)

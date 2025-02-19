@@ -24,6 +24,7 @@ def gen_info_panel(args, env):
     real_vx, real_vy, _ = env.base_lin_vel[env.lookat_id].cpu().numpy()
     _, _, real_yaw = env.base_ang_vel[env.lookat_id].cpu().numpy()
     real_base_height = env.base_height[env.lookat_id].cpu().numpy()
+    feet_height = env.feet_height[env.lookat_id].cpu().numpy()
 
     if args.headless:
         perc_contact_forces = torch.mean(env.contact_forces_avg, dim=0).cpu().numpy()
@@ -53,9 +54,10 @@ def gen_info_panel(args, env):
     table21.add_column("Left")
     table21.add_column("Right")
     table21.add_row("Contact forces", f'{perc_contact_forces[0]: .2f}', f'{perc_contact_forces[1]: .2f}')
+    table21.add_row("Feet height", f'{feet_height[0]: .4f}', f'{feet_height[1]: .4f}')
 
     table22 = Table()
-    table22.add_column(f"phase: {env.phase[env.lookat_id]}")
+    table22.add_column(f"phase: {env.phase[env.lookat_id]: .2f}")
     table22.add_column("Left")
     table22.add_column("Right")
     table22.add_row("Feet air time", f'{perc_feet_air_time[0]: .2f}', f'{perc_feet_air_time[1]: .2f}')

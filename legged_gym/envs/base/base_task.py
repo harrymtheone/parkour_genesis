@@ -358,6 +358,9 @@ class BaseTask:
         self.reset_buf[:] |= pitch_cutoff
         self.reset_buf[:] |= height_cutoff
 
+        if self.reset_buf[self.lookat_id]:
+            print()
+
     def _resample_commands(self, env_ids: torch.Tensor):
         raise NotImplementedError
 
@@ -409,10 +412,24 @@ class BaseTask:
 
         # reset robot states
         self.sim.control_dof_torque(self._zero_tensor(self.num_envs, self.num_dof))
+        self.sim.step_environment()
+        if torch.any(self.sim.root_pos.isnan()):
+            print()
+
         self._reset_dof_state(env_ids)
+        self.sim.step_environment()
+        if torch.any(self.sim.root_pos.isnan()):
+            print()
+
         self._reset_root_state(env_ids)
+        self.sim.step_environment()
+        if torch.any(self.sim.root_pos.isnan()):
+            print()
+
         self._resample_commands(env_ids)
         self.sim.step_environment()
+        if torch.any(self.sim.root_pos.isnan()):
+            print()
 
         if self.cfg.domain_rand.action_delay:
             self.action_delay_buf.reset(env_ids)

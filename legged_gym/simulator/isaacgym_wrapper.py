@@ -123,15 +123,17 @@ class IsaacGymWrapper(BaseWrapper):
         hf_params.vertical_scale = self.cfg.terrain.vertical_scale
         hf_params.nbRows = self.terrain.tot_cols
         hf_params.nbColumns = self.terrain.tot_rows
-        hf_params.transform.p.x = -self.terrain.border
-        hf_params.transform.p.y = -self.terrain.border
+        hf_params.transform.p.x = -self.terrain.border * self.cfg.terrain.horizontal_scale
+        hf_params.transform.p.y = -self.terrain.border * self.cfg.terrain.horizontal_scale
         hf_params.transform.p.z = 0.0
         hf_params.static_friction = self.cfg.terrain.static_friction
         hf_params.dynamic_friction = self.cfg.terrain.dynamic_friction
         hf_params.restitution = self.cfg.terrain.restitution
 
-        self.gym.add_heightfield(self.sim, self.terrain.height_field_raw.flatten(order='C'), hf_params)
+        self.gym.add_heightfield(self.sim, self.terrain.height_field_raw.T, hf_params)
         self.height_samples = torch.tensor(self.terrain.height_field_raw, device=self.device)
+        self.height_guidance = torch.tensor(self.terrain.height_field_guidance, dtype=torch.float, device=self.device)
+        self.edge_mask = torch.tensor(self.terrain.edge_mask, device=self.device)
 
     def _create_trimesh(self):
         """ Adds a triangle mesh terrain to the simulation, sets parameters based on the cfg.

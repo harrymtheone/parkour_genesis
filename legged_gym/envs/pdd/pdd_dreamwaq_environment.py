@@ -11,6 +11,15 @@ class ActorObs(ObsBase):
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
 
+    def as_obs_next(self):
+        # remove unwanted attribute to save CUDA memory
+        return ObsNext(self.proprio)
+
+
+class ObsNext(ObsBase):
+    def __init__(self, proprio):
+        self.proprio = proprio.clone()
+
 
 class CriticObs(ObsBase):
     def __init__(self, priv, priv_his, scan):

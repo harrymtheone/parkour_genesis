@@ -40,7 +40,8 @@ class ActorGRU(nn.Module):
 
 
 def trace():
-    exptid, checkpoint = 'pdd_dream_gru_003', 1600
+    # exptid, checkpoint = 'pdd_dream_gru_004', 20000
+    exptid, checkpoint = 'pdd_dream_gru_005', 30000
 
     trace_path = os.path.join('../dream_gru/traced')
     if not os.path.exists(trace_path):

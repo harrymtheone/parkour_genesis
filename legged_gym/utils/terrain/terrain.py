@@ -4,8 +4,8 @@ from enum import Enum
 import pyfqmr
 from scipy.ndimage import binary_dilation
 
-from .make_terrain import *
-from .utils import convert_heightfield_to_trimesh, convert_heightfield_to_trimesh_delatin, add_fractal_roughness
+from .terrain_utils import *
+from .utils import convert_heightfield_to_trimesh, add_fractal_roughness
 
 
 class Terrain:
@@ -47,31 +47,22 @@ class Terrain:
 
         self.curriculum(max_difficulty=cfg.max_difficulty)
 
-        if cfg.description_type == "trimesh":
-            print("Converting heightmap to trimesh...")
-            if cfg.hf2mesh_method == "grid":
-                self.vertices, self.triangles, self.edge_mask = convert_heightfield_to_trimesh(self.height_field_raw,
-                                                                                               self.cfg.horizontal_scale,
-                                                                                               self.cfg.vertical_scale,
-                                                                                               self.cfg.slope_treshold)
-                half_edge_width = int(self.cfg.edge_width_thresh / self.cfg.horizontal_scale)
-                structure = np.ones((half_edge_width * 2 + 1, half_edge_width * 2 + 1))
-                self.edge_mask = binary_dilation(self.edge_mask, structure=structure)
-
-                if self.cfg.simplify_grid:
-                    mesh_simplifier = pyfqmr.Simplify()
-                    mesh_simplifier.setMesh(self.vertices, self.triangles)
-                    mesh_simplifier.simplify_mesh(target_count=int(0.05 * self.triangles.shape[0]), aggressiveness=7, preserve_border=True, verbose=10)
-
-                    self.vertices, self.triangles, _ = mesh_simplifier.getMesh()
-                    self.vertices = self.vertices.astype(np.float32)
-                    self.triangles = self.triangles.astype(np.uint32)
-            else:
-                assert cfg.hf2mesh_method == "fast", "Height field to mesh method must be grid or fast"
-                self.vertices, self.triangles = convert_heightfield_to_trimesh_delatin(self.height_field_raw,
+        self.vertices, self.triangles, self.edge_mask = convert_heightfield_to_trimesh(self.height_field_raw,
                                                                                        self.cfg.horizontal_scale,
                                                                                        self.cfg.vertical_scale,
-                                                                                       max_error=cfg.max_error)
+                                                                                       self.cfg.slope_treshold)
+        half_edge_width = int(self.cfg.edge_width_thresh / self.cfg.horizontal_scale)
+        structure = np.ones((half_edge_width * 2 + 1, half_edge_width * 2 + 1))
+        self.edge_mask = binary_dilation(self.edge_mask, structure=structure)
+
+        if cfg.description_type == "trimesh" and self.cfg.simplify_grid:
+            mesh_simplifier = pyfqmr.Simplify()
+            mesh_simplifier.setMesh(self.vertices, self.triangles)
+            mesh_simplifier.simplify_mesh(target_count=int(0.05 * self.triangles.shape[0]), aggressiveness=7, preserve_border=True, verbose=10)
+
+            self.vertices, self.triangles, _ = mesh_simplifier.getMesh()
+            self.vertices = self.vertices.astype(np.float32)
+            self.triangles = self.triangles.astype(np.uint32)
 
             print(f'Created {self.vertices.shape[0]} vertices')
             print(f'Created {self.triangles.shape[0]} triangles')
@@ -133,14 +124,13 @@ class Terrain:
             # if choice < self.proportions[0] / 2:
             #     slope *= -1
             # terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
-            # self.add_fractal_roughness(terrain, difficulty)
+            # add_fractal_roughness(terrain, scale=5)
 
         elif choice < self.proportions[1]:
             terrain.terrain_type = Terrain.terrain_type.rough_slope
             self.terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
-            # random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05,
-            #                        step=0.005, downsampled_scale=0.2)
-            add_fractal_roughness(terrain, difficulty)
+            random_uniform_terrain(terrain, min_height=-0.1, max_height=0.1, step=0.1, downsampled_scale=0.5)
+            # add_fractal_roughness(terrain, scale=5)
 
         elif choice < self.proportions[3]:
             if choice < self.proportions[2]:
