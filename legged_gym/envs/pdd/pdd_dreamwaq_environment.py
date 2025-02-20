@@ -1,5 +1,4 @@
 import torch
-# from isaacgym.torch_utils import quat_rotate_inverse
 
 from .pdd_base_env import PddBaseEnvironment
 from ..base.utils import ObsBase, HistoryBuffer

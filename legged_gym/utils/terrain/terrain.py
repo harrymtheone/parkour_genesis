@@ -87,10 +87,9 @@ class Terrain:
 
     def add_roughness(self, terrain, difficulty=1):
         max_height = (self.cfg.roughness_height[1] - self.cfg.roughness_height[0]) * difficulty + self.cfg.roughness_height[0]
-        height = random.uniform(self.cfg.roughness_height[0], max_height)
         random_uniform_terrain(terrain,
-                               min_height=-height,
-                               max_height=height,
+                               min_height=-max_height,
+                               max_height=max_height,
                                step=0.005,
                                downsampled_scale=self.cfg.downsampled_scale)
 
@@ -125,12 +124,14 @@ class Terrain:
             #     slope *= -1
             # terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
             # add_fractal_roughness(terrain, scale=5)
+            self.add_roughness(terrain, difficulty)
 
         elif choice < self.proportions[1]:
             terrain.terrain_type = Terrain.terrain_type.rough_slope
-            self.terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
-            random_uniform_terrain(terrain, min_height=-0.1, max_height=0.1, step=0.1, downsampled_scale=0.5)
-            # add_fractal_roughness(terrain, scale=5)
+            # self.terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
+            # random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
+            add_fractal_roughness(terrain, levels=6, scale=0.5 * difficulty)
+            # self.add_roughness(terrain, difficulty)
 
         elif choice < self.proportions[3]:
             if choice < self.proportions[2]:

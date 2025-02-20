@@ -168,13 +168,13 @@ class DelayBuffer:
         self.buf[self._mask] = data.unsqueeze(1).expand_as(self.buf)[self._mask]
 
     def step(self):
-        self.buf[:, :-1] = self.buf[:, 1:].clone()
+        self.buf[:, :-1] = self.buf[:, 1:]
 
     def get(self):
         return self.buf[:, 0].clone()
 
     def reset(self, dones):
-        self.buf[dones] = 0.
+        self.buf[dones].zero_()
 
 
 class LagBuffer:

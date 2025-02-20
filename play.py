@@ -18,8 +18,8 @@ slowmo = 1
 def play(args):
     args.proj_name = 'parkour_genesis'
     log_root = 'logs'
-    args.simulator = SimulatorType.Genesis
-    # args.simulator = SimulatorType.IsaacGym
+    # args.simulator = SimulatorType.Genesis
+    args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
 
@@ -27,10 +27,10 @@ def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
 
     # override some parameters for testing
-    env_cfg.play.control = True
+    env_cfg.play.control = False
     env_cfg.env.num_envs = 3
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
-    env_cfg.terrain.num_rows = 10
+    env_cfg.terrain.num_rows = 5
     env_cfg.terrain.curriculum = True
     env_cfg.terrain.max_difficulty = False
     env_cfg.terrain.max_init_terrain_level = 0
@@ -39,15 +39,15 @@ def play(args):
     # env_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     env_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     env_cfg.depth.angle_range = [-1, 1]
-    env_cfg.domain_rand.push_robots = False
+    env_cfg.domain_rand.push_robots = True
     env_cfg.domain_rand.push_interval_s = 6
     env_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
 
-    env_cfg.terrain.description_type = 'plane'  # plane, heightfield or trimesh
-    # env_cfg.terrain.description_type = 'heightfield'  # plane, heightfield or trimesh
+    # env_cfg.terrain.description_type = 'plane'  # plane, heightfield or trimesh
+    env_cfg.terrain.description_type = 'heightfield'  # plane, heightfield or trimesh
     env_cfg.terrain.terrain_dict = {
-        'smooth_slope': 0,
-        'rough_slope': 1,
+        'smooth_slope': 1,
+        'rough_slope': 0,
         'stairs_up': 0,
         'stairs_down': 0,
         'discrete': 0,

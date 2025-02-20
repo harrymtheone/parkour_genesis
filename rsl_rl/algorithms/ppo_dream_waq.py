@@ -177,7 +177,7 @@ class PPODreamWaQ(BaseAlgorithm):
             'Loss/estimation_loss': mean_estimation_loss,
             'Loss/ot1_prediction_loss': mean_ot1_prediction_loss,
             'Loss/vae_loss': mean_vae_loss,
-            'Policy/noise_std': self.actor.log_std.exp().mean().item(),
+            'Train/noise_std': self.actor.log_std.exp().mean().item(),
         }
 
     # @torch.compile()

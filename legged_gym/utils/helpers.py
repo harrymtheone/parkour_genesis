@@ -76,7 +76,7 @@ def get_args():
         {"name": "--checkpoint", "type": int},
 
         {"name": "--headless", "action": "store_true"},
-        {"name": "--simulator", "type": str},
+        {"name": "--simulator", "type": int},
         {"name": "--device", "type": str},
         {"name": "--drive_mode", "type": int},
 

@@ -132,7 +132,7 @@ class BaseTask:
         self.global_counter = 0
         self.extras = {}
 
-        if not self.sim.headless and self.cfg.play.control:
+        if not self.sim.headless:
             self.joystick_handler = JoystickHandler(self.sim)
 
     # ---------------------------------------------- Robots Creation ----------------------------------------------
@@ -374,7 +374,7 @@ class BaseTask:
     def render(self):
         self.sim.render()
 
-        if not self.sim.headless and self.cfg.play.control:
+        if not self.sim.headless:
             self.joystick_handler.handle_device_input()
 
     def _push_robots(self):

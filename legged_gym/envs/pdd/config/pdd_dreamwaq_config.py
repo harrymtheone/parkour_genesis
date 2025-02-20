@@ -25,8 +25,10 @@ class PddDreamWaqCfg(PddBaseCfg):
         scan_pts_x = np.linspace(-0.5, 1.1, 32)
         scan_pts_y = np.linspace(-0.4, 0.4, 16)
 
+        curriculum = False
+
         terrain_dict = {
-            'smooth_slope': 1,
+            'smooth_slope': 3,
             'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,

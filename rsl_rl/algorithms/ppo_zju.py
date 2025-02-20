@@ -173,7 +173,7 @@ class PPO_ZJU(BaseAlgorithm):
             'Loss/kl_div': mean_kl,
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
-            'Policy/noise_std': self.actor.log_std.exp().mean().item(),
+            'Train/noise_std': self.actor.log_std.exp().mean().item(),
         }
         if update_est:
             return_dict.update({

@@ -150,7 +150,7 @@ class ActorGRU(nn.Module):
         if eval_:
             return mean
 
-        self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
+        self.distribution = Normal(mean, torch.exp(self.log_std))
         return self.distribution.sample()
 
     def train_act(self, obs, hidden_states, **kwargs):
