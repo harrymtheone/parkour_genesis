@@ -39,6 +39,9 @@ class BaseWrapper:
 
     # ------------------------------------------------- Simulator Interfaces -------------------------------------------------
 
+    def get_trimesh(self):
+        raise NotImplementedError
+
     def refresh_variable(self):
         raise NotImplementedError
 

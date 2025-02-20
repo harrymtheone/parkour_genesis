@@ -56,7 +56,7 @@ class Actor(nn.Module):
             self.activation,
             nn.Conv1d(in_channels=2 * channel_size, out_channels=4 * channel_size, kernel_size=6, stride=1),
             self.activation,
-            nn.Conv1d(in_channels=4 * channel_size, out_channels=8 * channel_size, kernel_size=6, stride=1),
+            nn.Conv1d(in_channels=4 * channel_size, out_channels=8 * channel_size, kernel_size=6, stride=1),  # (8 * channel_size, 1)
             self.activation,
             nn.Flatten()
         )

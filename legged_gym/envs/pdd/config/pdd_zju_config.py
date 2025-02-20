@@ -8,37 +8,38 @@ class PddZJUCfg(PddBaseCfg):
         num_envs = 4096  # 6144
 
         n_proprio = 41
-        len_prop_his = 50
+        len_prop_his = 10
 
         len_depth_his = 2
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        n_priv = 77
+        num_critic_obs = 53 + 24  # +32 feet_hmap
         len_critic_his = 50
 
         num_actions = 10
         episode_length_s = 30  # episode length in seconds
 
-    class depth:
-        use_camera = True
-        use_warp = True
+    class sensors:
+        activated = True
 
-        position = [0.10, 0, 0.0]  # front camera
-        position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-        angle = 60  # positive pitch down (degree)
-        angle_range = [-1, 1]  # positive pitch down (degree)
+        class depth_0:
+            position = [0.10, 0, 0.0]  # front camera
+            position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
+            pitch = 60  # positive pitch down (degree)
+            pitch_range = [-1, 1]  # positive pitch down (degree)
 
-        update_interval = 5  # 5 works without retraining, 8 worse
+            update_interval = 5  # 5 works without retraining, 8 worse
+            delay_prop = (5, 1)  # Gaussian (mean, std)
 
-        original = (106, 60)  # width, height
-        resized = (87, 58)  # (87, 58)
-        horizontal_fov = 87
+            resolution = (106, 60)  # width, height
+            resized = (87, 58)  # (87, 58)
+            horizontal_fov = 87
 
-        near_clip = 0
-        far_clip = 2
-        dis_noise_global = 0.1  # in meters
-        dis_noise_gaussian = 0.05  # in meters
+            near_clip = 0
+            far_clip = 2
+            dis_noise_global = 0.1  # in meters
+            dis_noise_gaussian = 0.05  # in meters
 
     class terrain(PddBaseCfg.terrain):
         scan_pts_x = np.linspace(-0.5, 1.1, 32)
@@ -50,9 +51,6 @@ class PddZJUCfg(PddBaseCfg):
 
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
-
-        scan_pts_x = np.linspace(-0.5, 1.1, 32)
-        scan_pts_y = np.linspace(-0.4, 0.4, 16)
 
         terrain_dict = {
             'smooth_slope': 1,
@@ -96,16 +94,35 @@ class PddZJUCfg(PddBaseCfg):
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class domain_rand(PddBaseCfg.domain_rand):
-        randomize_base_mass = True
-        randomize_link_mass = True
-        randomize_com = True
-        randomize_torque = True
-        randomize_motor_offset = True
-        randomize_gains = True
+        switch = False
 
-        randomize_start_pos = True
-        randomize_start_yaw = True
-        randomize_start_y = True
+        randomize_start_pos = switch
+        randomize_start_y = switch
+        randomize_start_yaw = switch
+        randomize_start_vel = switch
+        randomize_start_pitch = switch
+
+        randomize_start_dof_pos = True
+        randomize_start_dof_vel = True
+
+        randomize_friction = switch
+        randomize_base_mass = switch
+        randomize_link_mass = switch
+        randomize_com = switch
+
+        push_robots = switch
+        action_delay = switch
+        add_dof_lag = False
+        add_imu_lag = False
+
+        randomize_torque = switch
+        randomize_gains = switch
+        randomize_motor_offset = switch
+        randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
+        randomize_joint_damping = False
+        randomize_joint_friction = False
+        randomize_joint_armature = switch
+        randomize_coulomb_friction = switch
 
     class rewards:
         base_height_target = 0.6
@@ -167,6 +184,16 @@ class PddZJUCfgPPO(PddBaseCfgPPO):
     runner_name = 'rl_dream'  # rl, distil, mixed
     algorithm_name = 'ppo_zju'
 
+    class policy:
+        # actor parameters
+        actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
+        init_noise_std = 1.0
+
+        # critic parameters
+        critic_hidden_dims = [512, 256, 128]
+
+        use_recurrent_policy = True
+
     class algorithm:
         # training params
         value_loss_coef = 1.0
@@ -184,14 +211,6 @@ class PddZJUCfgPPO(PddBaseCfgPPO):
         max_grad_norm = 1.
 
         use_amp = True
-
-    class estimator:
-        # actor parameters
-        actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
-        init_noise_std = 1.0
-
-        # critic parameters
-        critic_hidden_dims = [512, 256, 128]
 
     class runner(PddBaseCfgPPO.runner):
         max_iterations = 50000  # number of policy updates

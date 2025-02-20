@@ -4,8 +4,7 @@ import torch
 import warp as wp
 
 from legged_gym.envs.base.utils import DelayBuffer
-from legged_gym.simulator import get_simulator, SimulatorType
-from legged_gym.simulator.base_wrapper import DriveMode
+from legged_gym.simulator import get_simulator, SimulatorType, DriveMode, SensorManager
 from legged_gym.utils.helpers import class_to_dict
 from legged_gym.utils.joystick import JoystickHandler
 from legged_gym.utils.math import torch_rand_float, inv_quat, axis_angle_to_quat, quat_to_xyz, transform_quat_by_quat, transform_by_quat, xyz_to_quat
@@ -36,6 +35,9 @@ class BaseTask:
         self._init_robot_props()
         self._init_buffers()
         self._prepare_reward_function()
+
+        if cfg.sensors.activated:
+            self.sensors = SensorManager(cfg, self.device, *self.sim.get_trimesh())
 
         # reset agents to initialize them
         self._reset_idx(torch.arange(self.num_envs, device=self.device))
@@ -280,7 +282,8 @@ class BaseTask:
             self._refresh_variables()
 
         self._post_physics_mid_step()
-        self._update_sensors()
+        if self.cfg.sensors.activated:
+            self.sensors.update(self.global_counter, self.sim.root_pos, self.sim.root_quat, self.episode_length_buf <= 1)
         self._compute_observations()
         self._post_physics_post_step()
 
@@ -363,9 +366,6 @@ class BaseTask:
 
     def _resample_commands(self, env_ids: torch.Tensor):
         raise NotImplementedError
-
-    def _update_sensors(self):
-        pass
 
     def _compute_observations(self):
         # raise NotImplementedError

@@ -60,27 +60,28 @@ class PPODreamWaQ(BaseAlgorithm):
         self.transition = Transition(self.actor.is_recurrent)
         self.storage = RolloutStorage(env_cfg.num_envs, train_cfg.runner.num_steps_per_env, self.device)
 
-    def act(self, obs, obs_critic, use_estimated_values=None, **kwargs):
-        # store observations
-        self.transition.observations = obs
-        self.transition.critic_observations = obs_critic
-        if self.actor.is_recurrent:
-            self.transition.hidden_states = self.actor.get_hidden_states()
+    def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
+        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+            # store observations
+            self.transition.observations = obs
+            self.transition.critic_observations = obs_critic
+            if self.actor.is_recurrent:
+                self.transition.hidden_states = self.actor.get_hidden_states()
 
-        actions = self.actor.act(obs, use_estimated_values=use_estimated_values).detach()
+            actions = self.actor.act(obs, use_estimated_values=use_estimated_values).detach()
 
-        if self.actor.is_recurrent and self.transition.hidden_states is None:
-            # only for the first step where hidden_state is None
-            self.transition.hidden_states = 0 * self.actor.get_hidden_states()
+            if self.actor.is_recurrent and self.transition.hidden_states is None:
+                # only for the first step where hidden_state is None
+                self.transition.hidden_states = 0 * self.actor.get_hidden_states()
 
-        # store
-        self.transition.actions = actions
-        self.transition.values = self.critic.evaluate(obs_critic).detach()
-        self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions).detach()
-        self.transition.action_mean = self.actor.action_mean.detach()
-        self.transition.action_sigma = self.actor.action_std.detach()
-        self.transition.use_estimated_values = use_estimated_values
-        return actions
+            # store
+            self.transition.actions = actions
+            self.transition.values = self.critic.evaluate(obs_critic).detach()
+            self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions).detach()
+            self.transition.action_mean = self.actor.action_mean.detach()
+            self.transition.action_sigma = self.actor.action_std.detach()
+            self.transition.use_estimated_values = use_estimated_values
+            return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
         self.transition.observations_next = args[0].as_obs_next()
@@ -98,8 +99,8 @@ class PPODreamWaQ(BaseAlgorithm):
 
         # Record the transition
         self.storage.add_transitions(self.transition)
+        self.transition.clear()
         if self.actor.is_recurrent:
-            self.transition.clear()
             self.actor.reset(dones)
 
     def compute_returns(self, last_critic_obs):

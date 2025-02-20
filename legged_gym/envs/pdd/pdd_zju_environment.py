@@ -13,7 +13,6 @@ class ActorObs(ObsBase):
         self.depth = depth.clone()
         self.priv = priv.clone()
         self.scan = scan.clone()
-        self.recon_prev = recon_prev
 
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
@@ -39,7 +38,7 @@ class PddZJUEnvironment(PddBaseEnvironment):
         env_cfg = self.cfg.env
 
         self.prop_his_buf = HistoryBuffer(env_cfg.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
-        self.critic_his_buf = HistoryBuffer(env_cfg.num_envs, env_cfg.len_critic_his, env_cfg.n_priv, device=self.device)
+        self.critic_his_buf = HistoryBuffer(env_cfg.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)
         self.feet_hmap_points = self._init_height_points(self.cfg.terrain.feet_pts_x, self.cfg.terrain.feet_pts_y)
@@ -48,26 +47,19 @@ class PddZJUEnvironment(PddBaseEnvironment):
         feet_pos = self.sim.link_pos[:, self.feet_indices]
 
         # convert height points coordinate to world frame
-        points = transform_by_yaw(self.sim.root_quat.repeat(1, self.base_hmap_points.size(1)), self.feet_hmap_points)
+        n_points = self.feet_hmap_points.size(1)
+        points = transform_by_yaw(self.feet_hmap_points, self.base_euler[:, 2].repeat(1, n_points)).unflatten(0, (self.num_envs, -1))
         points = feet_pos[:, :, None, :] + points[:, None, :, :]
 
         hmap = self._get_heights(points.flatten(1, 2) + self.cfg.terrain.border_size)
         hmap = feet_pos[..., 2:3] - hmap.unflatten(1, (len(self.feet_indices), -1))  # to relative height
         return hmap.flatten(1, 2)
 
-    def get_base_height_map(self):
-        # convert height points coordinate to world frame
-        n_points = self.base_hmap_points.size(1)
-        return self._get_heights(
-            transform_by_yaw(self.base_hmap_points, self.base_euler[:, 2].repeat(1, n_points)).unflatten(0, (self.num_envs, -1))
-            + self.sim.root_pos.unsqueeze(1)
-            + self.cfg.terrain.border_size
-        )
-
     def get_body_hmap(self):
         # convert height points coordinate to world frame
-        points = transform_by_yaw(self.sim.root_quat.repeat(1, self.body_hmap_points.size(1)), self.body_hmap_points)
-        points += (self.sim.root_pos[:, :3]).unsqueeze(1)
+        n_points = self.body_hmap_points.size(1)
+        points = transform_by_yaw(self.body_hmap_points, self.base_euler[:, 2].repeat(1, n_points)).unflatten(0, (self.num_envs, -1))
+        points = self.sim.root_pos[:, None, :] + points
 
         hmap = self._get_heights(points + self.cfg.terrain.border_size)
         return self.sim.root_pos[:, 2:3] - hmap  # to relative height
@@ -115,13 +107,15 @@ class PddZJUEnvironment(PddBaseEnvironment):
 
         # explicit privileged information
         priv_obs = torch.cat((
-            command_input,  # 5D
-            (self.sim.dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
-            self.sim.dof_vel * self.obs_scales.dof_vel,  # 10D
-            self.last_action_output,  # 10D
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
+            self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
+            self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
             self.base_ang_vel * self.obs_scales.ang_vel,  # 3
             self.base_euler * self.obs_scales.quat,  # 3
+            command_input,  # 5D
+            self.last_action_output,  # 10D
+            (self.sim.dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
+            self.sim.dof_vel * self.obs_scales.dof_vel,  # 10D
             self.ext_force[:, :2],  # 2
             self.ext_torque,  # 3
             self.sim.friction_coeffs,  # 1
@@ -129,22 +123,19 @@ class PddZJUEnvironment(PddBaseEnvironment):
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
-        # update depth buffer
-        reset_flag = self.episode_length_buf <= 1
-        self.depth_buf.step(reset_flag)
-
         # compute height map
         scan = torch.clip(self.sim.root_pos[:, 2].unsqueeze(1) - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
 
         # compose actor observation
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.depth_buf.get().squeeze(2), priv_obs, scan)
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_obs, scan)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
+
         # update history buffer
+        reset_flag = self.episode_length_buf <= 1
         self.prop_his_buf.append(proprio, reset_flag)
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
         self.critic_obs = CriticObs(self.critic_his_buf.get(), scan)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
-

@@ -32,14 +32,15 @@ class PddBaseCfg(BaseConfig):
             height_measurements = 5.0
 
         scan_norm_bias = 0.7
+        feet_height_correction = -0.027
 
         clip_observations = 100.
         clip_actions = 100.
 
     class terrain:
         # description_type = 'plane'  # plane, heightfield or trimesh
-        description_type = 'heightfield'  # plane, heightfield or trimesh
-        # description_type = 'trimesh'  # plane, heightfield or trimesh
+        # description_type = 'heightfield'  # plane, heightfield or trimesh
+        description_type = 'trimesh'  # plane, heightfield or trimesh
         max_error = 0.1  # for fast
 
         y_range = [-0.4, 0.4]
@@ -140,7 +141,7 @@ class PddBaseCfg(BaseConfig):
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
         randomize_action_delay_each_step = False
-        action_delay_range = [(1, 10), (5, 40), (10, 60),  (10, 70)]
+        action_delay_range = [(1, 10), (5, 40), (10, 60), (10, 70)]
         action_delay_update_steps = 3000 * 24
 
         add_dof_lag = False
@@ -250,8 +251,6 @@ class PddBaseCfg(BaseConfig):
         max_angular_velocity = 1000.
         max_linear_velocity = 1000.
         thickness = 0.01
-
-        feet_height_correction = -0.027
 
     class viewer:
         ref_env = 0

@@ -1,5 +1,8 @@
 from enum import Enum
 
+from .base_wrapper import DriveMode
+from legged_gym.simulator.sensors.sensor_manager import SensorManager
+
 
 class SimulatorType(Enum):
     IsaacGym = 0

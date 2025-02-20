@@ -10,7 +10,7 @@ def depth_only_kernel(
         c_x: int,
         c_y: int,
         far_clip: float,
-        depth_image: wp.array4d(dtype=float),
+        depth_image: wp.array3d(dtype=float),
 ):
     # get the index for current pixel
     env_id, x, y = wp.tid()
@@ -43,7 +43,7 @@ def depth_only_kernel(
         # compute the depth of this pixel
         dist = multiplier * query.t
 
-    depth_image[env_id, 0, y, x] = dist
+    depth_image[env_id, y, x] = dist
 
 
 @wp.kernel

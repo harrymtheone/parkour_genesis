@@ -112,6 +112,11 @@ def transform_quat_by_quat(v, u):
 
 
 @torch.jit.script
+def transform_by_trans_quat(pos, trans, quat):
+    return transform_by_quat(pos, quat) + trans
+
+
+@torch.jit.script
 def transform_by_yaw(v, yaw):
     # type: (torch.Tensor, torch.Tensor) -> torch.Tensor
     quat_yaw = axis_angle_to_quat(

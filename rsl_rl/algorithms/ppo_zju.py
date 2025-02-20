@@ -5,6 +5,7 @@ from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.algorithms import BaseAlgorithm
 from rsl_rl.modules.model_zju import Estimator, Critic
+from rsl_rl.modules.model_zju_gru import EstimatorGRU
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 
 try:
@@ -17,6 +18,8 @@ class Transition:
     def __init__(self):
         self.observations = None
         self.critic_observations = None
+        self.obs_enc_hidden_states = None
+        self.recon_hidden_states = None
         self.observations_next = None
         self.actions = None
         self.rewards = None
@@ -31,7 +34,8 @@ class Transition:
         return self.__dict__.items()
 
     def clear(self):
-        self.__init__()
+        for key in self.__dict__:
+            setattr(self, key, None)
 
 
 class PPO_ZJU(BaseAlgorithm):
@@ -43,13 +47,15 @@ class PPO_ZJU(BaseAlgorithm):
         self.device = device
 
         # PPO component
-        self.actor = Estimator(env_cfg, train_cfg).to(self.device)
+        if train_cfg.policy.use_recurrent_policy:
+            self.actor = EstimatorGRU(env_cfg, train_cfg.policy).to(self.device)
+        else:
+            self.actor = Estimator(env_cfg, train_cfg).to(self.device)
         self.critic = Critic(env_cfg, train_cfg).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
         # reconstructor
-        self.recon_prev = torch.zeros(env_cfg.num_envs, *env_cfg.scan_shape, device=device)
         self.mse_loss = nn.MSELoss()
         self.l1_loss = nn.L1Loss(reduction='none')
 
@@ -57,24 +63,30 @@ class PPO_ZJU(BaseAlgorithm):
         self.transition = Transition()
         self.storage = RolloutStorage(env_cfg.num_envs, train_cfg.runner.num_steps_per_env, self.device)
 
-    def act(self, obs, obs_critic, use_estimated_values=True):
+    def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            # store observations and previous construction
-            obs.recon_prev = self.recon_prev.clone()
+            # store observations
             self.transition.observations = obs
             self.transition.critic_observations = obs_critic
+            if self.actor.is_recurrent:
+                self.transition.obs_enc_hidden_states, self.transition.recon_hidden_states = self.actor.get_hidden_state()
 
-            actions, _, recon_refine, _ = self.actor.act(obs, use_estimated_values=use_estimated_values)
+            actions = self.actor.act(obs, use_estimated_values=use_estimated_values)
 
-            self.transition.actions = actions.detach()
+            if self.actor.is_recurrent and self.transition.obs_enc_hidden_states is None:
+                # only for the first step where hidden_state is None
+                hidden = self.actor.get_hidden_state()
+                self.transition.obs_enc_hidden_states = 0 * hidden[0]
+                self.transition.recon_hidden_states = 0 * hidden[1]
+
+            # store
+            self.transition.actions = actions
             self.transition.values = self.critic.evaluate(obs_critic).detach()
             self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions).detach()
             self.transition.action_mean = self.actor.action_mean.detach()
             self.transition.action_sigma = self.actor.action_std.detach()
             self.transition.use_estimated_values = use_estimated_values
-
-            self.recon_prev[:] = recon_refine.detach()
-            return self.transition.actions
+            return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
         self.transition.observations_next = args[0].as_obs_next()
@@ -83,23 +95,22 @@ class PPO_ZJU(BaseAlgorithm):
 
         # Bootstrapping on time-outs
         if 'time_outs' in infos:
-            bootstrapping = torch.logical_or(infos['time_outs'], infos['reach_goals']).unsqueeze(1)
-            self.transition.rewards += self.cfg.gamma * self.transition.values * bootstrapping.to(self.device)
+            if 'reach_goals' in infos:
+                bootstrapping = (infos['time_outs'] | infos['reach_goals']).unsqueeze(1).to(self.device)
+            else:
+                bootstrapping = (infos['time_outs']).unsqueeze(1).to(self.device)
+
+            self.transition.rewards += self.cfg.gamma * self.transition.values * bootstrapping
 
         # Record the transition
         self.storage.add_transitions(self.transition)
         self.transition.clear()
-        self.actor.reset(dones)
-
-        return rewards
-
-    def reset(self, dones):
-        pass
+        if self.actor.is_recurrent:
+            self.actor.reset(dones)
 
     def compute_returns(self, last_critic_obs):
-        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            last_values = self.critic.evaluate(last_critic_obs).detach()
-            self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
+        last_values = self.critic.evaluate(last_critic_obs).detach()
+        self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
     def update(self, update_est=True, **kwargs):
         mean_value_loss = 0
@@ -116,10 +127,23 @@ class PPO_ZJU(BaseAlgorithm):
         kl_change = []
         num_updates = 0
 
-        for batch in self.storage.mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs):
+        if self.actor.is_recurrent:
+            generator = self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
+        else:
+            generator = self.storage.mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
 
-            rtn = self._compute_loss(batch, update_est)
-            loss, kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss = rtn
+        for batch in generator:
+            (loss,
+             kl_mean,
+             value_loss,
+             surrogate_loss,
+             entropy_loss,
+             estimation_loss,
+             prediction_loss,
+             vae_loss,
+             recon_rough_loss,
+             recon_refine_loss,
+             symmetry_loss) = self._compute_loss(batch, update_est)
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -186,11 +210,14 @@ class PPO_ZJU(BaseAlgorithm):
             })
         return return_dict
 
-    @torch.compile(mode='default')
+    # @torch.compile(mode='default')
     def _compute_loss(self, batch: dict, update_est: bool):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
             critic_obs_batch = batch['critic_observations']
+            obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'] if self.actor.is_recurrent else None
+            recon_hidden_states_batch = batch['recon_hidden_states'] if self.actor.is_recurrent else None
+            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
             obs_next_batch = batch['observations_next']
             actions_batch = batch['actions']
             target_values_batch = batch['values']
@@ -201,7 +228,9 @@ class PPO_ZJU(BaseAlgorithm):
             old_actions_log_prob_batch = batch['actions_log_prob']
             use_estimated_values_batch = batch['use_estimated_values']
 
-            est_mu = self.actor.train_act(obs_batch, use_estimated_values=use_estimated_values_batch)  # match distribution dimension
+            est_mu = self.actor.train_act(obs_batch,
+                                          hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
+                                          use_estimated_values=use_estimated_values_batch)
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -209,97 +238,96 @@ class PPO_ZJU(BaseAlgorithm):
                     kl_mean = kl_divergence(
                         Normal(old_mu_batch, old_sigma_batch),
                         Normal(self.actor.action_mean, self.actor.action_std)
-                    ).sum(dim=1).mean().item()
+                    )[mask_batch].sum(dim=-1).mean().item()
 
                     if kl_mean > self.cfg.desired_kl * 2.0:
                         self.learning_rate = max(1e-5, self.learning_rate / 1.5)
                     elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
-                        self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+                        self.learning_rate = min(1e-3, self.learning_rate * 1.5)
 
             actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
-            value_batch = self.critic.evaluate(critic_obs_batch)
-            mu_batch = self.actor.action_mean
-            sigma_batch = self.actor.action_std
+            evaluation = self.critic.evaluate(critic_obs_batch)
 
             # Surrogate loss
             ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
-            surrogate = advantages_batch * ratio
-            surrogate_clipped = advantages_batch * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
-            surrogate_loss = -torch.min(surrogate, surrogate_clipped).mean()
+            surrogate = -advantages_batch * ratio
+            surrogate_clipped = -advantages_batch * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
+            surrogate_loss = torch.max(surrogate, surrogate_clipped)[mask_batch].mean()
 
             # Value function loss
             if self.cfg.use_clipped_value_loss:
-                value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_losses = (value_batch - returns_batch).pow(2)
+                value_clipped = target_values_batch + (evaluation - target_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
+                value_losses = (evaluation - returns_batch).pow(2)
                 value_losses_clipped = (value_clipped - returns_batch).pow(2)
-                value_loss = torch.max(value_losses, value_losses_clipped).mean()
+                value_loss = torch.max(value_losses, value_losses_clipped)[mask_batch].mean()
             else:
-                value_loss = (returns_batch - value_batch).pow(2).mean()
+                value_loss = (evaluation - returns_batch)[mask_batch].pow(2).mean()
 
-            # Entropy loss
-            entropy_loss = self.cfg.entropy_coef * self.actor.entropy.mean()
+            entropy_loss = self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
-            loss = (surrogate_loss
-                    + self.cfg.value_loss_coef * value_loss
-                    - entropy_loss)
+            loss = (surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss)
 
             if update_est:
-                # privileged information estimation loss
-                estimation_loss = self.mse_loss(est_mu[:, 16:], obs_batch.priv[:, :3 + 16 + 16])
-
-                # # Ot+1 prediction and VAE loss
-                # prediction_loss = self.mse_loss(ot1, obs_next_batch.proprio)
-                # vae_loss = -0.5 * torch.sum(1 + est_logvar - est_mu[:, :16].pow(2) - est_logvar.exp(), dim=1).mean()
-
-                batch_size = 256
-                indices = torch.randperm(len(actions_batch))[:batch_size]
-
-                # reconstructor loss
-                recon_rough, recon_refine = self.actor.reconstruct(obs_batch.prop_his[indices],
-                                                                   obs_batch.depth[indices],
-                                                                   obs_batch.recon_prev[indices])  # match distribution dimension
-                recon_rough_loss = self.mse_loss(recon_rough, obs_batch.scan[indices])
-                recon_refine_loss = self.l1_loss(recon_refine, obs_batch.scan[indices]).mean()
-                recon_loss = recon_rough_loss + recon_refine_loss
-
-                # # Symmetry loss
-                # obs_mirrored_batch = obs_batch.slice(indices).data_augmentation(only_mirrored=True)
-                # self.actor.act(obs_mirrored_batch, use_estimated_values=use_estimated_values_batch[indices])
-                #
-                # mu_batch = obs_batch.mirror_dof_prop_by_x(mu_batch[indices].detach())
-                # sigma_batch = torch.abs(obs_batch.mirror_dof_prop_by_x(sigma_batch[indices].detach()))
-
-                # # symmetry_loss = 0.1 * self.mse_loss(mu_batch[indices], self.actor.action_mean)
-                # symmetry_loss = 0.1 * kl_divergence(
-                #     Normal(self.actor.action_mean, self.actor.action_std),
-                #     Normal(mu_batch, sigma_batch)
-                # ).mean()
-
-                # Total loss
-                loss = (
-                        loss
-                        + estimation_loss
-                        # + prediction_loss
-                        # + vae_loss
-                        + recon_loss
-                    # + symmetry_loss
-                )
-
-                return (
-                    loss,
-                    kl_mean,
-                    value_loss.item(),
-                    surrogate_loss.item(),
-                    entropy_loss.item(),
-                    estimation_loss.item(),
-                    0.,  # prediction_loss.item(),
-                    0.,  # vae_loss.item(),
-                    recon_rough_loss.item(),
-                    recon_refine_loss.item(),
-                    0.,  # symmetry_loss.item()
-                )
+                pass
+                # return self.update_est()
 
             return loss, kl_mean, value_loss.item(), surrogate_loss.item(), entropy_loss.item(), 0., 0., 0., 0., 0., 0.,
+
+    def update_est(self, ):
+        # privileged information estimation loss
+        estimation_loss = self.mse_loss(est_mu[:, 16:], obs_batch.priv[:, :3 + 16 + 16])
+
+        # # Ot+1 prediction and VAE loss
+        # prediction_loss = self.mse_loss(ot1, obs_next_batch.proprio)
+        # vae_loss = -0.5 * torch.sum(1 + est_logvar - est_mu[:, :16].pow(2) - est_logvar.exp(), dim=1).mean()
+
+        batch_size = 256
+        indices = torch.randperm(len(actions_batch))[:batch_size]
+
+        # reconstructor loss
+        recon_rough, recon_refine = self.actor.reconstruct(obs_batch.prop_his[indices],
+                                                           obs_batch.depth[indices],
+                                                           obs_batch.recon_prev[indices])  # match distribution dimension
+        recon_rough_loss = self.mse_loss(recon_rough, obs_batch.scan[indices])
+        recon_refine_loss = self.l1_loss(recon_refine, obs_batch.scan[indices]).mean()
+        recon_loss = recon_rough_loss + recon_refine_loss
+
+        # # Symmetry loss
+        # obs_mirrored_batch = obs_batch.slice(indices).data_augmentation(only_mirrored=True)
+        # self.actor.act(obs_mirrored_batch, use_estimated_values=use_estimated_values_batch[indices])
+        #
+        # mu_batch = obs_batch.mirror_dof_prop_by_x(mu_batch[indices].detach())
+        # sigma_batch = torch.abs(obs_batch.mirror_dof_prop_by_x(sigma_batch[indices].detach()))
+
+        # # symmetry_loss = 0.1 * self.mse_loss(mu_batch[indices], self.actor.action_mean)
+        # symmetry_loss = 0.1 * kl_divergence(
+        #     Normal(self.actor.action_mean, self.actor.action_std),
+        #     Normal(mu_batch, sigma_batch)
+        # ).mean()
+
+        # Total loss
+        loss = (
+                loss
+                + estimation_loss
+                # + prediction_loss
+                # + vae_loss
+                + recon_loss
+            # + symmetry_loss
+        )
+
+        return (
+            loss,
+            kl_mean,
+            value_loss.item(),
+            surrogate_loss.item(),
+            entropy_loss.item(),
+            estimation_loss.item(),
+            0.,  # prediction_loss.item(),
+            0.,  # vae_loss.item(),
+            recon_rough_loss.item(),
+            recon_refine_loss.item(),
+            0.,  # symmetry_loss.item()
+        )
 
     def play_act(self, obs, use_estimated_values=True):
         obs.recon_prev = self.recon_prev.clone()

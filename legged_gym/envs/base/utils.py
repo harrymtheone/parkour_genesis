@@ -1,5 +1,3 @@
-from typing import List
-
 import torch
 
 
@@ -86,45 +84,6 @@ class HistoryBuffer:
         return self.buf.clone()
 
 
-class DepthBuffer:
-    def __init__(self, n_envs, his_len, *data_shape, dtype=None, device=None):
-        if device is None:
-            raise ValueError('please define the buffer device!')
-
-        self.buf_len = his_len
-        dtype = torch.float32 if dtype is None else dtype
-        self.buf = torch.zeros(n_envs, self.buf_len, *data_shape, dtype=dtype, device=device)
-
-        self.delay_data_buf: List[torch.Tensor] = []
-        self.delay_buf: List[int] = []
-
-    def append(self, data, delay):
-        while (len(self.delay_buf) > 0) and (delay <= self.delay_buf[-1]):
-            self.delay_data_buf.pop(-1)
-            self.delay_buf.pop(-1)
-
-        self.delay_data_buf.append(data.clone())
-        self.delay_buf.append(delay + 1)
-
-    def step(self, reset):
-        if len(self.delay_buf) == 0:
-            return
-
-        for i, v in enumerate(self.delay_buf):
-            self.delay_buf[i] = v - 1
-
-        if self.delay_buf[0] == 0:
-            self.buf[:, :-1] = self.buf[:, 1:]
-            self.buf[:, -1] = self.delay_data_buf[0]
-            self.delay_buf.pop(0)
-            self.delay_data_buf.pop(0)
-
-        self.buf[reset] = 0.
-
-    def get(self):
-        return self.buf.clone()
-
-
 class DelayBuffer:
     def __init__(self, n_envs, data_shape, delay_range, rand_per_step, dtype=None, device=None):
         self.n_envs = n_envs
@@ -168,7 +127,7 @@ class DelayBuffer:
         self.buf[self._mask] = data.unsqueeze(1).expand_as(self.buf)[self._mask]
 
     def step(self):
-        self.buf[:, :-1] = self.buf[:, 1:]
+        self.buf[:, :-1] = self.buf[:, 1:].clone()
 
     def get(self):
         return self.buf[:, 0].clone()

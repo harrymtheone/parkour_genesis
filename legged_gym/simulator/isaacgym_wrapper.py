@@ -281,6 +281,11 @@ class IsaacGymWrapper(BaseWrapper):
             self.gym.acquire_net_contact_force_tensor(self.sim)).view(self.num_envs, -1, 3)  # shape: num_envs, num_bodies, xyz axis
 
     # ---------------------------------------------- IO Interface ----------------------------------------------
+    def get_trimesh(self):
+        vertices = self.terrain.vertices - np.array([[self.cfg.terrain.border_size, self.cfg.terrain.border_size, 0]])
+        triangles = self.terrain.triangles
+        return vertices, triangles
+
     def set_root_state(self, env_ids, root_pos, root_quat, root_lin_vel, root_ang_vel):
         self._root_state[env_ids, 0:3] = root_pos
         self._root_state[env_ids, 3:7] = root_quat

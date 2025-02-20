@@ -3,25 +3,61 @@ from typing import Union
 import torch
 import torch.nn as nn
 
-from .utils import make_linear_layers, unpad_trajectories
+from .utils import make_linear_layers
+
+obs_gru_hidden_size = 64
+recon_gru_hidden_size = 256
+
+len_latent = 16
+len_base_vel = 3
+len_latent_feet = 8
+len_latent_body = 16
+transformer_embed_dim = 64
 
 
-class ObsEnc(nn.Module):
-    def __init__(self, input_size):
+class ObsGRU(nn.Module):
+    def __init__(self, env_cfg):
         super().__init__()
-        enc_hidden_size = 64
-
         activation = nn.ReLU(inplace=True)
 
-        self.mlp = nn.Sequential(
-            nn.Linear(input_size, 2 * enc_hidden_size),
+        self.conv_layers = nn.Sequential(
+            nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4),
             activation,
-            nn.Linear(2 * enc_hidden_size, enc_hidden_size),
+            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=1),
             activation,
+            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=1),  # (8 * channel_size, 1)
+            activation,
+            nn.Flatten()
         )
 
-    def forward(self, obs_his):
-        return self.mlp(obs_his.flatten(1, 2))
+        self.gru = nn.GRU(input_size=64, hidden_size=obs_gru_hidden_size, num_layers=1)
+        self.hidden_state = None
+
+    def forward(self, obs_his, hidden_state=None):
+        if hidden_state is None:
+            # inference forward
+            out = self.conv_layers(obs_his)
+            out, self.hidden_state = self.gru(out.unsqueeze(0), self.hidden_state)
+            return out.squeeze(0)
+        else:
+            # update forward
+            n_steps = obs_his.size(0)
+            out = self.conv_layers(obs_his.flatten(0, 1)).unflatten(0, (n_steps, -1))
+            out, _ = self.gru(out, hidden_state)
+            return out
+
+    def detach_hidden_state(self):
+        if self.hidden_state is None:
+            return
+        self.hidden_state = self.hidden_state.detach()
+
+    def get_hidden_state(self):
+        if self.hidden_state is None:
+            return None
+        return self.hidden_state.detach()
+
+    def reset(self, dones):
+        self.hidden_state[:, dones].zero_()
 
 
 class UNet(nn.Module):
@@ -103,117 +139,116 @@ class UNet(nn.Module):
         return self.output_conv(d1)
 
 
-class Recon(nn.Module):
-    def __init__(self, ):
+class ReconGRU(nn.Module):
+    def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        len_his = 2
-        gru_in_size = 128 + 64 + 64  # depth, auto-regression, proprio
-        gru_hidden_size = 512
-
-        activation = nn.ReLU(inplace=True)
+        self.activation = nn.ReLU(inplace=True)
 
         self.cnn_depth = nn.Sequential(
-            nn.Conv2d(in_channels=len_his, out_channels=16, kernel_size=3, stride=2, padding=1, bias=False),
-            activation,
+            nn.Conv2d(in_channels=env_cfg.len_depth_his, out_channels=16, kernel_size=3, stride=2, padding=1, bias=False),
+            self.activation,
             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1, bias=False),
-            activation,
+            self.activation,
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1, bias=False),
-            activation,
+            self.activation,
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1, bias=False),
             nn.AdaptiveAvgPool2d((1, 1)),
-            activation,
+            self.activation,
             nn.Flatten()
         )
 
-        self.cnn_recon_prev = nn.Sequential(  # [1, 32, 16]
-            nn.Conv2d(in_channels=1, out_channels=16, kernel_size=(2, 1), stride=(2, 1)),  # [16, 16, 16]
-            activation,
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=1),  # [32, 16, 16]
-            nn.MaxPool2d(kernel_size=2, stride=2),  # [32, 8, 8]
-            activation,
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),  # [64, 8, 8]
-            nn.MaxPool2d(kernel_size=2, stride=2),  # [128, 4, 4]
-            activation,
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=4),  # [128, 1, 1]
-            activation,
-            nn.Flatten()
-        )
-
-        self.mlp = nn.Sequential(
-            nn.Linear(gru_in_size, gru_hidden_size),
-            activation,
-            nn.Linear(gru_hidden_size, gru_hidden_size),
-            activation,
-
-            nn.Linear(gru_hidden_size, 3 * 32 * 16),
-            activation,
-            nn.Unflatten(1, (3, 32, 16)),
-        )
+        self.gru = nn.GRU(input_size=128 + obs_gru_hidden_size, hidden_size=recon_gru_hidden_size, num_layers=2)
+        self.hidden_state = None
 
         self.recon_rough = nn.Sequential(
-            nn.Conv2d(4, 16, kernel_size=3, padding=1),  # (16, 32, 16)
-            activation,
+            nn.Linear(recon_gru_hidden_size, 3 * 32 * 16),
+            self.activation,
+            nn.Unflatten(1, (3, 32, 16)),
+            nn.Conv2d(3, 16, kernel_size=3, padding=1),  # (16, 32, 16)
+            self.activation,
             nn.Conv2d(16, 32, kernel_size=3, padding=1),  # (8, 32, 16)
-            activation,
+            self.activation,
             nn.Conv2d(32, 16, kernel_size=3, padding=1),  # (8, 32, 16)
-            activation,
+            self.activation,
             nn.Conv2d(16, 1, kernel_size=3, padding=1)  # (1, 32, 16)
         )
 
-        self.relu = nn.ReLU(inplace=True)
         self.recon_refine = UNet()
 
-    def forward(self, depth_his, recon_prev, prop_latent):
-        enc_depth = self.cnn_depth(depth_his)
-        enc_recon_prev = self.cnn_recon_prev(recon_prev)
+    def forward(self, depth_his, prop_latent, hidden_state=None):
+        if hidden_state is None:
+            # inference forward
+            enc_depth = self.cnn_depth(depth_his)
 
-        enc_gru = self.mlp(torch.cat([enc_depth, enc_recon_prev, prop_latent], dim=1))
+            # concatenate the two latent vectors
+            gru_input = torch.cat([enc_depth, prop_latent], dim=1)
+            enc_gru, self.hidden_state = self.gru(gru_input.unsqueeze(0), self.hidden_state)
 
-        hmap_rough = self.recon_rough(torch.cat([enc_gru, recon_prev], dim=1))
-        hmap_refine = self.recon_refine(self.relu(hmap_rough))
-        return hmap_rough, hmap_refine
+            # reconstruct
+            hmap_rough = self.recon_rough(enc_gru.squeeze(0))
+            hmap_refine = self.recon_refine(self.activation(hmap_rough))
+            return hmap_rough, hmap_refine
+        else:
+            # update forward
+            n_steps = depth_his.size(0)
+            enc_depth = self.cnn_depth(depth_his.flatten(0, 1)).unflatten(0, (n_steps, -1))
+
+            # concatenate the two latent vectors
+            gru_input = torch.cat([enc_depth, prop_latent], dim=2)
+            enc_gru, _ = self.gru(gru_input, hidden_state)
+
+            # reconstruct
+            hmap_rough = self.recon_rough(enc_gru.flatten(0, 1))
+            hmap_refine = self.recon_refine(self.activation(hmap_rough))
+            return hmap_rough.unflatten(0, (n_steps, -1)), hmap_refine.unflatten(0, (n_steps, -1))
+
+    def detach_hidden_state(self):
+        if self.hidden_state is None:
+            return
+        self.hidden_state = self.hidden_state.detach()
+
+    def get_hidden_state(self):
+        if self.hidden_state is None:
+            return None
+        return self.hidden_state.detach()
+
+    def reset(self, dones):
+        self.hidden_state[:, dones].zero_()
 
 
 class LocoTransformer(nn.Module):
     def __init__(self, ):
         super().__init__()
-        embed_dim = 64
         num_heads = 4
         num_layers = 2  # 2
-        dim_latent_obs = 64
-
-        len_latent = 16
-        len_base_vel = 3
-        len_latent_feet = 16
-        len_latent_body = 16
 
         activation = nn.ReLU(inplace=True)
 
         # patch embedding
-        self.cnn_scan = nn.Conv2d(in_channels=1, out_channels=embed_dim, kernel_size=4, stride=4)
-        self.layer_norm = nn.LayerNorm(embed_dim)
+        self.cnn_scan = nn.Conv2d(in_channels=1, out_channels=transformer_embed_dim, kernel_size=4, stride=4)
+        self.layer_norm = nn.LayerNorm(transformer_embed_dim)
 
         # observation embedding
         self.mlp_obs = nn.Sequential(
-            nn.Linear(dim_latent_obs, embed_dim),
+            nn.Linear(obs_gru_hidden_size, transformer_embed_dim),
             activation,
         )
 
         # position embedding
-        self.pos_embed = nn.Parameter(torch.zeros(1, 33, embed_dim))
+        self.pos_embed = nn.Parameter(torch.zeros(1, 33, transformer_embed_dim))
         nn.init.trunc_normal_(self.pos_embed, std=0.2)
 
         # transformer
         self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=128, batch_first=True, dropout=0.),
+            nn.TransformerEncoderLayer(d_model=transformer_embed_dim, nhead=num_heads, dim_feedforward=128, batch_first=True, dropout=0.),
             num_layers=num_layers
         )
 
         # output MLP
         self.mlp_out = nn.Sequential(
-            nn.Linear(embed_dim * 2, embed_dim),
+            nn.Linear(transformer_embed_dim * 2, transformer_embed_dim),
             activation,
-            nn.Linear(embed_dim, len_latent + len_base_vel + len_latent_feet + len_latent_body),
+            nn.Linear(transformer_embed_dim, len_latent + len_base_vel + len_latent_feet + len_latent_body),
         )
 
     def forward(self, scan, latent_obs):
@@ -240,15 +275,11 @@ class LocoTransformer(nn.Module):
 
 
 class Actor(nn.Module):
-    def __init__(self, env_cfg, train_cfg):
+    def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        len_latent = 16
-        len_base_vel = 3
-        len_latent_feet = 16
-        len_latent_body = 16
 
         self.actor = make_linear_layers(env_cfg.n_proprio + len_latent + len_base_vel + len_latent_feet + len_latent_body,
-                                        *train_cfg.policy.actor_hidden_dims,
+                                        *policy_cfg.actor_hidden_dims,
                                         env_cfg.num_actions,
                                         activation_func=nn.ELU())
         self.actor.pop(-1)
@@ -263,37 +294,37 @@ class Actor(nn.Module):
             return self.actor(torch.cat([obs, priv], dim=1)).unflatten(0, (n_step, -1))
 
 
-class Estimator(nn.Module):
+class EstimatorGRU(nn.Module):
+    is_recurrent = True
     from legged_gym.envs.pdd.pdd_scan_environment import ActorObs
 
-    def __init__(self, env_cfg, train_cfg):
+    def __init__(self, env_cfg, policy_cfg):
         super().__init__()
 
-        # self.obs_gru = ObsGRU()
-        self.obs_enc = ObsEnc(env_cfg.len_prop_his * env_cfg.n_proprio)
-        self.reconstructor = Recon()
+        self.obs_gru = ObsGRU(env_cfg)
+        self.reconstructor = ReconGRU(env_cfg, policy_cfg)
         self.transformer = LocoTransformer()
-        self.actor = Actor(env_cfg, train_cfg)
+        self.actor = Actor(env_cfg, policy_cfg)
 
-        self.log_std = nn.Parameter(torch.log(train_cfg.policy.init_noise_std * torch.ones(env_cfg.num_actions)))
+        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
         self.distribution = None
 
     def act(self,
             obs: ActorObs,
             use_estimated_values: Union[bool, torch.Tensor],
             eval_=False,
-    ):  # <-- my mood be like
+            ):  # <-- my mood be like
         obs = obs.clone()
 
         # encode history proprio
-        latent_obs = self.obs_enc(obs.prop_his)
+        latent_obs = self.obs_gru(obs.prop_his)
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine = self.reconstructor(obs.depth, obs.recon_prev.unsqueeze(1), latent_obs)
+            recon_rough, recon_refine = self.reconstructor(obs.depth, latent_obs)
 
         # cross-model mixing using transformer
-        est_gt = obs.priv[:, :3+16+16]
+        est_gt = obs.priv[:, :len_base_vel + len_latent_feet + len_latent_body]
         if type(use_estimated_values) is torch.Tensor:
             recon_input = torch.where(
                 use_estimated_values.unsqueeze(-1).unsqueeze(-1),
@@ -304,7 +335,7 @@ class Estimator(nn.Module):
             latent_input = torch.where(
                 use_estimated_values,
                 latent_est,
-                torch.cat([latent_est[:, :16], est_gt], dim=1)
+                torch.cat([latent_est[:, :len_latent], est_gt], dim=1)
             )
 
         elif use_estimated_values:
@@ -314,47 +345,54 @@ class Estimator(nn.Module):
             latent_input = latent_est
         else:
             latent_est = self.transformer(obs.scan.unsqueeze(1), latent_obs)
-            latent_input = torch.cat([latent_est[:, :16], est_gt], dim=1)
+            latent_input = torch.cat([latent_est[:, :len_latent], est_gt], dim=1)
 
         # compute action
         mean = self.actor(obs.proprio, latent_input)
 
         # output action
         if eval_:
-            return mean, recon_rough.squeeze(1), recon_refine.squeeze(1), latent_est
+            return mean
         else:
             # sample action from distribution
             self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
-            return self.distribution.sample(), recon_rough.squeeze(1), recon_refine.squeeze(1), latent_est
+            return self.distribution.sample()
 
     def train_act(
             self,
             obs: ActorObs,
+            hidden_states,
             use_estimated_values: Union[bool, torch.Tensor] = True,
     ):  # <-- my mood be like
-        obs = obs.clone()        # encode history proprio
+        obs = obs.clone()  # encode history proprio
+        obs_enc_hidden_states, recon_hidden_states = hidden_states
 
-        latent_obs = self.obs_enc(obs.prop_his)
+        latent_obs = self.obs_gru(obs.prop_his, obs_enc_hidden_states)
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine = self.reconstructor(obs.depth, obs.recon_prev.unsqueeze(1), latent_obs)
+            recon_rough, recon_refine = self.reconstructor(obs.depth, latent_obs, recon_hidden_states)
+
+        # No more GRU, flatten those variables
+        use_estimated_values, recon, scan, latent_obs, priv, proprio = map(
+            lambda x: x.flatten(0, 1),
+            [use_estimated_values, recon_refine, obs.scan, latent_obs, obs.priv, obs.proprio])
 
         # cross-model mixing using transformer
         recon_input = torch.where(
             use_estimated_values.unsqueeze(-1).unsqueeze(-1),
-            recon_refine,
-            obs.scan.unsqueeze(1)
+            recon,
+            scan.unsqueeze(1)
         )
         latent_est = self.transformer(recon_input, latent_obs)
         latent_input = torch.where(
             use_estimated_values,
             latent_est,
-            torch.cat([latent_est[:, :16], obs.priv[:, :3+16+16]], dim=1)
+            torch.cat([latent_est[:, :len_latent], priv[:, :len_base_vel + len_latent_feet + len_latent_body]], dim=1)
         )
 
         # compute action
-        mean = self.actor(obs.proprio, latent_input)
+        mean = self.actor(proprio, latent_input).unflatten(0, (obs.proprio.size(0), -1))
 
         # output action
         self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
@@ -365,9 +403,6 @@ class Estimator(nn.Module):
         latent_obs = self.obs_enc(prop)
         recon_rough, recon_refine = self.reconstructor(depth, recon_prev.unsqueeze(1), latent_obs)
         return recon_rough.squeeze(1), recon_refine.squeeze(1)
-
-    def reset(self, dones):
-        pass
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
@@ -388,40 +423,13 @@ class Estimator(nn.Module):
         new_log_std = torch.log(std * torch.ones_like(self.std.data, device=device))
         self.log_std.data = new_log_std.data
 
+    def get_hidden_state(self):
+        return self.obs_gru.get_hidden_state(), self.reconstructor.get_hidden_state()
 
-class Critic(nn.Module):
-    from legged_gym.envs.pdd.pdd_scan_environment import CriticObs
+    def detach_hidden_state(self):
+        self.obs_gru.detach_hidden_state()
+        self.reconstructor.detach_hidden_state()
 
-    def __init__(self, env_cfg, train_cfg):
-        super().__init__()
-
-        self.encoder = nn.Sequential(
-            nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4),
-            nn.ELU(),
-            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
-            nn.ELU(),
-            nn.Conv1d(in_channels=128, out_channels=128, kernel_size=3, stride=1),
-            nn.ELU(),
-            nn.Flatten()
-        )
-
-        self.critic = make_linear_layers(128 * 5 + env_cfg.n_scan, *train_cfg.policy.critic_hidden_dims, 1,
-                                         activation_func=nn.ELU())
-        self.critic.pop(-1)
-
-    def evaluate(self, obs: CriticObs, masks=None):
-        if obs.priv_his.ndim == 3:
-            priv_his = obs.priv_his
-            scan = obs.scan.flatten(1)
-        else:
-            n_steps = obs.priv_his.size(0)
-            priv_his = obs.priv_his.flatten(0, 1)
-            scan = obs.scan.flatten(0, 1).flatten(1)
-
-        his_enc = self.encoder(priv_his)
-        evaluation = self.critic(torch.cat([his_enc, scan], dim=1))
-
-        if obs.priv_his.ndim == 3:
-            return evaluation
-        else:
-            return evaluation.unflatten(0, (n_steps, -1))
+    def reset(self, dones):
+        self.obs_gru.reset(dones)
+        self.reconstructor.reset(dones)

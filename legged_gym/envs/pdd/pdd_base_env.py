@@ -54,7 +54,7 @@ class PddBaseEnvironment(ParkourTask):
         # update feet height
         feet_pos = self.sim.link_pos[:, self.feet_indices]
         proj_ground_height = self._get_heights(feet_pos + self.cfg.terrain.border_size, use_guidance=self.cfg.rewards.use_guidance_terrain)
-        self.feet_height[:] = feet_pos[:, :, 2] + self.cfg.asset.feet_height_correction - proj_ground_height
+        self.feet_height[:] = feet_pos[:, :, 2] + self.cfg.normalization.feet_height_correction - proj_ground_height
         self.feet_euler_xyz[:] = quat_to_xyz(self.sim.link_quat[:, self.feet_indices])
 
     def _post_physics_pre_step(self):
