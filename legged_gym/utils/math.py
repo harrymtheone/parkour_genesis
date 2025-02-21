@@ -42,7 +42,6 @@ def axis_angle_to_quat(angle, axis):
 @torch.jit.script
 def xyz_to_quat(euler_xyz):
     # type: (torch.Tensor) -> torch.Tensor
-    euler_xyz = euler_xyz * torch.tensor(torch.pi) / 180.0
     roll, pitch, yaw = euler_xyz.unbind(-1)
     cosr = (roll * 0.5).cos()
     sinr = (roll * 0.5).sin()
@@ -70,7 +69,7 @@ def quat_to_xyz(quat):
     sinp = 2 * (qw * qy - qz * qx)
     pitch = torch.where(
         torch.abs(sinp) >= 1,
-        torch.sign(sinp) * torch.tensor(torch.pi / 2),
+        torch.sign(sinp) * torch.pi / 2,
         torch.asin(sinp),
     )
     # Yaw (z-axis rotation)
@@ -83,8 +82,8 @@ def quat_to_xyz(quat):
 @torch.jit.script
 def transform_by_quat(v, quat):
     # type: (torch.Tensor, torch.Tensor) -> torch.Tensor
-    quat = quat.reshape(-1, 4)
     v = v.reshape(-1, 3)
+    quat = quat.reshape(-1, 4)
     qvec = quat[:, :3]
     t = qvec.cross(v, dim=-1) * 2
     return v + quat[:, 3:] * t + qvec.cross(t, dim=-1)
@@ -112,8 +111,8 @@ def transform_quat_by_quat(v, u):
 
 
 @torch.jit.script
-def transform_by_trans_quat(pos, trans, quat):
-    return transform_by_quat(pos, quat) + trans
+def transform_by_trans_quat(vec, trans, quat):
+    return transform_by_quat(vec, quat) + trans
 
 
 @torch.jit.script

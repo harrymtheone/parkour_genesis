@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import List
 
 import torch
 import warp as wp
@@ -22,8 +23,8 @@ class BaseWrapper:
         self.headless = args.headless
         self.num_envs = self.cfg.env.num_envs
 
-        self._body_names: list
-        self._dof_names: list
+        self._body_names: List[str]
+        self._dof_names: List[str]
         self.num_bodies: int
         self.num_dof: int
 
@@ -59,10 +60,13 @@ class BaseWrapper:
         # Only used when you use pos_target drive mode
         raise NotImplementedError
 
+    def set_dof_stiffness(self, stiffness, env_ids=None):
+        raise NotImplementedError
+
     def set_dof_damping_coef(self, damping_coef, env_ids=None):
         raise NotImplementedError
 
-    def set_dof_friction_coef(self, friction_coef, env_ids=None):
+    def set_dof_friction(self, friction, env_ids=None):
         raise NotImplementedError
 
     def set_dof_armature(self, armature, env_ids=None):
@@ -78,17 +82,20 @@ class BaseWrapper:
         raise NotImplementedError
 
     def get_full_names(self, names, is_link) -> list:
+        full_names = []
+
         if is_link:
             if type(names) is str:
                 names = [names]
 
-            full_names = []
             for n in names:
                 full_names.extend([s for s in self._body_names if n in s])
-            return full_names
 
         else:
-            return [s for s in self._dof_names if names in s]
+            full_names = [s for s in self._dof_names if names in s]
+
+        assert len(full_names) > 0, "No names found!"
+        return full_names
 
     def create_indices(self, names, is_link):
         raise NotImplementedError
@@ -188,6 +195,11 @@ class BaseWrapper:
                                                        self.cfg.domain_rand.friction_range[1],
                                                        (self.num_envs, 1),
                                                        device=self.device)
+            self.compliance_coeffs = torch_rand_float(self.cfg.domain_rand.compliance_range[0],
+                                                      self.cfg.domain_rand.compliance_range[1],
+                                                      (self.num_envs, 1),
+                                                      device=self.device)
+
             self.restitution_coeffs = torch_rand_float(self.cfg.domain_rand.restitution_range[0],
                                                        self.cfg.domain_rand.restitution_range[1],
                                                        (self.num_envs, 1),

@@ -1,10 +1,15 @@
+try:
+    import isaacgym, torch
+except ImportError:
+    import torch
+
 import os
 
-import isaacgym, torch
+from torch import nn
+
 from legged_gym.utils.task_registry import TaskRegistry
 from rsl_rl.modules.model_dreamwaq import VAE
 from rsl_rl.modules.utils import make_linear_layers
-from torch import nn
 
 gru_hidden_size = 128
 encoder_output_size = 3 + 64  # v_t, z_t
@@ -41,7 +46,7 @@ class ActorGRU(nn.Module):
 
 def trace():
     # exptid, checkpoint = 'pdd_dream_gru_004', 20000
-    exptid, checkpoint = 'pdd_dream_gru_005', 30000
+    exptid, checkpoint = 'pdd_dream_gru_007', 12600
 
     trace_path = os.path.join('../dream_gru/traced')
     if not os.path.exists(trace_path):

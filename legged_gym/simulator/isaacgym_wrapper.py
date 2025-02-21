@@ -45,12 +45,7 @@ class IsaacGymWrapper(BaseWrapper):
         """
         # graphics device for rendering, -1 for no rendering
         sim_device, sim_device_id = gymutil.parse_device_str(self.device.type)
-        if not self.headless:
-            graphics_device_id = sim_device_id
-        elif self.cfg.depth.use_warp and sim_device.startswith('cuda'):
-            graphics_device_id = -1
-        else:
-            graphics_device_id = sim_device_id
+        graphics_device_id = -1 if self.headless else sim_device_id
 
         # initialize sim params
         sim_params = gymapi.SimParams()
@@ -124,7 +119,7 @@ class IsaacGymWrapper(BaseWrapper):
         hf_params.dynamic_friction = self.cfg.terrain.dynamic_friction
         hf_params.restitution = self.cfg.terrain.restitution
 
-        self.gym.add_heightfield(self.sim, self.terrain.height_field_raw.T, hf_params)
+        self.gym.add_heightfield(self.sim, self.terrain.height_field_raw.T.flatten(order='C'), hf_params)
         self.height_samples = torch.tensor(self.terrain.height_field_raw, device=self.device)
         self.height_guidance = torch.tensor(self.terrain.height_field_guidance, dtype=torch.float, device=self.device)
         self.edge_mask = torch.tensor(self.terrain.edge_mask, device=self.device)
@@ -223,19 +218,22 @@ class IsaacGymWrapper(BaseWrapper):
 
     def _process_rigid_shape_props(self, props, env_id: int):
         if self.cfg.domain_rand.randomize_friction:
-            for s in range(self.num_bodies):
+            for s in range(len(props)):
                 props[s].friction = self.friction_coeffs[env_id]
+                props[s].compliance = self.compliance_coeffs[env_id]
                 props[s].restitution = self.restitution_coeffs[env_id]
 
     def _process_dof_props(self, props, env_id: int):
-        self.dof_pos_limits = self._zero_tensor(self.num_dof, 2)
-        self.torque_limits = self._zero_tensor(self.num_dof)
+        if env_id == 0:
+            self.dof_pos_limits = self._zero_tensor(self.num_dof, 2)
+            self.torque_limits = self._zero_tensor(self.num_dof)
+
+            for i in range(len(props)):
+                self.dof_pos_limits[i, 0] = props["lower"][i].item()
+                self.dof_pos_limits[i, 1] = props["upper"][i].item()
+                self.torque_limits[i] = props["effort"][i].item()
 
         for i in range(len(props)):
-            self.dof_pos_limits[i, 0] = props["lower"][i].item()
-            self.dof_pos_limits[i, 1] = props["upper"][i].item()
-            self.torque_limits[i] = props["effort"][i].item()
-
             props["stiffness"][i] = self.cfg.asset.stiffness
             props["damping"][i] = self.cfg.asset.angular_damping
             props["friction"][i] = self.cfg.asset.friction
@@ -308,7 +306,7 @@ class IsaacGymWrapper(BaseWrapper):
                                               gymtorch.unwrap_tensor(env_ids_int32),
                                               len(env_ids_int32))
 
-    def _set_dof_prop(self, prop_name, value, env_ids=None, multiplier=False):
+    def _set_dof_prop(self, prop_name, value, env_ids=None):
         if env_ids is None:
             env_ids = torch.arange(self.num_envs)
 
@@ -316,10 +314,7 @@ class IsaacGymWrapper(BaseWrapper):
             dof_props = self.gym.get_actor_dof_properties(self._envs[env_id], self._actor_handles[env_id])
 
             for dof_i in range(self.num_dof):
-                if multiplier:
-                    dof_props[dof_i][prop_name] *= value[i, dof_i]
-                else:
-                    dof_props[dof_i][prop_name] = value[i, dof_i]
+                dof_props[dof_i][prop_name] = value[i, dof_i]
 
             self.gym.set_actor_dof_properties(self._envs[env_id], self._actor_handles[env_id], dof_props)
 
@@ -331,11 +326,14 @@ class IsaacGymWrapper(BaseWrapper):
         # Only used when you use pos_target drive mode
         raise NotImplementedError
 
-    def set_dof_damping_coef(self, damping_coef, env_ids=None):
-        self._set_dof_prop('damping', damping_coef, env_ids, multiplier=True)
+    def set_dof_stiffness(self, stiffness, env_ids=None):
+        self._set_dof_prop('stiffness', stiffness, env_ids)
 
-    def set_dof_friction_coef(self, friction_coef, env_ids=None):
-        self._set_dof_prop('friction', friction_coef, env_ids, multiplier=True)
+    def set_dof_damping_coef(self, damping_coef, env_ids=None):
+        self._set_dof_prop('damping', self.cfg.asset.angular_damping * damping_coef, env_ids)
+
+    def set_dof_friction(self, friction, env_ids=None):
+        self._set_dof_prop('friction', friction, env_ids)
 
     def set_dof_armature(self, armature, env_ids=None):
         self._set_dof_prop('armature', armature, env_ids)

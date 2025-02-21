@@ -1,6 +1,6 @@
 import torch
 
-from .pdd_base_env import PddBaseEnvironment
+from legged_gym.envs.base.humanoid_base_env import HumanoidBaseEnv
 from ..base.utils import ObsBase, HistoryBuffer
 from ...utils.math import transform_by_yaw
 
@@ -31,7 +31,7 @@ class CriticObs(ObsBase):
         self.scan = scan.clone()
 
 
-class PddZJUEnvironment(PddBaseEnvironment):
+class PddZJUEnvironment(HumanoidBaseEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -63,6 +63,32 @@ class PddZJUEnvironment(PddBaseEnvironment):
 
         hmap = self._get_heights(points + self.cfg.terrain.border_size)
         return self.sim.root_pos[:, 2:3] - hmap  # to relative height
+
+    def _compute_ref_state(self):
+        sin_pos = torch.sin(2 * torch.pi * self.phase)
+        sin_pos_l = sin_pos.clone()
+        sin_pos_r = sin_pos.clone()
+
+        self.ref_dof_pos[:] = 0.
+        scale_1 = self.cfg.rewards.target_joint_pos_scale
+        scale_2 = 2 * scale_1
+
+        # left swing
+        sin_pos_l[sin_pos_l > 0] = 0
+        self.ref_dof_pos[:, 2] = sin_pos_l * scale_1
+        self.ref_dof_pos[:, 3] = -sin_pos_l * scale_2
+        self.ref_dof_pos[:, 4] = sin_pos_l * scale_1
+
+        # right swing
+        sin_pos_r[sin_pos_r < 0] = 0
+        self.ref_dof_pos[:, 7] = -sin_pos_r * scale_1
+        self.ref_dof_pos[:, 8] = sin_pos_r * scale_2
+        self.ref_dof_pos[:, 9] = -sin_pos_r * scale_1
+
+        # Add double support phase
+        self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
+
+        self.ref_dof_pos[:] += self.init_state_dof_pos
 
     def _compute_observations(self):
         """

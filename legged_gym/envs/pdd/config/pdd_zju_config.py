@@ -5,7 +5,7 @@ from .pdd_base_config import PddBaseCfg, PddBaseCfgPPO
 
 class PddZJUCfg(PddBaseCfg):
     class env(PddBaseCfg.env):
-        num_envs = 4096  # 6144
+        num_envs = 2048  # 6144
 
         n_proprio = 41
         len_prop_his = 10
@@ -26,8 +26,8 @@ class PddZJUCfg(PddBaseCfg):
         class depth_0:
             position = [0.10, 0, 0.0]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-            pitch = 60  # positive pitch down (degree)
-            pitch_range = [-1, 1]  # positive pitch down (degree)
+            pitch = 60
+            pitch_range = [-1, 1]
 
             update_interval = 5  # 5 works without retraining, 8 worse
             delay_prop = (5, 1)  # Gaussian (mean, std)
@@ -54,9 +54,9 @@ class PddZJUCfg(PddBaseCfg):
 
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 0,
-            'stairs_up': 0,
-            'stairs_down': 0,
+            'rough_slope': 1,
+            'stairs_up': 1,
+            'stairs_down': 1,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -65,7 +65,7 @@ class PddZJUCfg(PddBaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 4,
+            'parkour_stair': 1,
             'parkour_flat': 0,
         }
 
@@ -152,7 +152,7 @@ class PddZJUCfg(PddBaseCfg):
             foot_slip = -1.
             feet_distance = 0.2
             knee_distance = 0.2
-            # feet_rotation = 0.3
+            feet_rotation = 0.3
 
             # contact
             feet_contact_forces = -0.1
@@ -200,7 +200,7 @@ class PddZJUCfgPPO(PddBaseCfgPPO):
         use_clipped_value_loss = True
         continue_from_last_std = True
         clip_param = 0.2
-        entropy_coef = 0.01
+        entropy_coef = 0.005
         num_learning_epochs = 10
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4

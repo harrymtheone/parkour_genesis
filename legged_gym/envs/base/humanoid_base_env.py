@@ -4,7 +4,7 @@ from legged_gym.envs.base.parkour_task import ParkourTask
 from legged_gym.utils.math import quat_to_xyz
 
 
-class PddBaseEnvironment(ParkourTask):
+class HumanoidBaseEnv(ParkourTask):
     def get_observations(self):
         return self.actor_obs
 
@@ -30,7 +30,7 @@ class PddBaseEnvironment(ParkourTask):
         self.phase = self._zero_tensor(self.num_envs)
         self.phase_length_buf = self._zero_tensor(self.num_envs)
         self.gait_start = self._zero_tensor(self.num_envs)
-        self.ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
+        self.ref_dof_pos = self._zero_tensor(self.num_envs, self.num_dof)
 
         self.last_contacts = self._zero_tensor(self.num_envs, len(self.feet_indices), dtype=torch.bool)
         self.last_feet_vel_xy = self._zero_tensor(self.num_envs, len(self.feet_indices), 2)
@@ -110,32 +110,6 @@ class PddBaseEnvironment(ParkourTask):
         stance_mask[self.is_zero_command] = True
 
         return stance_mask
-
-    def _compute_ref_state(self):
-        sin_pos = torch.sin(2 * torch.pi * self.phase)
-        sin_pos_l = sin_pos.clone()
-        sin_pos_r = sin_pos.clone()
-
-        self.ref_dof_pos[:] = 0.
-        scale_1 = self.cfg.rewards.target_joint_pos_scale
-        scale_2 = 2 * scale_1
-
-        # left swing
-        sin_pos_l[sin_pos_l > 0] = 0
-        self.ref_dof_pos[:, 2] = sin_pos_l * scale_1
-        self.ref_dof_pos[:, 3] = -sin_pos_l * scale_2
-        self.ref_dof_pos[:, 4] = sin_pos_l * scale_1
-
-        # right swing
-        sin_pos_r[sin_pos_r < 0] = 0
-        self.ref_dof_pos[:, 7] = -sin_pos_r * scale_1
-        self.ref_dof_pos[:, 8] = sin_pos_r * scale_2
-        self.ref_dof_pos[:, 9] = -sin_pos_r * scale_1
-
-        # Add double support phase
-        self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
-
-        self.ref_dof_pos[:] += self.init_state_dof_pos
 
     # ================================================ Rewards ================================================== #
     def _reward_joint_pos(self):

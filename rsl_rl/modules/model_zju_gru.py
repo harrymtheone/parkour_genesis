@@ -15,6 +15,16 @@ len_latent_body = 16
 transformer_embed_dim = 64
 
 
+def gru_wrapper(func, *args):
+    n_steps = args[0].size(0)
+    rtn = func(*[arg.flatten(0, 1) for arg in args])
+
+    if type(rtn) is tuple:
+        return [r.unflatten(0, (n_steps, -1)) for r in rtn]
+    else:
+        return rtn.unflatten(0, (n_steps, -1))
+
+
 class ObsGRU(nn.Module):
     def __init__(self, env_cfg):
         super().__init__()
@@ -41,8 +51,7 @@ class ObsGRU(nn.Module):
             return out.squeeze(0)
         else:
             # update forward
-            n_steps = obs_his.size(0)
-            out = self.conv_layers(obs_his.flatten(0, 1)).unflatten(0, (n_steps, -1))
+            out = gru_wrapper(self.conv_layers.forward, obs_his)
             out, _ = self.gru(out, hidden_state)
             return out
 
@@ -190,17 +199,16 @@ class ReconGRU(nn.Module):
             return hmap_rough, hmap_refine
         else:
             # update forward
-            n_steps = depth_his.size(0)
-            enc_depth = self.cnn_depth(depth_his.flatten(0, 1)).unflatten(0, (n_steps, -1))
+            enc_depth = gru_wrapper(self.cnn_depth.forward, depth_his)
 
             # concatenate the two latent vectors
             gru_input = torch.cat([enc_depth, prop_latent], dim=2)
             enc_gru, _ = self.gru(gru_input, hidden_state)
 
             # reconstruct
-            hmap_rough = self.recon_rough(enc_gru.flatten(0, 1))
-            hmap_refine = self.recon_refine(self.activation(hmap_rough))
-            return hmap_rough.unflatten(0, (n_steps, -1)), hmap_refine.unflatten(0, (n_steps, -1))
+            hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
+            hmap_refine = gru_wrapper(self.recon_refine.forward, self.activation(hmap_rough))
+            return hmap_rough, hmap_refine
 
     def detach_hidden_state(self):
         if self.hidden_state is None:
@@ -217,10 +225,11 @@ class ReconGRU(nn.Module):
 
 
 class LocoTransformer(nn.Module):
-    def __init__(self, ):
+    def __init__(self, env_cfg):
         super().__init__()
         num_heads = 4
         num_layers = 2  # 2
+        predictor_hidden_dim = [128, 64]
 
         activation = nn.ReLU(inplace=True)
 
@@ -244,11 +253,25 @@ class LocoTransformer(nn.Module):
             num_layers=num_layers
         )
 
-        # output MLP
-        self.mlp_out = nn.Sequential(
+        # output VAE
+        self.mlp_mu = nn.Sequential(
             nn.Linear(transformer_embed_dim * 2, transformer_embed_dim),
             activation,
             nn.Linear(transformer_embed_dim, len_latent + len_base_vel + len_latent_feet + len_latent_body),
+        )
+        self.mlp_logvar = nn.Sequential(
+            nn.Linear(transformer_embed_dim * 2, transformer_embed_dim),
+            activation,
+            nn.Linear(transformer_embed_dim, len_latent)
+        )
+
+        # Ot+1 predictor
+        self.predictor = nn.Sequential(
+            nn.Linear(len_latent + len_base_vel + len_latent_feet + len_latent_body, predictor_hidden_dim[0]),
+            activation,
+            nn.Linear(predictor_hidden_dim[0], predictor_hidden_dim[1]),
+            activation,
+            nn.Linear(predictor_hidden_dim[1], env_cfg.n_proprio)
         )
 
     def forward(self, scan, latent_obs):
@@ -271,7 +294,21 @@ class LocoTransformer(nn.Module):
         out = torch.cat([token_prop, token_terrain], dim=1)
 
         # decode the vector
-        return self.mlp_out(out)
+        est_mu = self.mlp_mu(out)
+        est_logvar = self.mlp_logvar(out)
+
+        # reparameterize and predict O_t+1
+        z = self.reparameterize(est_mu[:, :len_latent], est_logvar)
+        ot1 = self.predictor(torch.cat((z, est_mu[:, len_latent:]), dim=1))
+
+        # decode the vector
+        return est_mu, est_logvar, ot1
+
+    @staticmethod
+    def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return eps * std + mu
 
 
 class Actor(nn.Module):
@@ -289,9 +326,7 @@ class Actor(nn.Module):
             return self.actor(torch.cat([obs, priv], dim=1))
 
         elif obs.ndim == 3:  # GRU
-            n_step = len(obs)
-            obs, priv = obs.flatten(0, 1), priv.flatten(0, 1)
-            return self.actor(torch.cat([obs, priv], dim=1)).unflatten(0, (n_step, -1))
+            return gru_wrapper(self.actor.forward, torch.cat([obs, priv], dim=2))
 
 
 class EstimatorGRU(nn.Module):
@@ -303,7 +338,7 @@ class EstimatorGRU(nn.Module):
 
         self.obs_gru = ObsGRU(env_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
-        self.transformer = LocoTransformer()
+        self.transformer = LocoTransformer(env_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
@@ -331,7 +366,7 @@ class EstimatorGRU(nn.Module):
                 recon_refine,
                 obs.scan.unsqueeze(1)
             )
-            latent_est = self.transformer(recon_input, latent_obs)
+            latent_est, _, _ = self.transformer(recon_input, latent_obs)
             latent_input = torch.where(
                 use_estimated_values,
                 latent_est,
@@ -339,12 +374,9 @@ class EstimatorGRU(nn.Module):
             )
 
         elif use_estimated_values:
-            latent_est = self.transformer(recon_refine, latent_obs)
-            # noise = 0.075 * torch.randn_like(recon_refine)
-            # latent_est = self.transformer(recon_refine + noise, latent_obs)
-            latent_input = latent_est
+            latent_input, _, _ = self.transformer(recon_refine, latent_obs)
         else:
-            latent_est = self.transformer(obs.scan.unsqueeze(1), latent_obs)
+            latent_est, _, _ = self.transformer(obs.scan.unsqueeze(1), latent_obs)
             latent_input = torch.cat([latent_est[:, :len_latent], est_gt], dim=1)
 
         # compute action
@@ -373,36 +405,32 @@ class EstimatorGRU(nn.Module):
         with torch.no_grad():
             recon_rough, recon_refine = self.reconstructor(obs.depth, latent_obs, recon_hidden_states)
 
-        # No more GRU, flatten those variables
-        use_estimated_values, recon, scan, latent_obs, priv, proprio = map(
-            lambda x: x.flatten(0, 1),
-            [use_estimated_values, recon_refine, obs.scan, latent_obs, obs.priv, obs.proprio])
-
         # cross-model mixing using transformer
         recon_input = torch.where(
             use_estimated_values.unsqueeze(-1).unsqueeze(-1),
-            recon,
-            scan.unsqueeze(1)
+            recon_refine,
+            obs.scan.unsqueeze(2)
         )
-        latent_est = self.transformer(recon_input, latent_obs)
+        latent_est, est_logvar, ot1 = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
         latent_input = torch.where(
             use_estimated_values,
             latent_est,
-            torch.cat([latent_est[:, :len_latent], priv[:, :len_base_vel + len_latent_feet + len_latent_body]], dim=1)
+            torch.cat([latent_est[..., :len_latent],
+                       obs.priv[..., :len_base_vel + len_latent_feet + len_latent_body]], dim=-1)
         )
 
         # compute action
-        mean = self.actor(proprio, latent_input).unflatten(0, (obs.proprio.size(0), -1))
+        mean = gru_wrapper(self.actor.forward, obs.proprio, latent_input)
 
         # output action
         self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
-        return latent_est
+        return latent_est, est_logvar, ot1
 
-    def reconstruct(self, prop, depth, recon_prev):
+    def reconstruct(self, prop, depth, obs_enc_hidden, recon_hidden):
         # encode history proprio
-        latent_obs = self.obs_enc(prop)
-        recon_rough, recon_refine = self.reconstructor(depth, recon_prev.unsqueeze(1), latent_obs)
-        return recon_rough.squeeze(1), recon_refine.squeeze(1)
+        latent_obs = self.obs_gru(prop, obs_enc_hidden)
+        recon_rough, recon_refine = self.reconstructor(depth, latent_obs, recon_hidden)
+        return recon_rough.squeeze(2), recon_refine.squeeze(2)
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)

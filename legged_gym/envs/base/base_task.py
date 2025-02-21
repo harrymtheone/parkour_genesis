@@ -1,5 +1,7 @@
 import math
 
+import cv2
+import numpy as np
 import torch
 import warp as wp
 
@@ -98,7 +100,7 @@ class BaseTask:
         self.forward_vec = torch.tensor([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
 
         # allocate buffers
-        self.actions = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
+        self.actions = self._zero_tensor(self.num_envs, self.num_dof)  # action clipped
         self.last_action_output = self._zero_tensor(self.num_envs, self.num_actions)  # network output
         self.actor_obs, self.critic_obs = None, None
         self.rew_buf = self._zero_tensor(self.num_envs)
@@ -110,7 +112,7 @@ class BaseTask:
 
         # Lag buffer
         if self.cfg.domain_rand.action_delay:
-            self.action_delay_buf = DelayBuffer(self.num_envs, (self.num_actions,),
+            self.action_delay_buf = DelayBuffer(self.num_envs, (self.num_dof,),
                                                 self.cfg.domain_rand.action_delay_range.pop(0),
                                                 self.cfg.domain_rand.randomize_action_delay_each_step,
                                                 device=self.device)
@@ -162,17 +164,11 @@ class BaseTask:
         self.init_state_lin_vel = torch.tensor(self.cfg.init_state.lin_vel, dtype=torch.float, device=self.device).unsqueeze(0)
         self.init_state_ang_vel = torch.tensor(self.cfg.init_state.ang_vel, dtype=torch.float, device=self.device).unsqueeze(0)
 
-        # compute soft dof position limits
-        self.soft_dof_pos_limits = self.sim.dof_pos_limits.clone()
-        m = (self.soft_dof_pos_limits[:, 0] + self.soft_dof_pos_limits[:, 1]) / 2
-        r = self.soft_dof_pos_limits[:, 1] - self.soft_dof_pos_limits[:, 0]
-        self.soft_dof_pos_limits[:, 0] = (m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit)
-        self.soft_dof_pos_limits[:, 1] = (m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit)
-
         # joint positions offsets and PD gains
         self.init_state_dof_pos = self._zero_tensor(1, self.num_dof)
         self.p_gains = self._zero_tensor(1, self.num_dof)
         self.d_gains = self._zero_tensor(1, self.num_dof)
+        self.dof_activated = self._zero_tensor(self.num_dof, dtype=torch.bool)
 
         for i, dof_name in enumerate(self.sim.dof_names):
             self.init_state_dof_pos[0, i] = self.cfg.init_state.default_joint_angles[dof_name]
@@ -187,10 +183,21 @@ class BaseTask:
             if not found:
                 raise ValueError(f"PD gain of joint {dof_name} were not defined")
 
+            for key in self.cfg.control.activated:
+                if key in dof_name:
+                    self.dof_activated[i] = True
+
         # set the kp and kd value for simulator built-in PD controller
         if self.sim.drive_mode is not DriveMode.torque:
             self.sim.set_dof_kp(self.p_gains.repeat(self.num_envs, 1))
             self.sim.set_dof_kv(self.d_gains.repeat(self.num_envs, 1))
+
+        # compute soft dof position limits
+        self.soft_dof_pos_limits = self.sim.dof_pos_limits.clone()
+        m = (self.soft_dof_pos_limits[:, 0] + self.soft_dof_pos_limits[:, 1]) / 2
+        r = self.soft_dof_pos_limits[:, 1] - self.soft_dof_pos_limits[:, 0]
+        self.soft_dof_pos_limits[:, 0] = (m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit)
+        self.soft_dof_pos_limits[:, 1] = (m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit)
 
         # initialize env reset origin and goals
         self._get_env_origins()
@@ -213,12 +220,18 @@ class BaseTask:
 
         # clip action range
         clip_actions = self.cfg.normalization.clip_actions / self.cfg.control.action_scale
-        self.actions[:] = torch.clip(actions, -clip_actions, clip_actions)
+        self.actions[:, self.dof_activated] = torch.clip(self.last_action_output, -clip_actions, clip_actions)
 
         if self.cfg.domain_rand.action_delay:
             self.action_delay_buf.append(self.actions)
 
         # step the simulator
+        self._step_environment()
+        self._post_physics_step()
+
+        return self.actor_obs, self.critic_obs, self.rew_buf.clone(), self.reset_buf.clone(), self.extras
+
+    def _step_environment(self):
         if self.sim.drive_mode is DriveMode.torque:
             for step_i in range(self.cfg.control.decimation):
                 if self.cfg.domain_rand.action_delay:
@@ -230,20 +243,18 @@ class BaseTask:
                 self.sim.step_environment()
 
                 if self.cfg.domain_rand.add_dof_lag:
-                    self.dof_lag_buf.append(torch.stack([self.sim.dof_pos, self.sim.dof_vel], dim=2))
+                    self.dof_lag_buf.append(torch.stack([self.sim.dof_pos[:, self.dof_activated],
+                                                         self.sim.dof_vel[:, self.dof_activated]], dim=2))
                     self.dof_lag_buf.step()
 
                 if self.cfg.domain_rand.add_imu_lag:
-                    self.imu_lag_buf.append(torch.stack([self.sim.root_quat, self.sim.root_ang_vel], dim=2))
+                    self.imu_lag_buf.append(torch.stack([self.sim.root_quat,
+                                                         self.sim.root_ang_vel], dim=2))
                     self.imu_lag_buf.step()
         else:
             target_dof_pos = self.actions * self.cfg.control.action_scale + self.init_state_dof_pos
             self.sim.control_dof_position(target_dof_pos)
             self.sim.step_environment()
-
-        self._post_physics_step()
-
-        return self.actor_obs, self.critic_obs, self.rew_buf.clone(), self.reset_buf.clone(), self.extras
 
     def _compute_torques(self):
         # pd controller
@@ -377,6 +388,13 @@ class BaseTask:
         if not self.sim.headless:
             self.joystick_handler.handle_device_input()
 
+            if self.cfg.sensors.activated:
+                depth_img = self.sensors.get('depth_0', get_raw=True)
+                depth_img = depth_img[self.lookat_id].cpu().numpy()
+                img = np.clip(depth_img / self.cfg.sensors.depth_0.far_clip * 255, 0, 255).astype(np.uint8)
+                cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
+                cv2.waitKey(1)
+
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. """
         apply_force = self._zero_tensor(self.num_envs, self.sim.num_bodies, 3)
@@ -500,19 +518,19 @@ class BaseTask:
 
             if self.cfg.domain_rand.randomize_gains:
                 self.p_gain_multiplier = self._zero_tensor(self.num_envs, self.num_dof)
+                self.d_gain_multiplier = self._zero_tensor(self.num_envs, self.num_dof)
 
             if self.cfg.domain_rand.randomize_motor_offset:
                 self.motor_offsets = self._zero_tensor(self.num_envs, self.num_dof)
-                self.d_gain_multiplier = self._zero_tensor(self.num_envs, self.num_dof)
 
             if self.cfg.domain_rand.randomize_joint_stiffness:
-                raise NotImplementedError
+                self.joint_stiffness = self._zero_tensor(self.num_envs)
 
             if self.cfg.domain_rand.randomize_joint_damping:
                 self.joint_damping_multiplier = self._zero_tensor(self.num_envs)
 
             if self.cfg.domain_rand.randomize_joint_friction:
-                self.joint_friction_multiplier = self._zero_tensor(self.num_envs)
+                self.joint_friction = self._zero_tensor(self.num_envs)
 
             if self.cfg.domain_rand.randomize_joint_armature:
                 self.joint_armatures = self._zero_tensor(self.num_envs)
@@ -528,12 +546,12 @@ class BaseTask:
                                                         device=self.device)
 
         if self.cfg.domain_rand.randomize_gains:
-            self.p_gain_multiplier[env_ids] = torch_rand_float(self.cfg.domain_rand.stiffness_multiplier_range[0],
-                                                               self.cfg.domain_rand.stiffness_multiplier_range[1],
+            self.p_gain_multiplier[env_ids] = torch_rand_float(self.cfg.domain_rand.kp_multiplier_range[0],
+                                                               self.cfg.domain_rand.kp_multiplier_range[1],
                                                                (len(env_ids), self.num_dof),
                                                                device=self.device)
-            self.d_gain_multiplier[env_ids] = torch_rand_float(self.cfg.domain_rand.damping_multiplier_range[0],
-                                                               self.cfg.domain_rand.damping_multiplier_range[1],
+            self.d_gain_multiplier[env_ids] = torch_rand_float(self.cfg.domain_rand.kd_multiplier_range[0],
+                                                               self.cfg.domain_rand.kd_multiplier_range[1],
                                                                (len(env_ids), self.num_dof),
                                                                device=self.device)
             if self.sim.drive_mode is not DriveMode.torque:
@@ -546,22 +564,30 @@ class BaseTask:
                                                            (len(env_ids), self.num_dof),
                                                            device=self.device)
 
+        if self.cfg.domain_rand.randomize_joint_stiffness:
+            self.joint_stiffness[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_stiffness_range[0],
+                                                             self.cfg.domain_rand.joint_stiffness_range[1],
+                                                             (len(env_ids), 1),
+                                                             device=self.device).squeeze(1)
+            stiffness_all = self.joint_stiffness[env_ids].unsqueeze(1).repeat(1, self.num_dof)
+            self.sim.set_dof_stiffness(stiffness_all, env_ids)
+            raise NotImplementedError
+
         if self.cfg.domain_rand.randomize_joint_damping:
             self.joint_damping_multiplier[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_damping_multiplier_range[0],
                                                                       self.cfg.domain_rand.joint_damping_multiplier_range[1],
                                                                       (len(env_ids), 1),
                                                                       device=self.device).squeeze(1)
             damping_multiplier_all = self.joint_damping_multiplier[env_ids].unsqueeze(1).repeat(1, self.num_dof)
-            self.sim.set_dof_friction_coef(damping_multiplier_all, env_ids)
+            self.sim.set_dof_damping_coef(damping_multiplier_all, env_ids)
 
         if self.cfg.domain_rand.randomize_joint_friction:
-            self.joint_friction_multiplier[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_friction_multiplier_range[0],
-                                                                       self.cfg.domain_rand.joint_friction_multiplier_range[1],
-                                                                       (len(env_ids), 1),
-                                                                       device=self.device).squeeze(1)
-            friction_multiplier_all = self.joint_friction_multiplier[env_ids].unsqueeze(1).repeat(1, self.num_dof)
-            # TODO: you cannot run this multiple time, because friction * 1.1 * 1.1 will explode!!!!!!!!!!!
-            self.sim.set_dof_friction_coef(friction_multiplier_all, env_ids)
+            self.joint_friction[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_friction_range[0],
+                                                            self.cfg.domain_rand.joint_friction_range[1],
+                                                            (len(env_ids), 1),
+                                                            device=self.device).squeeze(1)
+            friction_all = self.joint_friction[env_ids].unsqueeze(1).repeat(1, self.num_dof)
+            self.sim.set_dof_friction(friction_all, env_ids)
 
         if self.cfg.domain_rand.randomize_joint_armature:
             self.joint_armatures[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_armature_range[0],

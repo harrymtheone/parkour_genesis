@@ -34,7 +34,7 @@ class SensorBase:
     def get(self):
         raise NotImplementedError
 
-    def update_sensor_pos(self, root_pos, root_quat):
+    def update_sensor_pos(self, root_pos: torch.Tensor, root_quat: torch.Tensor):
         # update depth camera and convert to voxel grid
         self.sensor_pos_design.assign(wp.from_torch(
             transform_by_trans_quat(self.sensor_offset_pos_design, root_pos, root_quat), dtype=wp.vec3f))
@@ -48,7 +48,7 @@ class SensorBase:
     def launch_kernel(self):
         raise NotImplementedError
 
-    def post_process(self, reset_flag):
+    def post_process(self):
         raise NotImplementedError
 
     def _initialize_sensors(self):

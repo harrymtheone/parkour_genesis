@@ -1,11 +1,10 @@
 import math
-import random
 
 import torch
 import torchvision
 import warp as wp
 
-from legged_gym.utils.math import transform_quat_by_quat, xyz_to_quat, torch_rand_float
+from legged_gym.utils.math import xyz_to_quat, torch_rand_float
 from .sensor_base import SensorBase, SensorBuffer
 from .warp_kernel import depth_only_kernel
 
@@ -34,8 +33,11 @@ class DepthCam(SensorBase):
                                 delay_prop=cfg_dict['delay_prop'],
                                 device=device)
 
-    def get(self):
-        return self.buf.get()
+    def get(self, get_raw=False, **kwargs):
+        if get_raw:
+            return self.depth_raw.clone()
+        else:
+            return self.buf.get()
 
     def step(self, reset):
         return self.buf.step(reset)
@@ -47,12 +49,8 @@ class DepthCam(SensorBase):
         horizontal_fov = cfg['horizontal_fov']
 
         self.sensor_offset_pos_design[:] = torch.tensor(cfg['position'], dtype=torch.float, device=self.device).unsqueeze(0)
-
-        cam_fix_rotation = xyz_to_quat(torch.deg2rad(torch.tensor([[-90, 0, -90]], dtype=torch.float, device=self.device)))
-        self.sensor_offset_quat_design[:] = transform_quat_by_quat(  # for point cloud computation
-            xyz_to_quat(torch.deg2rad(torch.tensor([[0, cfg['pitch'], 0]], dtype=torch.float, device=self.device))),
-            cam_fix_rotation
-        )
+        self.sensor_offset_quat_design[:] = xyz_to_quat(  # for point cloud computation
+            torch.deg2rad(torch.tensor([[0, cfg['pitch'], 0]], dtype=torch.float, device=self.device)))
 
         # camera randomization
         self.sensor_offset_pos[:] = self.sensor_offset_pos_design
@@ -62,14 +60,10 @@ class DepthCam(SensorBase):
 
         camera_xyz_angle = torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device)
         camera_xyz_angle[:, 1:2] = cfg['pitch'] + torch_rand_float(*cfg['pitch_range'], shape=(self.num_envs, 1), device=self.device)
-
-        self.sensor_offset_quat[:] = transform_quat_by_quat(  # for point cloud computation
-            xyz_to_quat(torch.deg2rad(camera_xyz_angle)),
-            cam_fix_rotation.repeat(self.num_envs, 1)
-        )
+        self.sensor_offset_quat[:] = xyz_to_quat(torch.deg2rad(camera_xyz_angle))
 
         u_0, v_0 = width / 2, height / 2
-        f = width / 2 / math.tan(math.radians(horizontal_fov) / 2)
+        f = u_0 / math.tan(math.radians(horizontal_fov) / 2)
 
         # simple pinhole model
         K = wp.mat44(
@@ -86,7 +80,6 @@ class DepthCam(SensorBase):
             kernel=depth_only_kernel,
             dim=(self.num_envs, *self.cfg_dict['resolution']),
             inputs=[
-
                 self.mesh_id,
                 self.sensor_pos,
                 self.sensor_quat,

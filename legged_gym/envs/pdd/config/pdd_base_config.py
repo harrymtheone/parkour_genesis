@@ -18,9 +18,8 @@ class PddBaseCfg(BaseConfig):
         reach_goal_delay = 0.05
         num_future_goal_obs = 2
 
-    class depth:
-        use_camera = False
-        use_warp = True
+    class sensors:
+        activated = False
 
     class normalization:
         class obs_scales:
@@ -165,13 +164,17 @@ class PddBaseCfg(BaseConfig):
 
         randomize_friction = False
         friction_range = [0.2, 1.3]
+        compliance_range = [0.5, 1.5]
         restitution_range = [0.0, 0.4]
 
-        randomize_joint_friction = False
-        joint_friction_multiplier_range = [0.01, 1.15]
+        randomize_joint_stiffness = False
+        joint_stiffness_range = [0., 0.]
 
         randomize_joint_damping = False
         joint_damping_multiplier_range = [0.3, 1.5]
+
+        randomize_joint_friction = False
+        joint_friction_multiplier_range = [0.01, 1.15]
 
         randomize_joint_armature = False
         joint_armature_range = [0.0001, 0.05]
@@ -184,8 +187,8 @@ class PddBaseCfg(BaseConfig):
         motor_offset_range = [-0.035, 0.035]  # Offset to add to the motor angles
 
         randomize_gains = False
-        stiffness_multiplier_range = [0.8, 1.2]  # Factor
-        damping_multiplier_range = [0.8, 1.2]  # Factor
+        kp_multiplier_range = [0.8, 1.2]  # Factor
+        kd_multiplier_range = [0.8, 1.2]  # Factor
 
         randomize_torque = False
         torque_multiplier_range = [0.8, 1.2]
@@ -214,16 +217,16 @@ class PddBaseCfg(BaseConfig):
         # PD Drive parameters:
         stiffness = {'1_joint': 15, '2_joint': 5, '3_joint': 15, '4_joint': 25, '5_joint': 5}
         damping = {'1_joint': 1.0, '2_joint': 0.5, '3_joint': 1.5, '4_joint': 2.5, '5_joint': 0.1}
-        # stiffness = {'1_joint': 30, '2_joint': 5, '3_joint': 15, '4_joint': 25, '5_joint': 5}
-        # damping = {'1_joint': 3.0, '2_joint': 0.5, '3_joint': 1.5, '4_joint': 2.5, '5_joint': 0.1}
+        activated = ['joint']
+
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 10
 
     class asset:
-        file = LEGGED_GYM_ROOT_DIR + '/resources/robots/pdd/urdf/pdd_bigfoot.urdf'
-        # file = LEGGED_GYM_ROOT_DIR + '/resources/robots/pdd/urdf/pdd_with_fric_damp.urdf'
+        file = LEGGED_GYM_ROOT_DIR + '/robots/pdd/urdf/pdd_bigfoot.urdf'
+        # file = LEGGED_GYM_ROOT_DIR + '/robots/pdd/urdf/pdd_with_fric_damp.urdf'
 
         name = "pdd"
         base_link_name = "base_link"

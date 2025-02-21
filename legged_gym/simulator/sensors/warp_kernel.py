@@ -18,22 +18,28 @@ def depth_only_kernel(
     cam_pos = cam_pos_arr[env_id]
     cam_quat = cam_quat_arr[env_id]
 
-    cam_coords = wp.vec3(float(x), float(y), 1.0)  # this only converts the frame from warp's z-axis front to Isaac Gym's x-axis front
-    cam_coords_principal = wp.vec3(float(c_x), float(c_y), 1.0)  # get the vector of principal axis
+    cam_coords = wp.vec3f(float(x), float(y), 1.0)
+    cam_coords_principal = wp.vec3f(float(c_x), float(c_y), 1.0)  # get the vector of principal axis
 
     # transform to uv [-1,1]
     uv = wp.transform_vector(K_inv, cam_coords)
     uv_principal = wp.transform_vector(K_inv, cam_coords_principal)  # uv for principal axis
 
+    # convert to world frame
+    uv_world = wp.vec3f(uv[2], -uv[0], -uv[1])
+    uv_principal_world = wp.vec3f(uv_principal[2], -uv_principal[0], -uv_principal[1])
+
     # compute camera ray origin in world frame
     ro = cam_pos
 
     # tf the direction from camera to world frame and normalize
-    rd = wp.normalize(wp.quat_rotate(cam_quat, uv))
-    rd_principal = wp.normalize(wp.quat_rotate(cam_quat, uv_principal))  # ray direction of principal axis
+    rd = wp.normalize(wp.quat_rotate(cam_quat, uv_world))
+    rd_principal = wp.normalize(wp.quat_rotate(cam_quat, uv_principal_world))  # ray direction of principal axis
 
     # multiplier to project each ray on principal axis for depth instead of range
     multiplier = wp.dot(rd, rd_principal)
+
+    # wp.printf('cam rd (%.2f, %.2f, %.2f)\n', rd[0], rd[1], rd[2])
 
     # perform ray casting
     query = wp.mesh_query_ray(mesh_id, ro, rd, far_clip / multiplier)

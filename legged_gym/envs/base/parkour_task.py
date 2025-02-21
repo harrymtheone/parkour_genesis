@@ -35,8 +35,8 @@ class ParkourTask(BaseTask):
         self.torques = self._zero_tensor(self.num_envs, self.num_actions)
         self.base_height = self._zero_tensor(self.num_envs)
 
-        self.last_actions = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
-        self.last_last_actions = self._zero_tensor(self.num_envs, self.num_actions)  # action clipped
+        self.last_actions = torch.zeros_like(self.actions)
+        self.last_last_actions = torch.zeros_like(self.actions)
         self.last_dof_vel = torch.zeros_like(self.sim.dof_vel)
         self.last_torques = torch.zeros_like(self.torques)
         self.last_root_vel = torch.zeros_like(self.sim.root_lin_vel)

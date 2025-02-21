@@ -331,6 +331,7 @@ class Estimator(nn.Module):
             self,
             obs: ActorObs,
             use_estimated_values: Union[bool, torch.Tensor] = True,
+            **kwargs
     ):  # <-- my mood be like
         obs = obs.clone()        # encode history proprio
 
