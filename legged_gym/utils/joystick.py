@@ -28,10 +28,12 @@ class JoystickHandler:
             self.sim.lookat(self.sim.lookat_id - 1)  # look at previous env
         elif btn_idx == 7:
             self.sim.lookat(self.sim.lookat_id + 1)  # look at next env
-        elif btn_idx == 10:
+        elif btn_idx == 10:  # select
             sys.exit()
         elif btn_idx == 14:
             self.sim.free_cam = not self.sim.free_cam
+        elif btn_idx == 4:
+            self.sim.enable_viewer_sync = not self.sim.enable_viewer_sync
 
     def on_release(self, key):
         pass

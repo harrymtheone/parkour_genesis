@@ -37,9 +37,9 @@ class T1BaseCfg(BaseConfig):
         clip_actions = 100.
 
     class terrain:
-        # description_type = 'plane'  # plane, heightfield or trimesh
+        description_type = 'plane'  # plane, heightfield or trimesh
         # description_type = 'heightfield'  # plane, heightfield or trimesh
-        description_type = 'trimesh'  # plane, heightfield or trimesh
+        # description_type = 'trimesh'  # plane, heightfield or trimesh
         max_error = 0.1  # for fast
 
         y_range = [-0.4, 0.4]
@@ -211,8 +211,8 @@ class T1BaseCfg(BaseConfig):
             'Right_Shoulder_Roll': 1.3,
             'Right_Elbow_Pitch': 0.,
             'Right_Elbow_Yaw': 1.,
-
             'Waist': 0.,
+
             'Left_Hip_Pitch': -0.2,
             'Left_Hip_Roll': 0.,
             'Left_Hip_Yaw': 0.,
@@ -232,13 +232,13 @@ class T1BaseCfg(BaseConfig):
         stiffness = {
             'Head': 30,
             'Hip_Roll': 150, 'Hip_Yaw': 150, 'Hip_Pitch': 150, 'Knee_Pitch': 180, 'Ankle_Roll': 40, 'Ankle_Pitch': 40,
-            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100, 'Waist': 10  # not used yet, set randomly
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100, 'Waist': 100  # not used yet, set randomly
         }
 
         damping = {
             'Head': 1,
             'Hip_Roll': 8.0, 'Hip_Yaw': 4.0, 'Hip_Pitch': 8, 'Knee_Pitch': 8.0, 'Ankle_Roll': 0.2, 'Ankle_Pitch': 0.2,
-            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3, 'Waist': 0.05  # not used yet, set randomly
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3, 'Waist': 3.0  # not used yet, set randomly
         }
 
         activated = ['Hip', 'Knee', 'Ankle']
@@ -251,7 +251,7 @@ class T1BaseCfg(BaseConfig):
     class asset:
         file = LEGGED_GYM_ROOT_DIR + '/robots/T1/T1_serial.urdf'
         name = 'T1'
-        base_link_name = 'base_link'
+        base_link_name = 'Trunk'
         foot_name = 'foot_link'
         knee_name = 'Ankle_Cross'
         penalize_contacts_on = ['Trunk', 'Hip_Pitch', 'Hip_Roll', 'Hip_Yaw', 'Shank', 'Ankle_Cross']

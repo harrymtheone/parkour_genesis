@@ -37,7 +37,7 @@ def gen_info_panel(args, env):
     # print(f'env level: {env.env_levels[env.lookat_id].cpu().numpy()}')
 
     table11 = Table()
-    table11.add_column(f'time: {env.episode_length_buf[env.lookat_id].item() / 50:.2f}')
+    table11.add_column(f'time: {env.episode_length_buf[env.lookat_id].item() * env.dt:.2f}')
     table11.add_column("vx")
     table11.add_column("vy")
     table11.add_column("yaw")

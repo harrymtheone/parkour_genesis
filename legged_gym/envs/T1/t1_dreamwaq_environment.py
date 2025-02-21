@@ -45,26 +45,27 @@ class T1DreamWaqEnvironment(HumanoidBaseEnv):
         sin_pos_l = sin_pos.clone()
         sin_pos_r = sin_pos.clone()
 
-        self.ref_dof_pos[:] = 0.
-        # scale_1 = self.cfg.rewards.target_joint_pos_scale
-        # scale_2 = 2 * scale_1
-        #
-        # # left swing
-        # sin_pos_l[sin_pos_l > 0] = 0
-        # self.ref_dof_pos[:, 2] = sin_pos_l * scale_1
-        # self.ref_dof_pos[:, 3] = -sin_pos_l * scale_2
-        # self.ref_dof_pos[:, 4] = sin_pos_l * scale_1
-        #
-        # # right swing
-        # sin_pos_r[sin_pos_r < 0] = 0
-        # self.ref_dof_pos[:, 7] = -sin_pos_r * scale_1
-        # self.ref_dof_pos[:, 8] = sin_pos_r * scale_2
-        # self.ref_dof_pos[:, 9] = -sin_pos_r * scale_1
-        #
+        ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
+        scale_1 = self.cfg.rewards.target_joint_pos_scale
+        scale_2 = 2 * scale_1
+
+        # left swing
+        sin_pos_l[sin_pos_l > 0] = 0
+        ref_dof_pos[:, 0] = sin_pos_l * scale_1
+        ref_dof_pos[:, 3] = -sin_pos_l * scale_2
+        ref_dof_pos[:, 4] = sin_pos_l * scale_1
+
+        # right swing
+        sin_pos_r[sin_pos_r < 0] = 0
+        ref_dof_pos[:, 6] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 9] = sin_pos_r * scale_2
+        ref_dof_pos[:, 10] = -sin_pos_r * scale_1
+
         # # Add double support phase
-        # self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
-        #
-        # self.ref_dof_pos[:] += self.init_state_dof_pos
+        # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
+
+        self.ref_dof_pos[:] = self.init_state_dof_pos
+        self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
 
     def _compute_observations(self):
         """
@@ -103,16 +104,16 @@ class T1DreamWaqEnvironment(HumanoidBaseEnv):
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
             command_input,  # 5
-            (dof_pos[:, -12:] - self.init_state_dof_pos[:, -12:]) * self.obs_scales.dof_pos,  # 12D
-            dof_vel[:, -12:] * self.obs_scales.dof_vel,  # 12D
+            (dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 12D
+            dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.last_action_output,  # 12D
         ), dim=-1)
 
         # explicit privileged information
         priv_obs = torch.cat((
             command_input,  # 5D
-            (self.sim.dof_pos[:, -12:] - self.init_state_dof_pos[:, -12:]) * self.obs_scales.dof_pos,  # 12D
-            self.sim.dof_vel[:, -12:] * self.obs_scales.dof_vel,  # 12D
+            (self.sim.dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 12D
+            self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.last_action_output,  # 12D
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.base_ang_vel * self.obs_scales.ang_vel,  # 3

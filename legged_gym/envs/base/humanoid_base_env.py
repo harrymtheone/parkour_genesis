@@ -91,7 +91,7 @@ class HumanoidBaseEnv(ParkourTask):
             # phase = self.phase_length_buf * self.dt / cycle_time
             self.phase[:] = ((self.phase_length_buf / cycle_time) + self.gait_start) % 1.0 * (~self.is_zero_command)
         else:
-            self.phase[:] = ((self.episode_length_buf / cycle_time) + self.gait_start) % 1.0
+            self.phase[:] = ((self.phase_length_buf / cycle_time) + self.gait_start) % 1.0
 
     def _get_stance_mask(self):
         # return float mask 1 is stance, 0 is swing
@@ -121,6 +121,7 @@ class HumanoidBaseEnv(ParkourTask):
             self.init_state_dof_pos,
             self.ref_dof_pos
         )
+        diff = diff[:, self.dof_activated]
 
         r = torch.exp(-2 * torch.norm(diff, dim=1)) - 0.2 * torch.norm(diff, dim=1).clamp(0, 0.5)
         r[self.env_class == 12] *= 0.1
@@ -437,19 +438,16 @@ class HumanoidBaseEnv(ParkourTask):
         return rew.float()
 
     def _reward_feet_rotation(self):
-        # rotation = torch.sum(torch.square(self.feet_euler_xyz[:,:,:2]),dim=[1,2])
-        pitch = torch.sum(torch.square(self.feet_euler_xyz[:, :, 1]), dim=1)
-
-        tracking_sigma = self.feet_height
-        return torch.exp(-(pitch / 1.).square())
+        rew = -torch.sum(torch.square(self.feet_euler_xyz[..., :2]), dim=[1, 2])
+        return torch.exp(rew * self.cfg.rewards.tracking_sigma)
 
     def _reward_feet_stumble(self):
         # Penalize feet hitting vertical surfaces
         return torch.any(torch.norm(self.sim.contact_forces[:, self.feet_indices, :2], dim=2) >
                          5 * torch.abs(self.sim.contact_forces[:, self.feet_indices, 2]), dim=1)
 
-    def _reward_dof_vel_limits(self):
-        # Penalize dof velocities too close to the limit
-        # clip to max error = 1 rad/s per joint to avoid huge penalties
-        self.dof_vel_limits[[4, 9]] = 10
-        return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits * self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)
+    # def _reward_dof_vel_limits(self):
+    #     # Penalize dof velocities too close to the limit
+    #     # clip to max error = 1 rad/s per joint to avoid huge penalties
+    #     self.dof_vel_limits[[4, 9]] = 10
+    #     return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits * self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)

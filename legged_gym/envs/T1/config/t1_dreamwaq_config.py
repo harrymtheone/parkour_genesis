@@ -48,7 +48,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         add_noise = True
 
     class domain_rand(T1BaseCfg.domain_rand):
-        switch = True
+        switch = False
 
         randomize_start_pos = switch
         randomize_start_y = switch
@@ -74,7 +74,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         randomize_motor_offset = switch
         randomize_joint_stiffness = False  # for joints with spring behavior, not usually used
         randomize_joint_damping = False
-        randomize_joint_friction = switch
+        randomize_joint_friction = False
         randomize_joint_armature = False
         randomize_coulomb_friction = False
 
@@ -88,8 +88,8 @@ class T1DreamWaqCfg(T1BaseCfg):
         soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
 
-        cycle_time = 0.64  # 0.64
-        target_joint_pos_scale = 0.19  # 0.19
+        cycle_time = 0.7  # 0.64
+        target_joint_pos_scale = 0.3  # 0.19
 
         min_dist = 0.18
         max_dist = 0.50

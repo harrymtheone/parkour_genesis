@@ -90,7 +90,7 @@ class PddBaseCfg(BaseConfig):
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [0.2, 1.0]
+            lin_vel_x = [0.5, 1.0]
             lin_vel_y = [-0.5, 0.5]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]

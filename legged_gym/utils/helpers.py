@@ -67,52 +67,20 @@ def get_load_path(root, checkpoint, model_name_starts_with="model"):
 
 
 def get_args():
-    custom_parameters = [
-        {"name": "--proj_name", "type": str},
+    parser = argparse.ArgumentParser(description="RL Policy")
+    parser.add_argument("--proj_name", type=str, required=True)
 
-        {"name": "--task", "type": str},
-        {"name": "--exptid", "type": str},
-        {"name": "--resumeid", "type": str},
-        {"name": "--checkpoint", "type": int},
+    parser.add_argument("--task", type=str, required=True)
+    parser.add_argument("--exptid", type=str, required=True)
+    parser.add_argument("--resumeid", type=str)
+    parser.add_argument("--checkpoint", type=str)
 
-        {"name": "--headless", "action": "store_true"},
-        {"name": "--simulator", "type": int},
-        {"name": "--device", "type": str},
-        {"name": "--drive_mode", "type": int},
+    parser.add_argument("--device", type=str, required=True)
+    parser.add_argument("--headless", action="store_true")
 
-        {"name": "--debug", "action": "store_true"},
-    ]
-
-    # parse arguments
-    return parse_arguments(
-        description="RL Policy",
-        custom_parameters=custom_parameters
-    )
-
-
-def parse_arguments(description="Example Parser", custom_parameters: list = None):
-    parser = argparse.ArgumentParser(description=description)
-
-    for argument in custom_parameters:
-        if ("name" in argument) and ("type" in argument or "action" in argument):
-            help_str = ""
-            if "help" in argument:
-                help_str = argument["help"]
-
-            if "type" in argument:
-                if "default" in argument:
-                    parser.add_argument(argument["name"], type=argument["type"], default=argument["default"],
-                                        help=help_str)
-                else:
-                    parser.add_argument(argument["name"], type=argument["type"], help=help_str)
-            elif "action" in argument:
-                parser.add_argument(argument["name"], action=argument["action"], help=help_str)
-
-        else:
-            print()
-            print("ERROR: command line argument name, type/action must be defined, argument not added to parser")
-            print("supported keys: name, type, default, action, help")
-            print()
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--simulator", type=int, help="0 for IsaacGym, 1 for Genesis")
+    parser.add_argument("--drive_mode", type=int, help="0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort")
 
     args = parser.parse_args()
     _, _, args.device = parse_device_str(args.device)
