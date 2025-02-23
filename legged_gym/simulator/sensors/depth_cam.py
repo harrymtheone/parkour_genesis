@@ -73,7 +73,7 @@ class DepthCam(SensorBase):
             0.0, 0.0, 0.0, 1.0,
         )
         self.K_inv = wp.inverse(K)
-        self.c_x, self.c_y = int(u_0), int(v_0)
+        self.c_u, self.c_v = int(u_0), int(v_0)
 
     def launch_kernel(self):
         wp.launch(
@@ -84,8 +84,8 @@ class DepthCam(SensorBase):
                 self.sensor_pos,
                 self.sensor_quat,
                 self.K_inv,
-                self.c_x,
-                self.c_y,
+                self.c_u,
+                self.c_v,
                 self.far_clip,
                 self._depth_raw_wp,
             ],

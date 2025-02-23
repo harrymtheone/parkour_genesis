@@ -90,7 +90,7 @@ def transform_by_quat(v, quat):
 
 
 @torch.jit.script
-def transform_quat_by_quat(v, u):
+def transform_quat_by_quat(v, u):  # result = u * v, notice the order! Rotate by v first, then u
     # type: (torch.Tensor, torch.Tensor) -> torch.Tensor
     assert v.shape == u.shape, f"{v.shape} != {u.shape}"
     shape = u.shape

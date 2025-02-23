@@ -20,8 +20,7 @@ class JoystickHandler:
             self.joystick = pygame.joystick.Joystick(0)
             self.joystick.init()
         else:
-            print('JoyStick: failed to connected to a joystick!!!!')
-            sys.exit()
+            raise RuntimeError('JoyStick: failed to connected to a joystick!!!!')
 
     def on_press(self, btn_idx):
         if btn_idx == 6:

@@ -106,7 +106,7 @@ class PddScanEnvironment(HumanoidBaseEnv):
             self.last_action_output,  # 10D
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.base_ang_vel * self.obs_scales.ang_vel,  # 3
-            self.base_euler_xyz * self.obs_scales.quat,  # 3
+            self.base_euler * self.obs_scales.quat,  # 3
             # self.rand_push_force[:, :2],  # 2
             # self.rand_push_torque,  # 3
             # self.env_frictions,  # 1

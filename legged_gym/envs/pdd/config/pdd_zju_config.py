@@ -26,7 +26,7 @@ class PddZJUCfg(PddBaseCfg):
         class depth_0:
             position = [0.10, 0, 0.0]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-            pitch = 60
+            pitch = 60  # positive is looking down
             pitch_range = [-1, 1]
 
             update_interval = 5  # 5 works without retraining, 8 worse
@@ -74,7 +74,7 @@ class PddZJUCfg(PddBaseCfg):
         resampling_time = 8.  # time before command are changed[s]
 
         lin_vel_clip = 0.1
-        ang_vel_clip = 0.4
+        ang_vel_clip = 0.2
 
         sw_switch = True
 
@@ -96,7 +96,7 @@ class PddZJUCfg(PddBaseCfg):
     class domain_rand(PddBaseCfg.domain_rand):
         switch = False
 
-        randomize_start_pos = switch
+        randomize_start_pos = False
         randomize_start_y = switch
         randomize_start_yaw = switch
         randomize_start_vel = switch

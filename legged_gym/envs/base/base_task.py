@@ -1,7 +1,5 @@
 import math
 
-import cv2
-import numpy as np
 import torch
 import warp as wp
 
@@ -298,7 +296,9 @@ class BaseTask:
         self._compute_observations()
         self._post_physics_post_step()
 
-        self.render()
+        if not self.sim.headless:
+            self.render()
+            self.joystick_handler.handle_device_input()
 
     def _refresh_variables(self):
         self.sim.refresh_variable()
@@ -382,19 +382,6 @@ class BaseTask:
         # raise NotImplementedError
         pass
 
-    def render(self):
-        self.sim.render()
-
-        if not self.sim.headless:
-            self.joystick_handler.handle_device_input()
-
-            if self.cfg.sensors.activated:
-                depth_img = self.sensors.get('depth_0', get_raw=True)
-                depth_img = depth_img[self.lookat_id].cpu().numpy()
-                img = np.clip(depth_img / self.cfg.sensors.depth_0.far_clip * 255, 0, 255).astype(np.uint8)
-                cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
-                cv2.waitKey(1)
-
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. """
         apply_force = self._zero_tensor(self.num_envs, self.sim.num_bodies, 3)
@@ -421,6 +408,9 @@ class BaseTask:
         apply_force[:, 0] = self.ext_force * self.is_zero_command.unsqueeze(-1)
         apply_torque[:, 0] = self.ext_torque * self.is_zero_command.unsqueeze(-1)
         self.sim.apply_perturbation(apply_force, apply_torque)
+
+    def render(self):
+        self.sim.render()
 
     # ---------------------------------------------- Robots Reset ----------------------------------------------
 

@@ -28,7 +28,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         curriculum = False
 
         terrain_dict = {
-            'smooth_slope': 3,
+            'smooth_slope': 1,
             'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
@@ -75,12 +75,12 @@ class T1DreamWaqCfg(T1BaseCfg):
         randomize_joint_stiffness = False  # for joints with spring behavior, not usually used
         randomize_joint_damping = False
         randomize_joint_friction = False
-        randomize_joint_armature = False
+        randomize_joint_armature = switch
         randomize_coulomb_friction = False
 
     class rewards:
-        base_height_target = 0.6
-        feet_height_target = 0.04
+        base_height_target = 0.7
+        feet_height_target = 0.03
         feet_height_target_max = 0.05
         use_guidance_terrain = True
         only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
@@ -101,12 +101,12 @@ class T1DreamWaqCfg(T1BaseCfg):
             # gait
             joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 1.2  # 0.2
+            feet_clearance = 0.2  # 0.2
             feet_air_time = 1.
             foot_slip = -1.
             feet_distance = 0.2
             knee_distance = 0.2
-            feet_rotation = 0.3
+            feet_rotation = 0.5
 
             # contact
             feet_contact_forces = -0.1

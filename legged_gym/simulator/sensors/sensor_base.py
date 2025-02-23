@@ -39,11 +39,11 @@ class SensorBase:
         self.sensor_pos_design.assign(wp.from_torch(
             transform_by_trans_quat(self.sensor_offset_pos_design, root_pos, root_quat), dtype=wp.vec3f))
         self.sensor_quat_design.assign(wp.from_torch(
-            transform_quat_by_quat(root_quat, self.sensor_offset_quat_design), dtype=wp.quatf))
+            transform_quat_by_quat(self.sensor_offset_quat_design, root_quat), dtype=wp.quatf))
         self.sensor_pos.assign(wp.from_torch(
             transform_by_trans_quat(self.sensor_offset_pos, root_pos, root_quat), dtype=wp.vec3f))
         self.sensor_quat.assign(wp.from_torch(
-            transform_quat_by_quat(root_quat, self.sensor_offset_quat), dtype=wp.quatf))
+            transform_quat_by_quat(self.sensor_offset_quat, root_quat), dtype=wp.quatf))
 
     def launch_kernel(self):
         raise NotImplementedError

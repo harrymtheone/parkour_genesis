@@ -384,7 +384,7 @@ class EstimatorGRU(nn.Module):
 
         # output action
         if eval_:
-            return mean
+            return mean, recon_refine.squeeze(1)
         else:
             # sample action from distribution
             self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())

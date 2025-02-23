@@ -7,49 +7,45 @@ def depth_only_kernel(
         cam_pos_arr: wp.array1d(dtype=wp.vec3f),
         cam_quat_arr: wp.array1d(dtype=wp.quat),
         K_inv: wp.mat44,
-        c_x: int,
-        c_y: int,
+        c_u: int,
+        c_v: int,
         far_clip: float,
         depth_image: wp.array3d(dtype=float),
 ):
     # get the index for current pixel
-    env_id, x, y = wp.tid()
+    env_id, u, v = wp.tid()
 
     cam_pos = cam_pos_arr[env_id]
     cam_quat = cam_quat_arr[env_id]
 
-    cam_coords = wp.vec3f(float(x), float(y), 1.0)
-    cam_coords_principal = wp.vec3f(float(c_x), float(c_y), 1.0)  # get the vector of principal axis
+    # obtain ray vector in image coordinate system
+    cam_coords = wp.vec3f(float(u), float(v), 1.0)
+    cam_coords_principal = wp.vec3f(float(c_u), float(c_v), 1.0)  # get the vector of principal axis
 
-    # transform to uv [-1,1]
+    # convert to camera coordinate system
     uv = wp.transform_vector(K_inv, cam_coords)
     uv_principal = wp.transform_vector(K_inv, cam_coords_principal)  # uv for principal axis
 
-    # convert to world frame
+    # convert to base frame
     uv_world = wp.vec3f(uv[2], -uv[0], -uv[1])
     uv_principal_world = wp.vec3f(uv_principal[2], -uv_principal[0], -uv_principal[1])
 
-    # compute camera ray origin in world frame
-    ro = cam_pos
-
     # tf the direction from camera to world frame and normalize
-    rd = wp.normalize(wp.quat_rotate(cam_quat, uv_world))
-    rd_principal = wp.normalize(wp.quat_rotate(cam_quat, uv_principal_world))  # ray direction of principal axis
+    ray_dir = wp.normalize(wp.quat_rotate(cam_quat, uv_world))
+    ray_dir_principal = wp.normalize(wp.quat_rotate(cam_quat, uv_principal_world))  # ray direction of principal axis
 
     # multiplier to project each ray on principal axis for depth instead of range
-    multiplier = wp.dot(rd, rd_principal)
-
-    # wp.printf('cam rd (%.2f, %.2f, %.2f)\n', rd[0], rd[1], rd[2])
+    multiplier = wp.dot(ray_dir, ray_dir_principal)
 
     # perform ray casting
-    query = wp.mesh_query_ray(mesh_id, ro, rd, far_clip / multiplier)
+    query = wp.mesh_query_ray(mesh_id, cam_pos, ray_dir, far_clip / multiplier)
 
     dist = far_clip
     if query.result:
         # compute the depth of this pixel
         dist = multiplier * query.t
 
-    depth_image[env_id, y, x] = dist
+    depth_image[env_id, v, u] = dist
 
 
 @wp.kernel

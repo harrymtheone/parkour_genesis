@@ -409,9 +409,6 @@ class IsaacGymWrapper(BaseWrapper):
     # ------------------------------------------------ Graphics ------------------------------------------------
 
     def render(self):
-        if self.headless:
-            return
-
         # check for window closed
         if self.gym.query_viewer_has_closed(self.viewer):
             sys.exit()
@@ -433,6 +430,8 @@ class IsaacGymWrapper(BaseWrapper):
         else:
             self.gym.poll_viewer_events(self.viewer)
 
+        self.gym.clear_lines(self.viewer)
+
         if not self.free_cam:
             p = self.gym.get_viewer_camera_transform(self.viewer, None).p
             cam_trans = torch.tensor([p.x, p.y, p.z], requires_grad=False, device=self.device)
@@ -444,3 +443,11 @@ class IsaacGymWrapper(BaseWrapper):
         look_at_pos = self._root_state[self.lookat_id, :3].clone()
         cam_pos = look_at_pos + self.lookat_vec
         self.gym.viewer_camera_look_at(self.viewer, None, gymapi.Vec3(*cam_pos), gymapi.Vec3(*look_at_pos))
+
+    def draw_points(self, points, color=(0, 1, 0)):
+        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=color)
+
+        for j in range(points.shape[0]):
+            x, y, z = points[j, 0], points[j, 1], points[j, 2] + 0.02
+            sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self._envs[self.lookat_id], sphere_pose)

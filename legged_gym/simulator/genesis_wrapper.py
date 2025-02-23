@@ -363,9 +363,6 @@ class GenesisWrapper(BaseWrapper):
         pass
 
     def render(self):
-        if self.headless:
-            return
-
         if not self.free_cam:
             self.lookat(self.lookat_id)
 

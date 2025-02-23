@@ -37,9 +37,9 @@ class T1BaseCfg(BaseConfig):
         clip_actions = 100.
 
     class terrain:
-        description_type = 'plane'  # plane, heightfield or trimesh
+        # description_type = 'plane'  # plane, heightfield or trimesh
         # description_type = 'heightfield'  # plane, heightfield or trimesh
-        # description_type = 'trimesh'  # plane, heightfield or trimesh
+        description_type = 'trimesh'  # plane, heightfield or trimesh
         max_error = 0.1  # for fast
 
         y_range = [-0.4, 0.4]
@@ -124,9 +124,9 @@ class T1BaseCfg(BaseConfig):
         randomize_start_pitch_range = 0.1  # 5 degree
 
         randomize_start_dof_pos = False
-        randomize_start_dof_pos_range = 0.05
+        randomize_start_dof_pos_range = 0.1
         randomize_start_dof_vel = False
-        randomize_start_dof_vel_range = 0.15
+        randomize_start_dof_vel_range = 0.1
 
         push_robots = False
         push_force_max = ((-300, 600),
@@ -140,7 +140,7 @@ class T1BaseCfg(BaseConfig):
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
         randomize_action_delay_each_step = False
-        action_delay_range = [(1, 10), (5, 40), (10, 60), (10, 70)]
+        action_delay_range = [(0, 0), (0, 5), (0, 10)]
         action_delay_update_steps = 3000 * 24
 
         add_dof_lag = False

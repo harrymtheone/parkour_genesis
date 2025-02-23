@@ -1,3 +1,5 @@
+import cv2
+import numpy as np
 import torch
 
 from legged_gym.envs.base.humanoid_base_env import HumanoidBaseEnv
@@ -6,7 +8,7 @@ from ...utils.math import transform_by_yaw
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, depth, priv, scan, recon_prev=None):
+    def __init__(self, proprio, prop_his, depth, priv, scan):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
@@ -165,3 +167,13 @@ class PddZJUEnvironment(HumanoidBaseEnv):
         self.critic_his_buf.append(priv_obs, reset_flag)
         self.critic_obs = CriticObs(self.critic_his_buf.get(), scan)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
+
+    def render(self):
+        self.sim.render()
+
+        if self.cfg.sensors.activated:
+            depth_img = self.sensors.get('depth_0', get_raw=True)
+            depth_img = depth_img[self.lookat_id].cpu().numpy()
+            img = np.clip(depth_img / self.cfg.sensors.depth_0.far_clip * 255, 0, 255).astype(np.uint8)
+            cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
+            cv2.waitKey(1)

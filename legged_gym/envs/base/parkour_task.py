@@ -43,9 +43,12 @@ class ParkourTask(BaseTask):
 
         self.target_yaw = self._zero_tensor(self.num_envs)  # used by info panel in play.py
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
-            self.delta_yaw = self._zero_tensor(self.num_envs)
-            self.reached_goal_ids = self._zero_tensor(self.num_envs, dtype=torch.bool)
             self.reach_goal_timer = self._zero_tensor(self.num_envs)
+            self.reached_goal_ids = self._zero_tensor(self.num_envs, dtype=torch.bool)
+            self.reach_goal_cutoff = self._zero_tensor(self.num_envs, dtype=torch.bool)
+            self.cur_goal_idx = self._zero_tensor(self.num_envs, dtype=torch.long)
+            self.cur_goals = self._zero_tensor(self.num_envs, 3)
+            self.delta_yaw = self._zero_tensor(self.num_envs)
             self.target_pos_rel = self._zero_tensor(self.num_envs, 2)
             self.num_trials = self._zero_tensor(self.num_envs, dtype=torch.long)
 
@@ -80,14 +83,9 @@ class ParkourTask(BaseTask):
 
             self.terrain_goals = torch.from_numpy(self.sim.terrain.goals).to(self.device).to(torch.float)
             self.env_goals = self.terrain_goals[self.env_levels, self.env_cols]  # (num_envs, num_goals, 3))
-            self.cur_goal_idx = self._zero_tensor(self.num_envs, dtype=torch.long)
-            self.cur_goals = self._zero_tensor(self.num_envs, 3)
 
             self.target_pos_rel = self._zero_tensor(self.num_envs, 2)
             self.target_yaw = self._zero_tensor(self.num_envs)
-            self.reached_goal_envs = self._zero_tensor(self.num_envs, dtype=torch.bool)
-            self.reach_goal_timer = self._zero_tensor(self.num_envs)
-            self.reach_goal_cutoff = self._zero_tensor(self.num_envs, dtype=torch.bool)
             self.num_trials = self._zero_tensor(self.num_envs, dtype=torch.long)
 
         else:
@@ -208,6 +206,8 @@ class ParkourTask(BaseTask):
             self.scan_hmap[:] = self.get_scan()
         self.base_height[:] = self.sim.root_pos[:, 2] - self.get_base_height_map().mean()
 
+        self.reached_goal_ids[:] = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1) < self.cfg.env.next_goal_threshold
+
     def _post_physics_post_step(self):
         self.last_last_actions[:] = self.last_actions
         self.last_actions[:] = self.actions
@@ -215,13 +215,12 @@ class ParkourTask(BaseTask):
         self.last_torques[:] = self.torques
         self.last_root_vel[:] = self.sim.root_lin_vel
 
-    def _update_goals(self):
-        self.reached_goal_ids[:] = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1) < self.cfg.env.next_goal_threshold
+        # update goals
         self.reach_goal_timer[self.reached_goal_ids] += 1
         self.reach_goal_timer[~self.reached_goal_ids] = 0
 
         next_flag = self.reach_goal_timer > self.cfg.env.reach_goal_delay / self.dt
-        self.cur_goal_idx[next_flag] += 1
+        self.cur_goal_idx[:] += torch.where(next_flag & (self.cur_goal_idx < self.env_goals.size(1) - 1), 1, 0)
 
     def _update_terrain_curriculum(self, env_ids: torch.Tensor):
         """ Implements the game-inspired curriculum.
@@ -397,76 +396,23 @@ class ParkourTask(BaseTask):
             return x + torch_rand_float(-scale, scale, x.shape, self.device)
         return x
 
-        # clear_lines = True
-        #
-        # if self.viewer and self.enable_viewer_sync:
-        #     if clear_lines:
-        #         self._draw_camera()
-        #         # self.draw_height_samples(self.scan_dots_recon, world_frame=False)
-        #         # self.draw_height_samples(self.get_scan(), world_frame=True)
-        #         self._draw_goals()
-        #         self._draw_feet_at_edge()
-        #         # self._draw_feet_proj()
-        #         # self._draw_depth_to_point_cloud()
-        #
-        #         if self.cfg.depth.use_camera:
-        #             self._draw_cloud_depth()
-        #             # self._draw_voxel_depth()
-        #             # self._draw_voxel_terrain()
-        #             # self._draw_voxel_recon()
-        #
-        #     elif not self.init_done:
-        #         # self._draw_edge()  # for debug use, turn it on will drastically reduce fps
-        #         self._draw_height_field(self.cfg.rewards.use_guidance_terrain)  # for debug use, turn it on will drastically reduce fps
-        #
-        #     if self.cfg.depth.use_camera:
-        #         img = self.depth_raw[self.lookat_id, 0].cpu().numpy()
-        #         img = np.clip(img / self.cfg.depth.far_clip * 255, 0, 255).astype(np.uint8)
-        #         cv2.imshow("Depth Image", cv2.resize(img, (530, 300)))
-        #         cv2.waitKey(1)
-        #
-        #
-        # if self.viewer and self.enable_viewer_sync and clear_lines:
-        #     self.gym.clear_lines(self.viewer)
-
     # ----------------------------------------- Graphics -------------------------------------------
-    def draw_height_samples(self, samples, world_frame=True):
-        """
-        Draws visualizations for debugging (slows down simulation a lot).
-        Default behaviour: draws height measurement points
 
-        Args:
-            samples: height points in base frame
-            world_frame: if samples is in world frame, else base frame
-        """
-
-        if not self.terrain.cfg.measure_heights or samples is None:
-            return
-
-        self.gym.refresh_rigid_body_state_tensor(self.sim)
-        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(0, 1, 0))
-
-        base_pos = (self.root_states[self.lookat_id, :3]).cpu().numpy()
-        height_points = quat_apply_yaw(self.base_quat[self.lookat_id].repeat(self.num_scan),
-                                       self.scan_points[self.lookat_id]).cpu().numpy()
+    def draw_hmap(self, hmap):
+        hmap = hmap[self.lookat_id].flatten().cpu().numpy()
+        base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
+        yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
+        height_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
         height_points[:, :2] += base_pos[None, :2]
 
-        samples = samples.flatten(start_dim=1)
-        if world_frame:
-            heights = samples[self.lookat_id].cpu().numpy()
-        else:
-            heights = (base_pos[2] - samples[self.lookat_id] - self.cfg.normalization.scan_norm_bias).cpu().numpy()
+        height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
+        self.sim.draw_points(height_points)
 
-        for j in range(height_points.size(0)):
-            x, y, z = height_points[j, 0], height_points[j, 1], heights[j] + 0.02
-            sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
-            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[self.lookat_id], sphere_pose)
-
-    def _draw_cloud_depth(self):
-        cloud = self.cloud_depth[self.lookat_id]
-        valid = self.cloud_depth_valid[self.lookat_id]
-        cloud = cloud[valid].cpu().numpy()
-        self._draw_point_cloud(cloud, color=(0, 1, 1))
+    # def _draw_cloud_depth(self):
+    #     cloud = self.cloud_depth[self.lookat_id]
+    #     valid = self.cloud_depth_valid[self.lookat_id]
+    #     cloud = cloud[valid].cpu().numpy()
+    #     self._draw_point_cloud(cloud, color=(0, 1, 1))
 
     # def _draw_voxel_depth(self):
     #     if self.global_counter % self.cfg.depth.update_interval == 0 or self.global_counter < 10:

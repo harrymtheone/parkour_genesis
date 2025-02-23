@@ -134,29 +134,3 @@ class DelayBuffer:
 
     def reset(self, dones):
         self.buf[dones].zero_()
-
-
-class LagBuffer:
-    def __init__(self, data_shape, delay_range, rand_per_step=False, dtype=None, device=None):
-        dtype = torch.float32 if dtype is None else dtype
-        assert device is not None
-        n_envs, data_shape = data_shape[0], data_shape[1:]
-        self.delay_range = delay_range
-        self.buf = torch.zeros(n_envs, delay_range[1], *data_shape, dtype=dtype, device=device)
-
-        self.rand_per_step = rand_per_step
-        self.env_idx = torch.arange(n_envs, device=device)
-        self.delay_idx = torch.randint(delay_range[0], delay_range[1] + 1, (n_envs,))
-
-    def append(self, data):
-        self.buf[:, :-1] = self.buf[:, 1:]
-        self.buf[:, -1] = data
-
-    def get(self):
-        if self.rand_per_step:
-            self.delay_idx[:] = torch.randint_like(self.delay_idx, self.delay_range[0], self.delay_range[1] + 1)
-
-        return self.buf[self.env_idx, self.delay_idx].clone()
-
-    def reset(self, dones):
-        self.buf[dones].zero_()
