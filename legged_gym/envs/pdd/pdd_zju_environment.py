@@ -172,8 +172,11 @@ class PddZJUEnvironment(HumanoidBaseEnv):
         self.sim.render()
 
         if self.cfg.sensors.activated:
-            depth_img = self.sensors.get('depth_0', get_raw=True)
-            depth_img = depth_img[self.lookat_id].cpu().numpy()
-            img = np.clip(depth_img / self.cfg.sensors.depth_0.far_clip * 255, 0, 255).astype(np.uint8)
+            depth_img = self.sensors.get('depth_0')
+            depth_img = depth_img[self.lookat_id, 0].cpu().numpy()
+
+            img = np.clip((depth_img + 0.5) * 255, 0, 255).astype(np.uint8)
+            # img = np.clip(depth_img / self.cfg.sensors.depth_0.far_clip * 255, 0, 255).astype(np.uint8)
+
             cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
             cv2.waitKey(1)

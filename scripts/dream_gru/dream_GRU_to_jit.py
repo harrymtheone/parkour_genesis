@@ -45,18 +45,17 @@ class ActorGRU(nn.Module):
 
 
 def trace():
-    # exptid, checkpoint = 'pdd_dream_gru_004', 20000
-    exptid, checkpoint = 'pdd_dream_gru_007', 12600
+    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_003', 4900
 
     trace_path = os.path.join('../dream_gru/traced')
     if not os.path.exists(trace_path):
         os.mkdir(trace_path)
 
     task_registry = TaskRegistry()
-    env_cfg, train_cfg = task_registry.get_cfgs(name='pdd_dreamwaq_gru')
+    env_cfg, train_cfg = task_registry.get_cfgs(name=cfg)
 
     device = torch.device('cpu')
-    load_path = os.path.join('../../logs/parkour_genesis/', exptid, f'model_{checkpoint}.pt')
+    load_path = os.path.join(f'../../logs/{proj}/', exptid, f'model_{checkpoint}.pt')
     print(f"Loading model from: {load_path}")
     state_dict = torch.load(load_path, map_location=device, weights_only=True)
 

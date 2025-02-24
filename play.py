@@ -31,7 +31,7 @@ def play(args):
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
     env_cfg.terrain.num_rows = 3
     env_cfg.terrain.curriculum = True
-    env_cfg.terrain.max_difficulty = False
+    env_cfg.terrain.max_difficulty = True
     env_cfg.terrain.max_init_terrain_level = 0
     # env_cfg.asset.disable_gravity = True
 
@@ -46,7 +46,7 @@ def play(args):
         'smooth_slope': 0,
         'rough_slope': 0,
         'stairs_up': 0,
-        'stairs_down': 0,
+        'stairs_down': 1,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
@@ -77,9 +77,9 @@ def play(args):
             # rtn = runner.play_act(obs, use_estimated_values=random.random() > 0.6)
 
             if type(rtn) is tuple:
-                actions, recon_refine = rtn
+                actions, recon_rough, recon_refine = rtn
 
-                # env.draw_height_samples(recon_rough)
+                env.draw_hmap(recon_rough)
                 # env.draw_hmap(recon_refine)
                 # env.draw_feet_hmap(est_mu[:, -16-16:-16])  # feet height map estimation
                 # env.draw_body_hmap(est_mu[:, -16:])  # body height map estimation

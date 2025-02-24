@@ -38,8 +38,8 @@ class PddZJUCfg(PddBaseCfg):
 
             near_clip = 0
             far_clip = 2
-            dis_noise_global = 0.1  # in meters
-            dis_noise_gaussian = 0.05  # in meters
+            dis_noise_global = 0.05  # in meters
+            dis_noise_gaussian = 0.03  # in meters
 
     class terrain(PddBaseCfg.terrain):
         scan_pts_x = np.linspace(-0.5, 1.1, 32)
@@ -90,7 +90,7 @@ class PddZJUCfg(PddBaseCfg):
             heading = [-1.0, 1.0]
 
         class parkour_ranges:
-            lin_vel_x = [0.4, 0.8]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.5, 1.0]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class domain_rand(PddBaseCfg.domain_rand):
@@ -201,7 +201,7 @@ class PddZJUCfgPPO(PddBaseCfgPPO):
         continue_from_last_std = True
         clip_param = 0.2
         entropy_coef = 0.005
-        num_learning_epochs = 10
+        num_learning_epochs = 5
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed

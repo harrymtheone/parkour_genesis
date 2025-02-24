@@ -42,6 +42,31 @@ class DepthCam(SensorBase):
     def step(self, reset):
         return self.buf.step(reset)
 
+    def post_process(self):
+        # These operations are replicated on the hardware
+        depth_image = self.depth_raw.clone()
+
+        # crop 30 pixels from the left and right and 20 pixels from bottom and return croped image
+        depth_image = depth_image[:, :-2, 4:-4]
+
+        # add global distance noise
+        depth_image[:] += torch_rand_float(-self.dis_noise_global, self.dis_noise_global, (self.num_envs, 1), self.device).unsqueeze(-1)
+
+        # add Gaussian noise
+        depth_image += torch.randn_like(depth_image) * self.dis_noise_gaussian
+
+        # distance clip
+        depth_image[:] = torch.clip(depth_image, self.near_clip, self.far_clip)
+
+        # resize image
+        depth_image = self.resize_transform(depth_image)
+
+        # normalize the depth image to range (-0.5, 0.5)
+        depth_image[:] = (depth_image - self.near_clip) / (self.far_clip - self.near_clip) - 0.5
+
+        # self.depth_processed[:] = depth_image
+        self.buf.append(depth_image)
+
     def _initialize_sensors(self):
         # camera properties
         cfg = self.cfg_dict
@@ -91,31 +116,6 @@ class DepthCam(SensorBase):
             ],
             device=wp.device_from_torch(self.device)
         )
-
-    def post_process(self):
-        # These operations are replicated on the hardware
-        depth_image = self.depth_raw.clone()
-
-        # crop 30 pixels from the left and right and 20 pixels from bottom and return croped image
-        depth_image = depth_image[:, :-2, 4:-4]
-
-        # add global distance noise
-        depth_image[:] += torch_rand_float(-self.dis_noise_global, self.dis_noise_global, (self.num_envs, 1), self.device).unsqueeze(-1)
-
-        # add Gaussian noise
-        depth_image += torch.randn_like(depth_image) * self.dis_noise_gaussian
-
-        # distance clip
-        depth_image[:] = torch.clip(depth_image, self.near_clip, self.far_clip)
-
-        # resize image
-        depth_image = self.resize_transform(depth_image)
-
-        # normalize the depth image to range (-0.5, 0.5)
-        depth_image[:] = (depth_image - self.near_clip) / (self.far_clip - self.near_clip) - 0.5
-
-        # self.depth_processed[:] = depth_image
-        self.buf.append(depth_image)
 
     # def _process_voxel_grid(self):
     #     def process(voxel: torch.Tensor, noise_level):

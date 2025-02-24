@@ -73,7 +73,7 @@ class UNet(nn.Module):
     def __init__(self):
         super(UNet, self).__init__()
 
-        activation = nn.ReLU(inplace=True)
+        activation = nn.LeakyReLU()
 
         # Encoder
         self.encoder_conv1 = nn.Sequential(
@@ -151,18 +151,18 @@ class UNet(nn.Module):
 class ReconGRU(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        self.activation = nn.ReLU(inplace=True)
+        activation = nn.LeakyReLU()
 
         self.cnn_depth = nn.Sequential(
-            nn.Conv2d(in_channels=env_cfg.len_depth_his, out_channels=16, kernel_size=3, stride=2, padding=1, bias=False),
-            self.activation,
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1, bias=False),
-            self.activation,
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1, bias=False),
-            self.activation,
-            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.Conv2d(in_channels=env_cfg.len_depth_his, out_channels=16, kernel_size=3, stride=2, padding=1),
+            activation,
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1),
+            activation,
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1),
+            activation,
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
             nn.AdaptiveAvgPool2d((1, 1)),
-            self.activation,
+            activation,
             nn.Flatten()
         )
 
@@ -170,16 +170,12 @@ class ReconGRU(nn.Module):
         self.hidden_state = None
 
         self.recon_rough = nn.Sequential(
-            nn.Linear(recon_gru_hidden_size, 3 * 32 * 16),
-            self.activation,
-            nn.Unflatten(1, (3, 32, 16)),
-            nn.Conv2d(3, 16, kernel_size=3, padding=1),  # (16, 32, 16)
-            self.activation,
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),  # (8, 32, 16)
-            self.activation,
-            nn.Conv2d(32, 16, kernel_size=3, padding=1),  # (8, 32, 16)
-            self.activation,
-            nn.Conv2d(16, 1, kernel_size=3, padding=1)  # (1, 32, 16)
+            nn.Unflatten(1, (8, 8, 4)),
+            nn.ConvTranspose2d(8, 4, kernel_size=4, stride=2, padding=1),
+            activation,
+            nn.ConvTranspose2d(4, 4, kernel_size=4, stride=2, padding=1),
+            activation,
+            nn.Conv2d(4, 1, kernel_size=3, stride=1, padding=1),
         )
 
         self.recon_refine = UNet()
@@ -195,7 +191,7 @@ class ReconGRU(nn.Module):
 
             # reconstruct
             hmap_rough = self.recon_rough(enc_gru.squeeze(0))
-            hmap_refine = self.recon_refine(self.activation(hmap_rough))
+            hmap_refine = self.recon_refine(hmap_rough)
             return hmap_rough, hmap_refine
         else:
             # update forward
@@ -207,7 +203,7 @@ class ReconGRU(nn.Module):
 
             # reconstruct
             hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
-            hmap_refine = gru_wrapper(self.recon_refine.forward, self.activation(hmap_rough))
+            hmap_refine = gru_wrapper(self.recon_refine.forward, hmap_rough)
             return hmap_rough, hmap_refine
 
     def detach_hidden_state(self):
@@ -384,7 +380,7 @@ class EstimatorGRU(nn.Module):
 
         # output action
         if eval_:
-            return mean, recon_refine.squeeze(1)
+            return mean, recon_rough.squeeze(1), recon_refine.squeeze(1)
         else:
             # sample action from distribution
             self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
@@ -411,7 +407,7 @@ class EstimatorGRU(nn.Module):
             recon_refine,
             obs.scan.unsqueeze(2)
         )
-        latent_est, est_logvar, ot1 = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
+        latent_est, _, _ = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
         latent_input = torch.where(
             use_estimated_values,
             latent_est,
@@ -424,13 +420,20 @@ class EstimatorGRU(nn.Module):
 
         # output action
         self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
-        return latent_est, est_logvar, ot1
 
-    def reconstruct(self, prop, depth, obs_enc_hidden, recon_hidden):
+    def reconstruct(self, prop, depth, obs_enc_hidden, recon_hidden, use_estimated_values, scan):
         # encode history proprio
         latent_obs = self.obs_gru(prop, obs_enc_hidden)
         recon_rough, recon_refine = self.reconstructor(depth, latent_obs, recon_hidden)
-        return recon_rough.squeeze(2), recon_refine.squeeze(2)
+
+        recon_input = torch.where(
+            use_estimated_values.unsqueeze(-1).unsqueeze(-1),
+            recon_refine.detach(),
+            scan.unsqueeze(2)
+        )
+        return (recon_rough.squeeze(2),
+                recon_refine.squeeze(2),
+                *gru_wrapper(self.transformer.forward, recon_input, latent_obs))
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
