@@ -26,12 +26,12 @@ def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
 
     # override some parameters for testing
-    env_cfg.play.control = True
+    env_cfg.play.control = False
     env_cfg.env.num_envs = 1
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
-    env_cfg.terrain.num_rows = 3
+    env_cfg.terrain.num_rows = 10
     env_cfg.terrain.curriculum = True
-    env_cfg.terrain.max_difficulty = True
+    env_cfg.terrain.max_difficulty = False
     env_cfg.terrain.max_init_terrain_level = 0
     # env_cfg.asset.disable_gravity = True
 
@@ -46,7 +46,7 @@ def play(args):
         'smooth_slope': 0,
         'rough_slope': 0,
         'stairs_up': 0,
-        'stairs_down': 1,
+        'stairs_down': 0,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,

@@ -208,6 +208,11 @@ class ParkourTask(BaseTask):
 
         self.reached_goal_ids[:] = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1) < self.cfg.env.next_goal_threshold
 
+    def _check_termination(self):
+        super()._check_termination()
+        self.reach_goal_cutoff[:] = self.cur_goal_idx >= self.cfg.terrain.num_goals
+        self.reset_buf[:] |= self.reach_goal_cutoff
+
     def _post_physics_post_step(self):
         self.last_last_actions[:] = self.last_actions
         self.last_actions[:] = self.actions
@@ -220,7 +225,7 @@ class ParkourTask(BaseTask):
         self.reach_goal_timer[~self.reached_goal_ids] = 0
 
         next_flag = self.reach_goal_timer > self.cfg.env.reach_goal_delay / self.dt
-        self.cur_goal_idx[:] += torch.where(next_flag & (self.cur_goal_idx < self.env_goals.size(1) - 1), 1, 0)
+        self.cur_goal_idx[next_flag] += 1
 
     def _update_terrain_curriculum(self, env_ids: torch.Tensor):
         """ Implements the game-inspired curriculum.
