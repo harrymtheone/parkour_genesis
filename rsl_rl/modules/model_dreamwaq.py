@@ -8,6 +8,16 @@ gru_hidden_size = 128
 encoder_output_size = 3 + 64  # v_t, z_t
 
 
+def gru_wrapper(func, *args, **kwargs):
+    n_steps = args[0].size(0)
+    rtn = func(*[arg.flatten(0, 1) for arg in args], **kwargs)
+
+    if type(rtn) is tuple:
+        return [r.unflatten(0, (n_steps, -1)) for r in rtn]
+    else:
+        return rtn.unflatten(0, (n_steps, -1))
+
+
 class VAE(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
@@ -157,24 +167,18 @@ class ActorGRU(nn.Module):
         return self.distribution.sample()
 
     def train_act(self, obs, hidden_states, **kwargs):
-        n_steps = obs.proprio.size(0)
         obs_enc, _ = self.gru(obs.proprio, hidden_states)
+        est_mu = gru_wrapper(self.vae.forward, obs_enc, mu_only=True)
 
-        est_mu = self.vae(obs_enc.flatten(0, 1), mu_only=True)
-
-        actor_input = torch.cat([obs.proprio.flatten(0, 1), self.activation(est_mu)], dim=1)
-        mean = self.actor_backbone(actor_input).unflatten(0, (n_steps, -1))
+        actor_input = torch.cat([obs.proprio, self.activation(est_mu)], dim=2)
+        mean = gru_wrapper(self.actor_backbone.forward, actor_input)
 
         self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
 
     def estimate(self, obs, hidden_states, **kwargs):
-        n_steps = obs.proprio.size(0)
         obs_enc, _ = self.gru(obs.proprio, hidden_states)
-        ot1, est_mu, est_logvar = self.vae(obs_enc.flatten(0, 1), mu_only=False)
-
-        return (ot1.unflatten(0, (n_steps, -1)),
-                est_mu.unflatten(0, (n_steps, -1)),
-                est_logvar.unflatten(0, (n_steps, -1)))
+        ot1, est_mu, est_logvar = gru_wrapper(self.vae.forward, obs_enc, mu_only=False)
+        return ot1, est_mu[..., :3], est_mu, est_logvar
 
     @property
     def action_mean(self):

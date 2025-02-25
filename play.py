@@ -73,14 +73,14 @@ def play(args):
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, use_estimated_values=False)
+            rtn = runner.play_act(obs, use_estimated_values=True)
             # rtn = runner.play_act(obs, use_estimated_values=random.random() > 0.6)
 
             if type(rtn) is tuple:
                 actions, recon_rough, recon_refine = rtn
 
-                env.draw_hmap(recon_rough)
-                # env.draw_hmap(recon_refine)
+                # env.draw_hmap(recon_rough)
+                env.draw_hmap(recon_refine)
                 # env.draw_feet_hmap(est_mu[:, -16-16:-16])  # feet height map estimation
                 # env.draw_body_hmap(est_mu[:, -16:])  # body height map estimation
             else:

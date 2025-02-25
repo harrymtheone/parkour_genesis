@@ -139,7 +139,7 @@ class Go1BaseCfg(BaseConfig):
         randomize_action_delay = True  # if False, max delay will be used
         randomize_action_delay_each_step = False
         action_delay_range = [(0, 2), (0, 4), (0, 8)]
-        action_delay_update_steps = 3000 * 24
+        action_delay_update_steps = 5000 * 24
 
         add_dof_lag = False
         randomize_dof_lag = True  # if False, max delay will be used

@@ -245,19 +245,19 @@ class PPO_ZJU(BaseAlgorithm):
 
             loss = (surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss)
 
-            # Use KL to adaptively update learning rate
-            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = self.learning_rate
+        # Use KL to adaptively update learning rate
+        if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = self.learning_rate
 
-            # Gradient step
-            self.optimizer.zero_grad()
-            self.scaler.scale(loss).backward()
-            # self.scaler.unscale_(self.optimizer)
-            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-            return value_loss, surrogate_loss, entropy_loss, kl_mean
+        # Gradient step
+        self.optimizer.zero_grad()
+        self.scaler.scale(loss).backward()
+        # self.scaler.unscale_(self.optimizer)
+        # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        return value_loss.item(), surrogate_loss.item(), entropy_loss.item(), kl_mean
 
     # @torch.compile(mode='default')
     def _update_recon(self, batch: dict):
@@ -315,19 +315,19 @@ class PPO_ZJU(BaseAlgorithm):
 
             loss = estimation_loss + prediction_loss + vae_loss + recon_loss
 
-            # Gradient step
-            self.optimizer.zero_grad()
-            self.scaler.scale(loss).backward()
-            # self.scaler.unscale_(self.optimizer)
-            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+        # Gradient step
+        self.optimizer.zero_grad()
+        self.scaler.scale(loss).backward()
+        # self.scaler.unscale_(self.optimizer)
+        # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
 
-            return (estimation_loss.item(),
-                    prediction_loss.item(),
-                    vae_loss.item(),
-                    recon_rough_loss.item(),
-                    recon_refine_loss.item())
+        return (estimation_loss.item(),
+                prediction_loss.item(),
+                vae_loss.item(),
+                recon_rough_loss.item(),
+                recon_refine_loss.item())
 
     def play_act(self, obs, use_estimated_values=True):
         return self.actor.act(obs, use_estimated_values=use_estimated_values, eval_=True)

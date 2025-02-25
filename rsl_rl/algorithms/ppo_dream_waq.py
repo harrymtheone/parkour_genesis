@@ -61,27 +61,26 @@ class PPODreamWaQ(BaseAlgorithm):
         self.storage = RolloutStorage(env_cfg.num_envs, train_cfg.runner.num_steps_per_env, self.device)
 
     def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
-        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            # store observations
-            self.transition.observations = obs
-            self.transition.critic_observations = obs_critic
-            if self.actor.is_recurrent:
-                self.transition.hidden_states = self.actor.get_hidden_states()
+        # store observations
+        self.transition.observations = obs
+        self.transition.critic_observations = obs_critic
+        if self.actor.is_recurrent:
+            self.transition.hidden_states = self.actor.get_hidden_states()
 
-            actions = self.actor.act(obs, use_estimated_values=use_estimated_values).detach()
+        actions = self.actor.act(obs, use_estimated_values=use_estimated_values).detach()
 
-            if self.actor.is_recurrent and self.transition.hidden_states is None:
-                # only for the first step where hidden_state is None
-                self.transition.hidden_states = 0 * self.actor.get_hidden_states()
+        if self.actor.is_recurrent and self.transition.hidden_states is None:
+            # only for the first step where hidden_state is None
+            self.transition.hidden_states = 0 * self.actor.get_hidden_states()
 
-            # store
-            self.transition.actions = actions
-            self.transition.values = self.critic.evaluate(obs_critic).detach()
-            self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions).detach()
-            self.transition.action_mean = self.actor.action_mean.detach()
-            self.transition.action_sigma = self.actor.action_std.detach()
-            self.transition.use_estimated_values = use_estimated_values
-            return actions
+        # store
+        self.transition.actions = actions
+        self.transition.values = self.critic.evaluate(obs_critic).detach()
+        self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions).detach()
+        self.transition.action_mean = self.actor.action_mean.detach()
+        self.transition.action_sigma = self.actor.action_std.detach()
+        self.transition.use_estimated_values = use_estimated_values
+        return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
         self.transition.observations_next = args[0].as_obs_next()
@@ -108,7 +107,6 @@ class PPODreamWaQ(BaseAlgorithm):
         self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
     def update(self, update_est=True, **kwargs):
-        update_est=True
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
@@ -220,23 +218,25 @@ class PPODreamWaQ(BaseAlgorithm):
             else:
                 value_loss = (evaluation - returns_batch)[mask_batch].pow(2).mean()
 
+            # Entropy Loss
             entropy_loss = self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
             loss = (surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss)
 
-            # Use KL to adaptively update learning rate
-            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = self.learning_rate
+        # Use KL to adaptively update learning rate
+        if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = self.learning_rate
 
-            # Gradient step
-            self.optimizer.zero_grad()
-            self.scaler.scale(loss).backward()
-            # self.scaler.unscale_(self.optimizer)
-            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-            return value_loss, surrogate_loss, entropy_loss, kl_mean
+        # Gradient step
+        self.optimizer.zero_grad()
+        self.scaler.scale(loss).backward()
+        # self.scaler.unscale_(self.optimizer)
+        # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+
+        return value_loss.item(), surrogate_loss.item(), entropy_loss.item(), kl_mean
 
     # @torch.compile()
     def _update_estimation(self, batch: dict):
@@ -246,30 +246,27 @@ class PPODreamWaQ(BaseAlgorithm):
             mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
             obs_next_batch = batch['observations_next']
 
-            ot1, est_mu, est_logvar = self.actor.estimate(obs_batch, hidden_states=hidden_states_batch)
+            ot1, est_vel, est_mu, est_logvar = self.actor.estimate(obs_batch, hidden_states=hidden_states_batch)
 
             # privileged information estimation loss
-            estimation_loss = self.mse_loss(
-                est_mu[..., 16:][mask_batch],
-                obs_batch.priv[..., :3 + 8 + 16][mask_batch]
-            )
+            estimation_loss = self.mse_loss(est_vel[mask_batch], obs_batch.priv_actor[mask_batch])
 
             # Ot+1 prediction and VAE loss
             prediction_loss = self.mse_loss(ot1[mask_batch], obs_next_batch.proprio[mask_batch])
-            vae_loss = 1 + est_logvar - est_mu[..., :16].pow(2) - est_logvar.exp()
+            vae_loss = 1 + est_logvar - est_mu.pow(2) - est_logvar.exp()
             vae_loss = -0.5 * vae_loss[mask_batch].sum(dim=1).mean()
 
             loss = estimation_loss + prediction_loss + vae_loss
 
-            # Gradient step
-            self.optimizer.zero_grad()
-            self.scaler.scale(loss).backward()
-            # self.scaler.unscale_(self.optimizer)
-            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+        # Gradient step
+        self.optimizer.zero_grad()
+        self.scaler.scale(loss).backward()
+        # self.scaler.unscale_(self.optimizer)
+        # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
 
-            return estimation_loss.item(), prediction_loss.item(), vae_loss.item()
+        return estimation_loss.item(), prediction_loss.item(), vae_loss.item()
 
     def play_act(self, obs, use_estimated_values=True):
         return self.actor.act(obs.float(), use_estimated_values=use_estimated_values, eval_=True)

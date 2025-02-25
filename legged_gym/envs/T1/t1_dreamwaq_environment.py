@@ -5,10 +5,11 @@ from ..base.utils import ObsBase, HistoryBuffer
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his):
+    def __init__(self, proprio, prop_his, priv_actor):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
+        self.priv_actor = priv_actor.clone()
 
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
@@ -125,6 +126,8 @@ class T1DreamWaqEnvironment(HumanoidEnv):
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
+        priv_actor_obs = self.base_lin_vel * self.obs_scales.lin_vel
+
         # compute height map
         scan = torch.clip(self.sim.root_pos[:, 2].unsqueeze(1) - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
@@ -132,7 +135,7 @@ class T1DreamWaqEnvironment(HumanoidEnv):
         # compose actor observation
         reset_flag = self.episode_length_buf <= 1
         self.prop_his_buf.append(proprio, reset_flag)
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get())
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), priv_actor_obs)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation

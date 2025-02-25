@@ -5,7 +5,7 @@ from .go1_base_config import Go1BaseCfg, Go1BaseCfgPPO
 
 class Go1ZJUCfg(Go1BaseCfg):
     class env(Go1BaseCfg.env):
-        num_envs = 2048  # 6144
+        num_envs = 4096  # 6144
         n_proprio = 3 + 3 + 3 + 12 + 12 + 12
         len_prop_his = 10
 
@@ -175,7 +175,7 @@ class Go1ZJUCfgPPO(Go1BaseCfgPPO):
 
     class runner(Go1BaseCfgPPO.runner):
         num_steps_per_env = 24  # per iteration
-        max_iterations = 20000  # number of policy updates
+        max_iterations = 50000  # number of policy updates
 
         # logging
         save_interval = 100  # check for potential saves every this many iterations
