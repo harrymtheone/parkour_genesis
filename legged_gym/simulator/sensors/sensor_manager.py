@@ -1,3 +1,4 @@
+import torch
 import warp as wp
 
 from legged_gym.utils.helpers import class_to_dict
@@ -5,12 +6,15 @@ from .depth_cam import DepthCam
 
 
 class SensorManager:
-    def __init__(self, cfg, device, vertices, triangles):
+    def __init__(self, cfg, simulator, device: torch.device):
         self.cfg = cfg
+        self.simulator = simulator
         self.device = device
 
-        # vertices (n_vert, 3), triangles (n_tri)
-        self.meshes = wp.Mesh(points=wp.array(vertices, dtype=wp.vec3), indices=wp.array(triangles.flatten(), dtype=int))
+        if device.type == 'cuda':
+            # vertices (n_vert, 3), triangles (n_tri)
+            vertices, triangles = self.simulator.get_trimesh()
+            self.meshes = wp.Mesh(points=wp.array(vertices, dtype=wp.vec3), indices=wp.array(triangles.flatten(), dtype=int))
 
         self.depth_sensors = {}
         self.depth_update_interval = -1
@@ -18,26 +22,41 @@ class SensorManager:
         self.lidar_update_interval = -1
 
         self._register_sensors()
-        self._init_warp_kernel()
+
+        if device.type == 'cuda':
+            self._init_warp_kernel()
 
     def update(self, step_counter, root_pos, root_quat, reset_flag):
-        def _update(interval, sensors, graph):
-            if step_counter % interval == 0:
-                for s in sensors:
-                    s.update_sensor_pos(root_pos, root_quat)
-
-                wp.capture_launch(graph)
-
-                for s in sensors:
+        if self.device.type == 'cpu':
+            # IsaacGym builtin sensors
+            if step_counter % self.depth_update_interval == 0:
+                for s in self.depth_sensors.values():
+                    s.update()
                     s.post_process()
                     s.step(reset_flag)
-
             else:
-                for s in sensors:
+                for s in self.depth_sensors.values():
                     s.step(reset_flag)
 
-        _update(self.depth_update_interval, self.depth_sensors.values(), self.graph_depth)
-        _update(self.lidar_update_interval, self.lidar_sensors.values(), self.graph_lidar)
+        else:
+            # Warp sensors
+            def _update(interval, sensors, graph):
+                if step_counter % interval == 0:
+                    for s in sensors:
+                        s.update_sensor_pos(root_pos, root_quat)
+
+                    wp.capture_launch(graph)
+
+                    for s in sensors:
+                        s.post_process()
+                        s.step(reset_flag)
+
+                else:
+                    for s in sensors:
+                        s.step(reset_flag)
+
+            _update(self.depth_update_interval, self.depth_sensors.values(), self.graph_depth)
+            _update(self.lidar_update_interval, self.lidar_sensors.values(), self.graph_lidar)
 
     def get(self, sensor_name: str, **kwargs):
         if sensor_name.startswith('depth'):
@@ -68,7 +87,11 @@ class SensorManager:
         self._process_cfg(cfg_dict)
 
         for sensor_name in cfg_dict:
-            if sensor_name.startswith('depth'):
+            if sensor_name.startswith('depth') and self.device.type == 'cpu':
+                from .isaacgym_depth_cam import IsaacGymDepthCam
+                self.depth_sensors[sensor_name] = IsaacGymDepthCam(cfg_dict[sensor_name], self.device, self.simulator)
+
+            elif sensor_name.startswith('depth') and self.device.type == 'cuda':
                 self.depth_sensors[sensor_name] = DepthCam(cfg_dict[sensor_name], self.device, self.meshes.id)
 
             elif sensor_name.startswith('lidar'):

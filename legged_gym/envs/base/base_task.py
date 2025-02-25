@@ -37,7 +37,7 @@ class BaseTask:
         self._prepare_reward_function()
 
         if cfg.sensors.activated:
-            self.sensors = SensorManager(cfg, self.device, *self.sim.get_trimesh())
+            self.sensors = SensorManager(cfg, self.sim, self.device)
 
         # reset agents to initialize them
         self._reset_idx(torch.arange(self.num_envs, device=self.device))

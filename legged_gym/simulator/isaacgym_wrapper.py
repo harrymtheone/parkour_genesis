@@ -36,6 +36,8 @@ class IsaacGymWrapper(BaseWrapper):
             self.free_cam = False
             self.lookat_vec = torch.tensor([-0, 2, 1], device=self.device)
 
+            self.cam_handles = []
+
         self.init_done = True
 
     # ---------------------------------------------- Sim Creation ----------------------------------------------
@@ -407,6 +409,24 @@ class IsaacGymWrapper(BaseWrapper):
         self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(torques))
 
     # ------------------------------------------------ Graphics ------------------------------------------------
+
+    def create_camera_sensor(self, env_i: int, cam_props, cam_trans):
+        camera_handle = self.gym.create_camera_sensor(self._envs[env_i], cam_props)
+        root_handle = self.gym.get_actor_root_rigid_body_handle(self._envs[env_i], self._actor_handles[env_i])
+        self.gym.attach_camera_to_body(camera_handle, self._envs[env_i], root_handle, cam_trans, gymapi.FOLLOW_TRANSFORM)
+        self.cam_handles.append(camera_handle)
+
+    def render_camera(self, depth_tensor):
+        # ---------------------------  render by IsaacGym  ---------------------------
+        self.gym.step_graphics(self.sim)
+        self.gym.render_all_camera_sensors(self.sim)
+        self.gym.start_access_image_tensors(self.sim)
+
+        for env_i in range(self.num_envs):
+            depth_tensor[env_i] = -gymtorch.wrap_tensor(
+                self.gym.get_camera_image_gpu_tensor(
+                    self.sim, self._envs[env_i], self.cam_handles[env_i], gymapi.IMAGE_DEPTH))
+        self.gym.end_access_image_tensors(self.sim)
 
     def render(self):
         # check for window closed
