@@ -85,6 +85,13 @@ class Terrain:
 
         self.add_terrains_to_map(terrain_mat)
 
+        for r in range(self.cfg.num_rows):
+            for c in range(self.cfg.num_cols):
+                for goal_i in range(self.cfg.num_goals):
+                    goal_xy = self.goals[r, c, goal_i, :2] + self.cfg.border_size
+                    pts = (goal_xy / self.cfg.horizontal_scale).astype(int)
+                    self.goals[r, c, goal_i, 2] = self.height_field_raw[pts[0], pts[1]] * self.cfg.vertical_scale
+
     def add_roughness(self, terrain, difficulty=1):
         max_height = (self.cfg.roughness_height[1] - self.cfg.roughness_height[0]) * difficulty + self.cfg.roughness_height[0]
         random_uniform_terrain(terrain,

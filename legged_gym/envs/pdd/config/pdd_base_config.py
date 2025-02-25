@@ -231,6 +231,7 @@ class PddBaseCfg(BaseConfig):
         base_link_name = "base_link"
         foot_name = "5_link"
         knee_name = "4_link"
+        foot_dof_name = '5_joint'
         penalize_contacts_on = ['base_link', "1_link", "2_link", "3_link", "4_link"]
         # terminate_after_contacts_on = ['base_link', "1_link", "2_link", "3_link", "4_link"]
         terminate_after_contacts_on = ['base_link']

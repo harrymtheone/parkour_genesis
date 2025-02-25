@@ -80,8 +80,8 @@ class T1DreamWaqCfg(T1BaseCfg):
 
     class rewards:
         base_height_target = 0.7
-        feet_height_target = 0.03
-        feet_height_target_max = 0.05
+        feet_height_target = 0.04
+        feet_height_target_max = 0.06
         use_guidance_terrain = True
         only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 5

@@ -15,7 +15,6 @@ class HumanoidEnv(ParkourTask):
         super()._init_robot_props()
         self.feet_indices = self.sim.create_indices(
             self.sim.get_full_names(self.cfg.asset.foot_name, True), True)
-
         self.knee_indices = self.sim.create_indices(
             self.sim.get_full_names(self.cfg.asset.knee_name, True), True)
 
@@ -438,8 +437,9 @@ class HumanoidEnv(ParkourTask):
         return rew.float()
 
     def _reward_feet_rotation(self):
-        rew = -torch.sum(torch.square(self.feet_euler_xyz[..., :2]), dim=[1, 2])
-        return torch.exp(rew * self.cfg.rewards.tracking_sigma)
+        rew = -torch.sum(self.feet_euler_xyz[..., :2].square(), dim=2)
+        feet_height_factor = 1 - torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, 0, 1)
+        return torch.exp(torch.sum(rew * feet_height_factor, dim=1) * self.cfg.rewards.tracking_sigma)
 
     def _reward_feet_stumble(self):
         # Penalize feet hitting vertical surfaces

@@ -92,9 +92,6 @@ class ParkourTask(BaseTask):
             super()._get_env_origins()
 
     def _reset_idx(self, env_ids: torch.Tensor):
-        if len(env_ids) == 0:
-            return
-
         # update curriculum
         if self.curriculum:
             self._update_terrain_curriculum(env_ids)
@@ -204,14 +201,27 @@ class ParkourTask(BaseTask):
         # update height measurements
         if self.cfg.terrain.measure_heights and (self.global_counter % self.cfg.terrain.height_update_interval == 0):
             self.scan_hmap[:] = self.get_scan()
-        self.base_height[:] = self.sim.root_pos[:, 2] - self.get_base_height_map().mean()
-
-        self.reached_goal_ids[:] = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1) < self.cfg.env.next_goal_threshold
+        self.base_height[:] = self.sim.root_pos[:, 2] - self.get_base_height_map().mean(dim=1)
 
     def _check_termination(self):
         super()._check_termination()
         self.reach_goal_cutoff[:] = self.cur_goal_idx >= self.cfg.terrain.num_goals
         self.reset_buf[:] |= self.reach_goal_cutoff
+
+    def _post_physics_mid_step(self):
+        super()._post_physics_mid_step()
+
+        self.cur_goals[:] = self.env_goals[torch.arange(self.num_envs), self.cur_goal_idx]
+
+        # update goals
+        dist = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1)
+        self.reached_goal_ids[:] = dist < self.cfg.env.next_goal_threshold
+
+        # update goals
+        self.reach_goal_timer[self.reached_goal_ids] += 1
+        self.reach_goal_timer[~self.reached_goal_ids] = 0
+        next_flag = self.reach_goal_timer > self.cfg.env.reach_goal_delay / self.dt
+        self.cur_goal_idx[next_flag] += 1
 
     def _post_physics_post_step(self):
         self.last_last_actions[:] = self.last_actions
@@ -219,13 +229,6 @@ class ParkourTask(BaseTask):
         self.last_dof_vel[:] = self.sim.dof_vel
         self.last_torques[:] = self.torques
         self.last_root_vel[:] = self.sim.root_lin_vel
-
-        # update goals
-        self.reach_goal_timer[self.reached_goal_ids] += 1
-        self.reach_goal_timer[~self.reached_goal_ids] = 0
-
-        next_flag = self.reach_goal_timer > self.cfg.env.reach_goal_delay / self.dt
-        self.cur_goal_idx[next_flag] += 1
 
     def _update_terrain_curriculum(self, env_ids: torch.Tensor):
         """ Implements the game-inspired curriculum.
@@ -373,7 +376,6 @@ class ParkourTask(BaseTask):
             return
 
         # update target_pos_rel and target_yaw
-        self.cur_goals[:] = self.env_goals[torch.arange(self.num_envs), self.cur_goal_idx]
         self.target_pos_rel[:] = self.cur_goals[:, :2] - self.sim.root_pos[:, :2]
         norm = torch.norm(self.target_pos_rel, dim=-1, keepdim=True)
         target_vec_norm = self.target_pos_rel / (norm + 1e-5)
@@ -403,6 +405,12 @@ class ParkourTask(BaseTask):
 
     # ----------------------------------------- Graphics -------------------------------------------
 
+    def render(self):
+        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+            self.draw_goals()
+
+        self.sim.render()
+
     def draw_hmap(self, hmap):
         hmap = hmap[self.lookat_id].flatten().cpu().numpy()
         base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
@@ -412,6 +420,39 @@ class ParkourTask(BaseTask):
 
         height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
         self.sim.draw_points(height_points)
+
+    def draw_goals(self):
+        goals = self.env_goals[self.lookat_id].cpu().numpy()
+        self.sim.draw_points(goals, self.cfg.env.next_goal_threshold, (1, 0, 0), sphere_lines=16)
+
+        cur_goal_idx = min(self.cur_goal_idx[self.lookat_id].item(), len(goals) - 1)
+        cur_goal = goals[cur_goal_idx]
+
+        if self.reached_goal_ids[self.lookat_id]:
+            self.sim.draw_points([cur_goal], self.cfg.env.next_goal_threshold, (0, 1, 0), sphere_lines=16)
+        else:
+            self.sim.draw_points([cur_goal], self.cfg.env.next_goal_threshold, (0, 0, 1), sphere_lines=16)
+
+        # for i, goal in enumerate(self.env_goals[self.lookat_id].cpu().numpy()):
+        #     pose = gymapi.Transform(gymapi.Vec3(goal[0], goal[1], goal_z), r=None)
+        #
+        #     if i == self.cur_goal_idx[self.lookat_id].cpu().item():
+        #         gymutil.draw_lines(self.sphere_geom_cur, self.gym, self.viewer, self.envs[self.lookat_id], pose)
+        #
+        #         if self.reached_goal_ids[self.lookat_id]:
+        #             gymutil.draw_lines(self.sphere_geom_reached, self.gym, self.viewer, self.envs[self.lookat_id], pose)
+        #     else:
+        #         gymutil.draw_lines(self.sphere_geom, self.gym, self.viewer, self.envs[self.lookat_id], pose)
+        #
+        # if not self.cfg.depth.use_camera:
+        #     sphere_geom_arrow = gymutil.WireframeSphereGeometry(0.02, 16, 16, None, color=(1, 0.35, 0.25))
+        #     pose_robot = self.root_states[self.lookat_id, :3].cpu().numpy()
+        #     for i in range(5):
+        #         norm = torch.norm(self.target_pos_rel, dim=-1, keepdim=True)
+        #         target_vec_norm = self.target_pos_rel / (norm + 1e-5)
+        #         pose_arrow = pose_robot[:2] + 0.1 * (i + 3) * target_vec_norm[self.lookat_id, :2].cpu().numpy()
+        #         pose = gymapi.Transform(gymapi.Vec3(pose_arrow[0], pose_arrow[1], pose_robot[2]), r=None)
+        #         gymutil.draw_lines(sphere_geom_arrow, self.gym, self.viewer, self.envs[self.lookat_id], pose)
 
     # def _draw_cloud_depth(self):
     #     cloud = self.cloud_depth[self.lookat_id]

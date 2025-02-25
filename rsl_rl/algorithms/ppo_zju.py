@@ -188,6 +188,7 @@ class PPO_ZJU(BaseAlgorithm):
             })
         return return_dict
 
+    # @torch.compile(mode='default')
     def _update_policy(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']

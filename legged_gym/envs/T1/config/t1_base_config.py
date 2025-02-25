@@ -253,6 +253,7 @@ class T1BaseCfg(BaseConfig):
         base_link_name = 'Trunk'
         foot_name = 'foot_link'
         knee_name = 'Ankle_Cross'
+        foot_dof_name = 'Ankle'
         penalize_contacts_on = ['Trunk', 'Hip_Pitch', 'Hip_Roll', 'Hip_Yaw', 'Shank', 'Ankle_Cross']
         terminate_after_contacts_on = ['Trunk', 'hand_link']
         disable_gravity = False

@@ -38,8 +38,8 @@ class PddZJUCfg(PddBaseCfg):
 
             near_clip = 0
             far_clip = 2
-            dis_noise_global = 0.05  # in meters
-            dis_noise_gaussian = 0.03  # in meters
+            dis_noise_global = 0.01  # in meters
+            dis_noise_gaussian = 0.01  # in meters
 
     class terrain(PddBaseCfg.terrain):
         scan_pts_x = np.linspace(-0.5, 1.1, 32)
@@ -51,6 +51,8 @@ class PddZJUCfg(PddBaseCfg):
 
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
+
+        curriculum = False
 
         terrain_dict = {
             'smooth_slope': 1,

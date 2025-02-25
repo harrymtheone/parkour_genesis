@@ -287,8 +287,10 @@ class BaseTask:
         if self.init_done:
             self._compute_reward()
             self._check_termination()
-            self._reset_idx(self.reset_buf.nonzero(as_tuple=False).flatten())
-            self._refresh_variables()
+            reset_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
+            if len(reset_ids) > 0:
+                self._reset_idx(reset_ids)
+                self._refresh_variables()
 
         self._post_physics_mid_step()
         if self.cfg.sensors.activated:
@@ -309,10 +311,6 @@ class BaseTask:
         )
 
         # prepare quantities
-        # self.base_euler[:] = quat_to_xyz(transform_quat_by_quat(
-        #     self.sim.root_quat,
-        #     inv_quat(self.init_state_quat.repeat(self.num_envs, 1))
-        # ))
         self.base_euler[:] = quat_to_xyz(self.sim.root_quat)
         inv_quat_yaw = axis_angle_to_quat(
             -self.base_euler[:, 2],
@@ -415,9 +413,6 @@ class BaseTask:
     # ---------------------------------------------- Robots Reset ----------------------------------------------
 
     def _reset_idx(self, env_ids: torch.Tensor):
-        if len(env_ids) == 0:
-            return
-
         # reset robot states
         self.sim.control_dof_torque(self._zero_tensor(self.num_envs, self.num_dof))
         self._reset_dof_state(env_ids)

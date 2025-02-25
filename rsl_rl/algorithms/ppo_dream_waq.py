@@ -269,7 +269,7 @@ class PPODreamWaQ(BaseAlgorithm):
         return estimation_loss.item(), prediction_loss.item(), vae_loss.item()
 
     def play_act(self, obs, use_estimated_values=True):
-        return self.actor.act(obs.float(), use_estimated_values=use_estimated_values, eval_=True)
+        return self.actor.act(obs, use_estimated_values=use_estimated_values, eval_=True)
 
     def train(self):
         self.actor.train()
