@@ -11,7 +11,6 @@ class T1BaseCfg(BaseConfig):
     class env:
         env_spacing = 3.  # not used with heightfields/trimeshes
         send_timeouts = True  # send time out information to the algorithm
-        obs_type = "og"
 
         # additional visual inputs
         next_goal_threshold = 0.4
@@ -231,13 +230,13 @@ class T1BaseCfg(BaseConfig):
         # PD Drive parameters:
         stiffness = {
             'Head': 30,
-            'Hip_Roll': 150, 'Hip_Yaw': 150, 'Hip_Pitch': 150, 'Knee_Pitch': 180, 'Ankle_Roll': 40, 'Ankle_Pitch': 40,
+            'Hip_Roll': 150, 'Hip_Yaw': 150, 'Hip_Pitch': 150, 'Knee_Pitch': 180, 'Ankle_Roll': 50, 'Ankle_Pitch': 50,
             'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100, 'Waist': 100  # not used yet, set randomly
         }
 
         damping = {
             'Head': 1,
-            'Hip_Roll': 8.0, 'Hip_Yaw': 4.0, 'Hip_Pitch': 8, 'Knee_Pitch': 8.0, 'Ankle_Roll': 0.2, 'Ankle_Pitch': 0.2,
+            'Hip_Roll': 8.0, 'Hip_Yaw': 4.0, 'Hip_Pitch': 8, 'Knee_Pitch': 8.0, 'Ankle_Roll': 1.0, 'Ankle_Pitch': 1.0,
             'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3, 'Waist': 3.0  # not used yet, set randomly
         }
 
@@ -246,7 +245,7 @@ class T1BaseCfg(BaseConfig):
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
-        decimation = 10
+        decimation = 5
 
     class asset:
         file = LEGGED_GYM_ROOT_DIR + '/robots/T1/T1_serial.urdf'
@@ -282,7 +281,7 @@ class T1BaseCfg(BaseConfig):
         lookat = [11., 5, 3.]  # [m]
 
     class sim:
-        dt = 0.001
+        dt = 0.002
         substeps = 1
         gravity = [0., 0., -9.81]  # [m/s^2]
         up_axis = 1  # 0 is y, 1 is z

@@ -2,18 +2,18 @@ import cv2
 import numpy as np
 import torch
 
-from legged_gym.envs.base.humanoid_base_env import HumanoidBaseEnv
+from legged_gym.envs.base.humanoid_env import HumanoidEnv
 from ..base.utils import ObsBase, HistoryBuffer
 from ...utils.math import transform_by_yaw
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, depth, priv, scan):
+    def __init__(self, proprio, prop_his, depth, priv_actor, scan):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
         self.depth = depth.clone()
-        self.priv = priv.clone()
+        self.priv_actor = priv_actor.clone()
         self.scan = scan.clone()
 
     def as_obs_next(self):
@@ -33,7 +33,7 @@ class CriticObs(ObsBase):
         self.scan = scan.clone()
 
 
-class PddZJUEnvironment(HumanoidBaseEnv):
+class PddZJUEnvironment(HumanoidEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -151,12 +151,18 @@ class PddZJUEnvironment(HumanoidBaseEnv):
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
+        priv_actor_obs = torch.cat((
+            self.base_lin_vel * self.obs_scales.lin_vel,  # 3
+            self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
+            self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
+        ), dim=-1)
+
         # compute height map
         scan = torch.clip(self.sim.root_pos[:, 2].unsqueeze(1) - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
 
         # compose actor observation
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_obs, scan)
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer

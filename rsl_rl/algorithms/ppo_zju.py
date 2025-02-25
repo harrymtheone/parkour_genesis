@@ -262,40 +262,40 @@ class PPO_ZJU(BaseAlgorithm):
     # @torch.compile(mode='default')
     def _update_recon(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            obs_batch = batch['observations']
-            obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'] if self.actor.is_recurrent else None
-            recon_hidden_states_batch = batch['recon_hidden_states'] if self.actor.is_recurrent else None
-            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
-            obs_next_batch = batch['observations_next']
+            if self.actor.is_recurrent:
+                batch_size = 16
+                indices = torch.randperm(batch['actions'].size(1))[:batch_size]
 
-            use_estimated_values_batch = batch['use_estimated_values']
+                obs_batch = batch['observations'][:, indices]
+                obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'][:, indices].contiguous()
+                recon_hidden_states_batch = batch['recon_hidden_states'][:, indices].contiguous()
+                obs_next_batch = batch['observations_next'][:, indices]
+                mask_batch = batch['masks'][:, indices, 0]
+                use_estimated_values_batch = batch['use_estimated_values'][:, indices]
+            else:
+                batch_size = 256
+                indices = torch.randperm(batch['actions'].size(0))[:batch_size]
 
-            batch_size = 256
-            indices = torch.randperm(mask_batch.size(1))[:batch_size]
-            mask_batch = mask_batch[:, indices]
+                obs_batch = batch['observations'][indices]
+                obs_enc_hidden_states_batch = None
+                recon_hidden_states_batch = None
+                obs_next_batch = batch['observations_next'][indices]
+                mask_batch = slice(None)
+                use_estimated_values_batch = batch['use_estimated_values'][indices]
 
-            recon_rough, recon_refine, est_mu, est_logvar, ot1 = self.actor.reconstruct(
-                obs_batch.prop_his[:, indices],
-                obs_batch.depth[:, indices],
-                obs_enc_hidden_states_batch[:, indices].contiguous(),
-                recon_hidden_states_batch[:, indices].contiguous(),
-                use_estimated_values_batch[:, indices],
-                obs_batch.scan[:, indices]
-            )
+            recon_rough, recon_refine, est, est_latent, est_logvar, ot1 = self.actor.reconstruct(
+                obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch, use_estimated_values_batch)
 
             # privileged information estimation loss
-            estimation_loss = self.mse_loss(
-                est_mu[..., 16:][mask_batch],
-                obs_batch.priv[..., :3 + 8 + 16][mask_batch]
-            )
+            estimation_loss = self.mse_loss(est[mask_batch], obs_batch.priv_actor[mask_batch])
 
             # Ot+1 prediction and VAE loss
             prediction_loss = self.mse_loss(ot1[mask_batch], obs_next_batch.proprio[mask_batch])
-            vae_loss = 1 + est_logvar - est_mu[..., :16].pow(2) - est_logvar.exp()
+            vae_loss = 1 + est_logvar - est_latent.pow(2) - est_logvar.exp()
             vae_loss = -0.5 * vae_loss[mask_batch].sum(dim=1).mean()
 
             # reconstructor loss
-            scan = obs_batch.scan[:, indices][mask_batch]
+            scan = obs_batch.scan[mask_batch]
             recon_rough_loss = self.mse_loss(recon_rough[mask_batch], scan)
             recon_refine_loss = self.l1_loss(recon_refine[mask_batch], scan)
             recon_loss = recon_rough_loss + recon_refine_loss
@@ -327,7 +327,7 @@ class PPO_ZJU(BaseAlgorithm):
                     prediction_loss.item(),
                     vae_loss.item(),
                     recon_rough_loss.item(),
-                    recon_refine_loss.item(),)
+                    recon_refine_loss.item())
 
     def play_act(self, obs, use_estimated_values=True):
         return self.actor.act(obs, use_estimated_values=use_estimated_values, eval_=True)

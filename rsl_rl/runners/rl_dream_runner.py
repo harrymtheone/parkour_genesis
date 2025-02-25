@@ -15,9 +15,9 @@ def linear_change(start, end, span, start_it, cur_it):
 
 
 class RLDreamRunner:
-    from legged_gym.envs.base.humanoid_base_env import HumanoidBaseEnv
+    from legged_gym.envs.base.humanoid_env import HumanoidEnv
 
-    def __init__(self, env: HumanoidBaseEnv, train_cfg, log_dir=None, device=torch.device('cpu')):
+    def __init__(self, env: HumanoidEnv, train_cfg, log_dir=None, device=torch.device('cpu')):
         self.cfg = train_cfg.runner
         self.log_dir = log_dir
         self.device = torch.device(device) if type(device) is str else device

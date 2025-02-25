@@ -48,7 +48,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         add_noise = True
 
     class domain_rand(T1BaseCfg.domain_rand):
-        switch = False
+        switch = True
 
         randomize_start_pos = switch
         randomize_start_y = switch
@@ -151,7 +151,7 @@ class T1DreamWaqCfgPPO(T1BaseCfgPPO):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 5
+        num_learning_epochs = 10
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed

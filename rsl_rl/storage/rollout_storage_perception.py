@@ -49,13 +49,13 @@ class ObsTransBuf:
     def init_buffer(self, obs):
         self.obs_class = type(obs)
 
-        for n, v in obs.get_items():
+        for n, v in obs.items():
             if n in self.storage or v is None:
                 continue
             self.storage[n] = torch.zeros(self.n_trans_per_env, self.n_envs, *v.shape[1:], dtype=v.dtype, device=self.device)
 
     def set(self, idx, obs):
-        for n, v in obs.get_items():
+        for n, v in obs.items():
             if n in self.storage:
                 self.storage[n][idx] = v.clone()
 

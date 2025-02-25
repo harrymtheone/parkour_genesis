@@ -395,16 +395,28 @@ class Critic(nn.Module):
 
     def __init__(self, env_cfg, train_cfg):
         super().__init__()
-
-        self.encoder = nn.Sequential(
-            nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4),
-            nn.ELU(),
-            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
-            nn.ELU(),
-            nn.Conv1d(in_channels=128, out_channels=128, kernel_size=3, stride=1),
-            nn.ELU(),
-            nn.Flatten()
-        )
+        if env_cfg.num_critic_obs == 77:
+            self.encoder = nn.Sequential(
+                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4),
+                nn.ELU(),
+                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
+                nn.ELU(),
+                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=3, stride=1),
+                nn.ELU(),
+                nn.Flatten()
+            )
+        elif env_cfg.num_critic_obs == 91:
+            self.encoder = nn.Sequential(
+                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4, padding=1),
+                nn.ELU(),
+                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
+                nn.ELU(),
+                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=5, stride=1),
+                nn.ELU(),
+                nn.Flatten()
+            )
+        else:
+            raise NotImplementedError
 
         self.critic = make_linear_layers(128 * 5 + env_cfg.n_scan, *train_cfg.policy.critic_hidden_dims, 1,
                                          activation_func=nn.ELU())

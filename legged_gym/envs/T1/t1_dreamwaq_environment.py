@@ -1,6 +1,6 @@
 import torch
 
-from ..base.humanoid_base_env import HumanoidBaseEnv
+from ..base.humanoid_env import HumanoidEnv
 from ..base.utils import ObsBase, HistoryBuffer
 
 
@@ -31,7 +31,7 @@ class CriticObs(ObsBase):
         return torch.cat((self.priv_his.flatten(1), self.scan.flatten(1)), dim=1)
 
 
-class T1DreamWaqEnvironment(HumanoidBaseEnv):
+class T1DreamWaqEnvironment(HumanoidEnv):
 
     def _init_buffers(self):
         super()._init_buffers()

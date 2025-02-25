@@ -91,7 +91,7 @@ class SensorManager:
                                      'horizontal_fov', 'near_clip', 'far_clip', 'dis_noise_global', 'dis_noise_gaussian']:
                 if cfg_element_name not in sensor_cfg:
                     if sensor_name == 'depth_0':
-                        raise ValueError('depth_0 must provide all configuration elements!')
+                        raise ValueError(f'depth_0 must provide all configuration elements! Missing {cfg_element_name}')
                     else:
                         sensor_cfg[cfg_element_name] = cfg_dict['depth_0'][cfg_element_name]
 

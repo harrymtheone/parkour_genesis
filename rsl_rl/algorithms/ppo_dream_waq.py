@@ -108,6 +108,7 @@ class PPODreamWaQ(BaseAlgorithm):
         self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
     def update(self, update_est=True, **kwargs):
+        update_est=True
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
@@ -126,28 +127,18 @@ class PPODreamWaQ(BaseAlgorithm):
             generator = self.storage.mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
 
         for batch in generator:
-            loss, kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, ot1_prediction_loss, vae_loss = self._compute_loss(batch, update_est)
-
+            # update policy
+            value_loss, surrogate_loss, entropy_loss, kl_mean = self._update_policy(batch)
             kl_change.append(kl_mean)
-
-            # Use KL to adaptively update learning rate
-            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = self.learning_rate
-
-            # Gradient step
-            self.optimizer.zero_grad()
-            self.scaler.scale(loss).backward()
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-
             num_updates += 1
             mean_value_loss += value_loss
             mean_surrogate_loss += surrogate_loss
             mean_entropy_loss += entropy_loss
             mean_kl += kl_mean
+
+            # update estimation
             if update_est:
-                # mean_symmetry_loss += symmetry_loss
+                estimation_loss, ot1_prediction_loss, vae_loss = self._update_estimation(batch)
                 mean_estimation_loss += estimation_loss
                 mean_ot1_prediction_loss += ot1_prediction_loss
                 mean_vae_loss += vae_loss
@@ -156,10 +147,10 @@ class PPODreamWaQ(BaseAlgorithm):
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
         mean_kl /= num_updates
-        # mean_symmetry_loss /= num_updates
         mean_estimation_loss /= num_updates
         mean_ot1_prediction_loss /= num_updates
         mean_vae_loss /= num_updates
+        # mean_symmetry_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -181,14 +172,12 @@ class PPODreamWaQ(BaseAlgorithm):
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
         }
 
-    # @torch.compile()
-    def _compute_loss(self, batch: dict, update_est: bool):
+    def _update_policy(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
             critic_obs_batch = batch['critic_observations']
             hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
             mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
-            obs_next_batch = batch['observations_next']
             actions_batch = batch['actions']
             target_values_batch = batch['values']
             advantages_batch = batch['advantages']
@@ -198,9 +187,7 @@ class PPODreamWaQ(BaseAlgorithm):
             old_actions_log_prob_batch = batch['actions_log_prob']
             use_estimated_values_batch = batch['use_estimated_values']
 
-            ot1, est_mu, est_logvar = self.actor.train_act(obs_batch,
-                                                           hidden_states=hidden_states_batch,
-                                                           use_estimated_values=use_estimated_values_batch)
+            self.actor.train_act(obs_batch, hidden_states=hidden_states_batch, use_estimated_values=use_estimated_values_batch)
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -237,40 +224,52 @@ class PPODreamWaQ(BaseAlgorithm):
 
             loss = (surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss)
 
-            if update_est:
-                batch_size = 6
-                mask_batch = mask_batch[:, :batch_size]
-                ot1 = ot1[:, :batch_size]
-                est_mu = est_mu[:, :batch_size]
-                est_logvar = est_logvar[:, :batch_size]
-                obs_next_batch = obs_next_batch.proprio[:, :batch_size]
+            # Use KL to adaptively update learning rate
+            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = self.learning_rate
 
-                # privileged information estimation loss
-                estimation_loss = self.mse_loss(
-                    est_mu[:, :batch_size, :3][mask_batch],
-                    critic_obs_batch.priv[:, :batch_size, 35:38][mask_batch],
-                )
+            # Gradient step
+            self.optimizer.zero_grad()
+            self.scaler.scale(loss).backward()
+            # self.scaler.unscale_(self.optimizer)
+            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+            return value_loss, surrogate_loss, entropy_loss, kl_mean
 
-                # Ot+1 prediction loss
-                ot1_prediction_loss = self.mse_loss(
-                    obs_next_batch[mask_batch],
-                    ot1[mask_batch]
-                )
+    # @torch.compile()
+    def _update_estimation(self, batch: dict):
+        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+            obs_batch = batch['observations']
+            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
+            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
+            obs_next_batch = batch['observations_next']
 
-                # VAE loss
-                vae_loss = -0.5 * torch.sum(1 + est_logvar - est_mu.pow(2) - est_logvar.exp(), dim=2)[mask_batch].mean()
+            ot1, est_mu, est_logvar = self.actor.estimate(obs_batch, hidden_states=hidden_states_batch)
 
-                loss += estimation_loss + ot1_prediction_loss + vae_loss
-                return (loss,
-                        kl_mean,
-                        value_loss.item(),
-                        surrogate_loss.item(),
-                        entropy_loss.item(),
-                        estimation_loss.item(),
-                        ot1_prediction_loss.item(),
-                        vae_loss.item())
+            # privileged information estimation loss
+            estimation_loss = self.mse_loss(
+                est_mu[..., 16:][mask_batch],
+                obs_batch.priv[..., :3 + 8 + 16][mask_batch]
+            )
 
-            return loss, kl_mean, value_loss.item(), surrogate_loss.item(), entropy_loss.item(), 0., 0., 0.
+            # Ot+1 prediction and VAE loss
+            prediction_loss = self.mse_loss(ot1[mask_batch], obs_next_batch.proprio[mask_batch])
+            vae_loss = 1 + est_logvar - est_mu[..., :16].pow(2) - est_logvar.exp()
+            vae_loss = -0.5 * vae_loss[mask_batch].sum(dim=1).mean()
+
+            loss = estimation_loss + prediction_loss + vae_loss
+
+            # Gradient step
+            self.optimizer.zero_grad()
+            self.scaler.scale(loss).backward()
+            # self.scaler.unscale_(self.optimizer)
+            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+
+            return estimation_loss.item(), prediction_loss.item(), vae_loss.item()
 
     def play_act(self, obs, use_estimated_values=True):
         return self.actor.act(obs.float(), use_estimated_values=use_estimated_values, eval_=True)

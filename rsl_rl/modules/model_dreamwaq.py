@@ -88,11 +88,14 @@ class Actor(nn.Module):
 
     def train_act(self, obs, **kwargs):
         obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
-        ot1, est_mu, est_logvar = self.vae(obs_enc, mu_only=False)
+        est_mu = self.vae(obs_enc, mu_only=True)
         actor_input = torch.cat((obs.proprio, self.activation(est_mu)), dim=1)
         mean = self.actor_backbone(actor_input)
         self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
-        return ot1, est_mu, est_logvar
+
+    # def estimate(self, obs):
+    #     obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
+    #     return self.vae(obs_enc, mu_only=False)
 
     @property
     def action_mean(self):
@@ -157,12 +160,18 @@ class ActorGRU(nn.Module):
         n_steps = obs.proprio.size(0)
         obs_enc, _ = self.gru(obs.proprio, hidden_states)
 
-        ot1, est_mu, est_logvar = self.vae(obs_enc.flatten(0, 1))
+        est_mu = self.vae(obs_enc.flatten(0, 1), mu_only=True)
 
         actor_input = torch.cat([obs.proprio.flatten(0, 1), self.activation(est_mu)], dim=1)
         mean = self.actor_backbone(actor_input).unflatten(0, (n_steps, -1))
 
         self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
+
+    def estimate(self, obs, hidden_states, **kwargs):
+        n_steps = obs.proprio.size(0)
+        obs_enc, _ = self.gru(obs.proprio, hidden_states)
+        ot1, est_mu, est_logvar = self.vae(obs_enc.flatten(0, 1), mu_only=False)
+
         return (ot1.unflatten(0, (n_steps, -1)),
                 est_mu.unflatten(0, (n_steps, -1)),
                 est_logvar.unflatten(0, (n_steps, -1)))

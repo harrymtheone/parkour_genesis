@@ -2,60 +2,61 @@ import torch
 
 
 class ObsBase:
-    def get_items(self):
+    def items(self):
         return self.__dict__.items()
 
-    def slice(self, slice_):
+    def __getitem__(self, item):
         sliced_v = []
         for v in self.__dict__.values():
             if v is not None:
-                sliced_v.append(v[slice_])
+                sliced_v.append(v[item])
         return type(self)(*sliced_v)
-
-    def flatten(self, start, stop):
-        sliced_v = []
-        for v in self.__dict__.values():
-            if v is not None:
-                sliced_v.append(v.flatten(start, stop))
-        return type(self)(*sliced_v)
-
-    def unflatten(self, dim, shape):
-        sliced_v = []
-        for v in self.__dict__.values():
-            if v is not None:
-                sliced_v.append(v.unflatten(dim, shape))
-        return type(self)(*sliced_v)
-
-    def transpose(self, dim0, dim1):
-        for n, v in self.__dict__.items():
-            setattr(self, n, v.transpose(dim0, dim1))
-        return self
-
-    def to(self, device):
-        for n, v in self.__dict__.items():
-            setattr(self, n, v.to(device))
-        return self
-
-    def to_tensor(self):
-        raise NotImplementedError
-
-    def to_1D_tensor(self):
-        return type(self)(*[v.flatten(1) for v in self.__dict__.values()])
 
     def clip(self, thresh):
         for v in self.__dict__.values():
             if v is not None:
                 torch.clip(v, -thresh, thresh, out=v)
 
+    # def flatten(self, start, stop):
+    #     sliced_v = []
+    #     for v in self.__dict__.values():
+    #         if v is not None:
+    #             sliced_v.append(v.flatten(start, stop))
+    #     return type(self)(*sliced_v)
+    #
+    # def unflatten(self, dim, shape):
+    #     sliced_v = []
+    #     for v in self.__dict__.values():
+    #         if v is not None:
+    #             sliced_v.append(v.unflatten(dim, shape))
+    #     return type(self)(*sliced_v)
+    #
+    # def transpose(self, dim0, dim1):
+    #     for n, v in self.__dict__.items():
+    #         setattr(self, n, v.transpose(dim0, dim1))
+    #     return self
+    #
+    # def to(self, device):
+    #     for n, v in self.__dict__.items():
+    #         setattr(self, n, v.to(device))
+    #     return self
+    #
+    # def to_tensor(self):
+    #     raise NotImplementedError
+    #
+    # def to_1D_tensor(self):
+    #     return type(self)(*[v.flatten(1) for v in self.__dict__.values()])
+    #
+    #
     def clone(self):
         return type(self)(*self.__dict__.values())
-
-    def float(self):
-        args = []
-        for v in self.__dict__.values():
-            if v is not None:
-                args.append(v.float())
-        return type(self)(*args)
+    #
+    # def float(self):
+    #     args = []
+    #     for v in self.__dict__.values():
+    #         if v is not None:
+    #             args.append(v.float())
+    #     return type(self)(*args)
 
 
 class HistoryBuffer:

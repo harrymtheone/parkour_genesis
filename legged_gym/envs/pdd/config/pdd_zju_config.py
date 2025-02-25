@@ -14,7 +14,7 @@ class PddZJUCfg(PddBaseCfg):
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 53 + 24  # +32 feet_hmap
+        num_critic_obs = 77
         len_critic_his = 50
 
         num_actions = 10
@@ -68,30 +68,6 @@ class PddZJUCfg(PddBaseCfg):
             'parkour_stair': 1,
             'parkour_flat': 0,
         }
-
-    class commands:
-        num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
-        resampling_time = 8.  # time before command are changed[s]
-
-        lin_vel_clip = 0.1
-        ang_vel_clip = 0.2
-
-        sw_switch = True
-
-        class flat_ranges:
-            lin_vel_x = [-0.2, 0.5]
-            lin_vel_y = [-0.3, 0.3]
-            ang_vel_yaw = [-1.0, 1.0]
-
-        class stair_ranges:
-            lin_vel_x = [-0.5, 0.5]
-            lin_vel_y = [-0.4, 0.4]
-            ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
-            heading = [-1.0, 1.0]
-
-        class parkour_ranges:
-            lin_vel_x = [0.5, 1.0]  # min value should be greater than lin_vel_clip
-            ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class domain_rand(PddBaseCfg.domain_rand):
         switch = False
@@ -194,11 +170,19 @@ class PddZJUCfgPPO(PddBaseCfgPPO):
 
         use_recurrent_policy = True
 
+        obs_gru_hidden_size = 64
+        recon_gru_hidden_size = 256
+
+        len_latent = 16
+        len_base_vel = 3
+        len_latent_feet = 8
+        len_latent_body = 16
+        transformer_embed_dim = 64
+
     class algorithm:
         # training params
         value_loss_coef = 1.0
         use_clipped_value_loss = True
-        continue_from_last_std = True
         clip_param = 0.2
         entropy_coef = 0.005
         num_learning_epochs = 5
@@ -211,6 +195,7 @@ class PddZJUCfgPPO(PddBaseCfgPPO):
         max_grad_norm = 1.
 
         use_amp = True
+        continue_from_last_std = True
 
     class runner(PddBaseCfgPPO.runner):
         max_iterations = 50000  # number of policy updates

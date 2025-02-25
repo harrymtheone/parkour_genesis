@@ -1,6 +1,6 @@
 import torch
 
-from legged_gym.envs.base.humanoid_base_env import HumanoidBaseEnv
+from legged_gym.envs.base.humanoid_env import HumanoidEnv
 from ..base.utils import ObsBase, HistoryBuffer
 
 
@@ -21,7 +21,7 @@ class CriticObs(ObsBase):
         return torch.cat((self.priv_his.flatten(1), self.scan.flatten(1)), dim=1)
 
 
-class PddScanEnvironment(HumanoidBaseEnv):
+class PddScanEnvironment(HumanoidEnv):
 
     def _init_buffers(self):
         super()._init_buffers()

@@ -7,6 +7,9 @@ from .pdd.pdd_dreamwaq_environment import PddDreamWaqEnvironment
 from .pdd.pdd_scan_environment import PddScanEnvironment
 from .pdd.pdd_zju_environment import PddZJUEnvironment
 
+from .go1.go1_zju_environment import Go1ZJUEnvironment
+from .go1.config.go1_zju_config import Go1ZJUCfg, Go1ZJUCfgPPO
+
 task_list = [
     ['pdd_scan', PddScanEnvironment, PddScanCfg(), PddScanCfgPPO()],
     ['pdd_scan_stair', PddScanEnvironment, PddScanStairCfg(), PddScanStairCfgPPO()],
@@ -17,5 +20,7 @@ task_list = [
     ['pdd_zju', PddZJUEnvironment, PddZJUCfg(), PddZJUCfgPPO()],
 
     ['t1_dreamwaq', T1DreamWaqEnvironment, T1DreamWaqCfg(), T1DreamWaqCfgPPO()],
+
+    ['go1_zju', Go1ZJUEnvironment, Go1ZJUCfg(), Go1ZJUCfgPPO()]
 
 ]

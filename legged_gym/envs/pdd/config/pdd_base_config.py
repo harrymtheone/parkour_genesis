@@ -11,7 +11,6 @@ class PddBaseCfg(BaseConfig):
     class env:
         env_spacing = 3.  # not used with heightfields/trimeshes
         send_timeouts = True  # send time out information to the algorithm
-        obs_type = "og"
 
         # additional visual inputs
         next_goal_threshold = 0.4

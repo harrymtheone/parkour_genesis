@@ -5,15 +5,6 @@ import torch.nn as nn
 
 from .utils import make_linear_layers
 
-obs_gru_hidden_size = 64
-recon_gru_hidden_size = 256
-
-len_latent = 16
-len_base_vel = 3
-len_latent_feet = 8
-len_latent_body = 16
-transformer_embed_dim = 64
-
 
 def gru_wrapper(func, *args):
     n_steps = args[0].size(0)
@@ -26,21 +17,44 @@ def gru_wrapper(func, *args):
 
 
 class ObsGRU(nn.Module):
-    def __init__(self, env_cfg):
+    def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         activation = nn.ReLU(inplace=True)
 
-        self.conv_layers = nn.Sequential(
-            nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4),
-            activation,
-            nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=1),
-            activation,
-            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=1),  # (8 * channel_size, 1)
-            activation,
-            nn.Flatten()
-        )
+        if env_cfg.n_proprio == 45:
+            self.conv_layers = nn.Sequential(
+                nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4, padding=1),
+                activation,
+                nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=2, padding=1),
+                activation,
+                nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=1),  # (8 * channel_size, 1)
+                activation,
+                nn.Flatten()
+            )
+        elif env_cfg.n_proprio == 41:
+            self.conv_layers = nn.Sequential(
+                nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4, padding=1),
+                activation,
+                nn.Conv1d(in_channels=16, out_channels=32, kernel_size=6, stride=1),
+                activation,
+                nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=1),  # (8 * channel_size, 1)
+                activation,
+                nn.Flatten()
+            )
+        elif env_cfg.n_proprio == 39:
+            self.conv_layers = nn.Sequential(
+                nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4),
+                activation,
+                nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=1),
+                activation,
+                nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=1),  # (8 * channel_size, 1)
+                activation,
+                nn.Flatten()
+            )
+        else:
+            raise NotImplementedError
 
-        self.gru = nn.GRU(input_size=64, hidden_size=obs_gru_hidden_size, num_layers=1)
+        self.gru = nn.GRU(input_size=64, hidden_size=policy_cfg.obs_gru_hidden_size, num_layers=1)
         self.hidden_state = None
 
     def forward(self, obs_his, hidden_state=None):
@@ -166,7 +180,9 @@ class ReconGRU(nn.Module):
             nn.Flatten()
         )
 
-        self.gru = nn.GRU(input_size=128 + obs_gru_hidden_size, hidden_size=recon_gru_hidden_size, num_layers=2)
+        self.gru = nn.GRU(input_size=128 + policy_cfg.obs_gru_hidden_size,
+                          hidden_size=policy_cfg.recon_gru_hidden_size,
+                          num_layers=2)
         self.hidden_state = None
 
         self.recon_rough = nn.Sequential(
@@ -221,13 +237,17 @@ class ReconGRU(nn.Module):
 
 
 class LocoTransformer(nn.Module):
-    def __init__(self, env_cfg):
+    def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         num_heads = 4
         num_layers = 2  # 2
         predictor_hidden_dim = [128, 64]
-
         activation = nn.ReLU(inplace=True)
+
+        obs_gru_hidden_size = policy_cfg.obs_gru_hidden_size
+        transformer_embed_dim = policy_cfg.transformer_embed_dim
+        self.len_latent = policy_cfg.len_latent
+        vae_output_dim = policy_cfg.len_latent + policy_cfg.len_base_vel + policy_cfg.len_latent_feet + policy_cfg.len_latent_body
 
         # patch embedding
         self.cnn_scan = nn.Conv2d(in_channels=1, out_channels=transformer_embed_dim, kernel_size=4, stride=4)
@@ -253,17 +273,17 @@ class LocoTransformer(nn.Module):
         self.mlp_mu = nn.Sequential(
             nn.Linear(transformer_embed_dim * 2, transformer_embed_dim),
             activation,
-            nn.Linear(transformer_embed_dim, len_latent + len_base_vel + len_latent_feet + len_latent_body),
+            nn.Linear(transformer_embed_dim, vae_output_dim),
         )
         self.mlp_logvar = nn.Sequential(
             nn.Linear(transformer_embed_dim * 2, transformer_embed_dim),
             activation,
-            nn.Linear(transformer_embed_dim, len_latent)
+            nn.Linear(transformer_embed_dim, self.len_latent)
         )
 
         # Ot+1 predictor
         self.predictor = nn.Sequential(
-            nn.Linear(len_latent + len_base_vel + len_latent_feet + len_latent_body, predictor_hidden_dim[0]),
+            nn.Linear(vae_output_dim, predictor_hidden_dim[0]),
             activation,
             nn.Linear(predictor_hidden_dim[0], predictor_hidden_dim[1]),
             activation,
@@ -294,8 +314,8 @@ class LocoTransformer(nn.Module):
         est_logvar = self.mlp_logvar(out)
 
         # reparameterize and predict O_t+1
-        z = self.reparameterize(est_mu[:, :len_latent], est_logvar)
-        ot1 = self.predictor(torch.cat((z, est_mu[:, len_latent:]), dim=1))
+        z = self.reparameterize(est_mu[:, :self.len_latent], est_logvar)
+        ot1 = self.predictor(torch.cat((z, est_mu[:, self.len_latent:]), dim=1))
 
         # decode the vector
         return est_mu, est_logvar, ot1
@@ -310,8 +330,9 @@ class LocoTransformer(nn.Module):
 class Actor(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
+        vae_output_dim = policy_cfg.len_latent + policy_cfg.len_base_vel + policy_cfg.len_latent_feet + policy_cfg.len_latent_body
 
-        self.actor = make_linear_layers(env_cfg.n_proprio + len_latent + len_base_vel + len_latent_feet + len_latent_body,
+        self.actor = make_linear_layers(env_cfg.n_proprio + vae_output_dim,
                                         *policy_cfg.actor_hidden_dims,
                                         env_cfg.num_actions,
                                         activation_func=nn.ELU())
@@ -331,10 +352,12 @@ class EstimatorGRU(nn.Module):
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
+        self.len_latent = policy_cfg.len_latent
+        self.est_dim = policy_cfg.len_base_vel + policy_cfg.len_latent_feet + policy_cfg.len_latent_body
 
-        self.obs_gru = ObsGRU(env_cfg)
+        self.obs_gru = ObsGRU(env_cfg, policy_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
-        self.transformer = LocoTransformer(env_cfg)
+        self.transformer = LocoTransformer(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
@@ -355,25 +378,24 @@ class EstimatorGRU(nn.Module):
             recon_rough, recon_refine = self.reconstructor(obs.depth, latent_obs)
 
         # cross-model mixing using transformer
-        est_gt = obs.priv[:, :len_base_vel + len_latent_feet + len_latent_body]
         if type(use_estimated_values) is torch.Tensor:
             recon_input = torch.where(
                 use_estimated_values.unsqueeze(-1).unsqueeze(-1),
                 recon_refine,
                 obs.scan.unsqueeze(1)
             )
-            latent_est, _, _ = self.transformer(recon_input, latent_obs)
+            est_mu, _, _ = self.transformer(recon_input, latent_obs)
             latent_input = torch.where(
                 use_estimated_values,
-                latent_est,
-                torch.cat([latent_est[:, :len_latent], est_gt], dim=1)
+                est_mu,
+                torch.cat([est_mu[:, :self.len_latent], obs.priv_actor], dim=1)
             )
 
         elif use_estimated_values:
             latent_input, _, _ = self.transformer(recon_refine, latent_obs)
         else:
-            latent_est, _, _ = self.transformer(obs.scan.unsqueeze(1), latent_obs)
-            latent_input = torch.cat([latent_est[:, :len_latent], est_gt], dim=1)
+            est_mu, _, _ = self.transformer(obs.scan.unsqueeze(1), latent_obs)
+            latent_input = torch.cat([est_mu[:, :self.len_latent], obs.priv_actor], dim=1)
 
         # compute action
         mean = self.actor(obs.proprio, latent_input)
@@ -407,12 +429,11 @@ class EstimatorGRU(nn.Module):
             recon_refine,
             obs.scan.unsqueeze(2)
         )
-        latent_est, _, _ = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
+        est_mu, _, _ = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
         latent_input = torch.where(
             use_estimated_values,
-            latent_est,
-            torch.cat([latent_est[..., :len_latent],
-                       obs.priv[..., :len_base_vel + len_latent_feet + len_latent_body]], dim=-1)
+            est_mu,
+            torch.cat([est_mu[..., :self.len_latent], obs.priv_actor], dim=-1)
         )
 
         # compute action
@@ -421,19 +442,22 @@ class EstimatorGRU(nn.Module):
         # output action
         self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
 
-    def reconstruct(self, prop, depth, obs_enc_hidden, recon_hidden, use_estimated_values, scan):
+    def reconstruct(self, obs, obs_enc_hidden, recon_hidden, use_estimated_values):
         # encode history proprio
-        latent_obs = self.obs_gru(prop, obs_enc_hidden)
-        recon_rough, recon_refine = self.reconstructor(depth, latent_obs, recon_hidden)
+        latent_obs = self.obs_gru(obs.prop_his, obs_enc_hidden)
+        recon_rough, recon_refine = self.reconstructor(obs.depth, latent_obs, recon_hidden)
 
         recon_input = torch.where(
             use_estimated_values.unsqueeze(-1).unsqueeze(-1),
-            recon_refine.detach(),
-            scan.unsqueeze(2)
+            recon_refine.detach(),  # TODO: You should detach the gradient here, otherwise reconstruction fails???
+            obs.scan.unsqueeze(2)
         )
-        return (recon_rough.squeeze(2),
-                recon_refine.squeeze(2),
-                *gru_wrapper(self.transformer.forward, recon_input, latent_obs))
+
+        est_mu, est_logvar, ot1 = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
+        est_latent = est_mu[..., :self.len_latent]
+        est = est_mu[..., self.len_latent:]
+
+        return recon_rough.squeeze(2), recon_refine.squeeze(2), est, est_latent, est_logvar, ot1
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
