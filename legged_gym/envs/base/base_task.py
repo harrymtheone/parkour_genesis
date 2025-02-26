@@ -135,7 +135,7 @@ class BaseTask:
         self.extras = {}
 
         if not self.sim.headless:
-            self.joystick_handler = JoystickHandler(self.sim)
+            self.joystick_handler = JoystickHandler(self.sim, force_connected=self.cfg.play.control)
 
     # ---------------------------------------------- Robots Creation ----------------------------------------------
 

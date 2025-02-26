@@ -185,4 +185,13 @@ class PddZJUEnvironment(HumanoidEnv):
             cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
             cv2.waitKey(1)
 
+            # # draw points cloud
+            # cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
+            # cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
+            # pts = cloud[cloud_valid]
+            #
+            # if len(pts) > 0:
+            #     indices = torch.randperm(len(pts))[:200]
+            #     self.sim.draw_points(pts[indices])
+
         super().render()

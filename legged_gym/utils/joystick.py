@@ -4,7 +4,7 @@ import pygame
 
 
 class JoystickHandler:
-    def __init__(self, sim):
+    def __init__(self, sim, force_connected=False):
         self.sim = sim
 
         self.x_vel_cmd, self.y_vel_cmd, self.yaw_vel_cmd = 0., 0., 0.
@@ -19,8 +19,10 @@ class JoystickHandler:
         if pygame.joystick.get_count() > 0:
             self.joystick = pygame.joystick.Joystick(0)
             self.joystick.init()
-        else:
+        elif force_connected:
             raise RuntimeError('JoyStick: failed to connected to a joystick!!!!')
+        else:
+            self.joystick = None
 
     def on_press(self, btn_idx):
         if btn_idx == 6:
@@ -43,6 +45,9 @@ class JoystickHandler:
                 self.yaw_vel_cmd * self.yaw_vel_cmd_scale]
 
     def handle_device_input(self):
+        if self.joystick is None:
+            return
+
         pygame.event.get()
         self.x_vel_cmd = -self.joystick.get_axis(1)
         self.y_vel_cmd = -self.joystick.get_axis(0)
@@ -57,13 +62,3 @@ class JoystickHandler:
                 self.on_release(btn_idx)
 
             self.btn_prev_state[i] = btn_pressed
-
-
-if __name__ == '__main__':
-    import time
-
-    js = JoystickHandler(None)
-
-    while True:
-        js.handle_device_input()
-        time.sleep(0.1)

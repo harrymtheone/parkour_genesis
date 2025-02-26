@@ -26,6 +26,8 @@ def gen_info_panel(args, env):
     real_base_height = env.base_height[env.lookat_id].cpu().numpy()
     feet_height = env.feet_height[env.lookat_id].cpu().numpy()
 
+    phase = env.phase[env.lookat_id] if hasattr(env, 'phase') else 0.
+
     if args.headless:
         perc_contact_forces = torch.mean(env.contact_forces_avg, dim=0).cpu().numpy()
         perc_feet_air_time = torch.mean(env.feet_air_time_avg, dim=0).cpu().numpy()
@@ -57,7 +59,7 @@ def gen_info_panel(args, env):
     table21.add_row("Feet height", f'{feet_height[0]: .4f}', f'{feet_height[1]: .4f}')
 
     table22 = Table()
-    table22.add_column(f"phase: {env.phase[env.lookat_id]: .2f}")
+    table22.add_column(f"phase: {phase: .2f}")
     table22.add_column("Left")
     table22.add_column("Right")
     table22.add_row("Feet air time", f'{perc_feet_air_time[0]: .2f}', f'{perc_feet_air_time[1]: .2f}')

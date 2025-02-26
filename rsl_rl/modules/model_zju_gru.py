@@ -85,52 +85,50 @@ class ObsGRU(nn.Module):
 
 class UNet(nn.Module):
     def __init__(self):
-        super(UNet, self).__init__()
-
-        activation = nn.LeakyReLU()
+        super().__init__()
 
         # Encoder
         self.encoder_conv1 = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=3, padding=1),
-            activation
+            nn.ReLU(),
         )
 
         self.encoder_conv2 = nn.Sequential(
             nn.MaxPool2d(2),  # Downsample (32x16 -> 16x8)
             nn.Conv2d(16, 32, kernel_size=3, padding=1),
-            activation
+            nn.ReLU(),
         )
 
         self.encoder_conv3 = nn.Sequential(
             nn.MaxPool2d(2),  # Downsample (16x8 -> 8x4)
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            activation
+            nn.ReLU(),
         )
 
         # Bottleneck
         self.bottleneck_conv = nn.Sequential(
             nn.MaxPool2d(2),  # Downsample (8x4 -> 4x2)
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            activation
+            nn.ReLU(),
         )
 
         # Decoder
         self.upconv3 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)  # Upsample (4x2 -> 8x4)
         self.decoder_conv3 = nn.Sequential(
             nn.Conv2d(128, 64, kernel_size=3, padding=1),
-            activation
+            nn.ReLU(),
         )
 
         self.upconv2 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)  # Upsample (8x4 -> 16x8)
         self.decoder_conv2 = nn.Sequential(
             nn.Conv2d(64, 32, kernel_size=3, padding=1),
-            activation
+            nn.ReLU(),
         )
 
         self.upconv1 = nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2)  # Upsample (16x8 -> 32x16)
         self.decoder_conv1 = nn.Sequential(
             nn.Conv2d(32, 16, kernel_size=3, padding=1),
-            activation
+            nn.ReLU(),
         )
 
         # Final output layer
@@ -185,14 +183,38 @@ class ReconGRU(nn.Module):
                           num_layers=2)
         self.hidden_state = None
 
+        # self.recon_rough = nn.Sequential(
+        #     nn.Unflatten(1, (8, 8, 4)),
+        #     nn.ConvTranspose2d(8, 4, kernel_size=4, stride=2, padding=1),
+        #     activation,
+        #     nn.ConvTranspose2d(4, 4, kernel_size=4, stride=2, padding=1),
+        #     activation,
+        #     nn.Conv2d(4, 1, kernel_size=3, stride=1, padding=1),
+        # )
         self.recon_rough = nn.Sequential(
             nn.Unflatten(1, (8, 8, 4)),
-            nn.ConvTranspose2d(8, 4, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(8, 8, kernel_size=3, padding=1),
             activation,
-            nn.ConvTranspose2d(4, 4, kernel_size=4, stride=2, padding=1),
+            nn.Upsample(scale_factor=2),
+            nn.Conv2d(8, 4, kernel_size=3, padding=1),
             activation,
-            nn.Conv2d(4, 1, kernel_size=3, stride=1, padding=1),
+            nn.Upsample(scale_factor=2),
+            nn.Conv2d(4, 1, kernel_size=3, padding=1),
         )
+
+        # self.recon_rough = nn.Sequential(
+        #     nn.Linear(policy_cfg.recon_gru_hidden_size, 3 * 32 * 16),
+        #     nn.ELU(),
+        #     nn.Unflatten(1, (3, 32, 16)),
+        #
+        #     nn.Conv2d(3, 16, kernel_size=3, padding=1),  # (16, 32, 16)
+        #     nn.ELU(),
+        #     nn.Conv2d(16, 32, kernel_size=3, padding=1),  # (8, 32, 16)
+        #     nn.ELU(),
+        #     nn.Conv2d(32, 16, kernel_size=3, padding=1),  # (8, 32, 16)
+        #     nn.ELU(),
+        #     nn.Conv2d(16, 1, kernel_size=3, padding=1)  # (1, 32, 16)
+        # )
 
         self.recon_refine = UNet()
 
@@ -406,7 +428,7 @@ class EstimatorGRU(nn.Module):
         else:
             # sample action from distribution
             self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
-            return self.distribution.sample()
+            return self.distribution.sample(), recon_refine.squeeze(1)
 
     def train_act(
             self,

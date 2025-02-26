@@ -411,7 +411,7 @@ class ParkourTask(BaseTask):
 
         self.sim.render()
 
-    def draw_hmap(self, hmap):
+    def draw_hmap(self, hmap, color=(0, 1, 0)):
         hmap = hmap[self.lookat_id].flatten().cpu().numpy()
         base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
         yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
@@ -419,7 +419,7 @@ class ParkourTask(BaseTask):
         height_points[:, :2] += base_pos[None, :2]
 
         height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
-        self.sim.draw_points(height_points)
+        self.sim.draw_points(height_points, color=color)
 
     def draw_goals(self):
         goals = self.env_goals[self.lookat_id].cpu().numpy()

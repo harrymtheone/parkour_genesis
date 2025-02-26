@@ -26,7 +26,7 @@ class RLDreamRunner:
         self.env_cfg = self.env.cfg.env
 
         # Create algorithm
-        self.alg: BaseAlgorithm = algorithm_dict[train_cfg.algorithm_name](self.env_cfg, train_cfg, device=self.device)
+        self.alg: BaseAlgorithm = algorithm_dict[train_cfg.algorithm_name](self.env_cfg, train_cfg, device=self.device, env=env)
 
         self.num_steps_per_env = self.cfg.num_steps_per_env
         self.save_interval = self.cfg.save_interval
@@ -110,11 +110,12 @@ class RLDreamRunner:
             collection_time = time.time() - start
             start = time.time()
 
-            if self.cur_it > 2000 and self.cur_it % 5 == 0:
-                print('Updating estimation')
-                update_info = self.alg.update(update_est=True)
-            else:
-                update_info = self.alg.update(update_est=False)
+            update_info = self.alg.update(update_est=True)
+            # if self.cur_it > 2000 and self.cur_it % 5 == 0:
+            #     print('Updating estimation')
+            #     update_info = self.alg.update(update_est=True)
+            # else:
+            #     update_info = self.alg.update(update_est=False)
 
             torch.cuda.synchronize()
             learn_time = time.time() - start

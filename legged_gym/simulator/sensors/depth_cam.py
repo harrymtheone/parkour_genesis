@@ -6,7 +6,6 @@ import warp as wp
 
 from legged_gym.utils.math import xyz_to_quat, torch_rand_float
 from .sensor_base import SensorBase, SensorBuffer
-from .warp_kernel import depth_only_kernel
 
 
 class DepthCam(SensorBase):
@@ -21,6 +20,11 @@ class DepthCam(SensorBase):
         self.depth_raw = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']))
         self._depth_raw_wp = wp.from_torch(self.depth_raw, dtype=wp.float32)
 
+        # self.cloud = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']), 3)
+        # self._cloud_wp = wp.from_torch(self.cloud, dtype=wp.vec3f)
+        # self.cloud_valid = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']), dtype=torch.bool)
+        # self._cloud_valid_wp = wp.from_torch(self.cloud_valid, dtype=wp.bool)
+
         self.resize_transform = torchvision.transforms.Resize(
             (self.cfg_dict['resized'][1], self.cfg_dict['resized'][0]),
             interpolation=torchvision.transforms.InterpolationMode.BICUBIC,
@@ -33,7 +37,10 @@ class DepthCam(SensorBase):
                                 delay_prop=cfg_dict['delay_prop'],
                                 device=device)
 
-    def get(self, get_raw=False, **kwargs):
+    def get(self, get_cloud=False, get_raw=False, **kwargs):
+        if get_cloud:
+            return self.cloud, self.cloud_valid
+
         if get_raw:
             return self.depth_raw.clone()
         else:
@@ -116,6 +123,25 @@ class DepthCam(SensorBase):
             ],
             device=wp.device_from_torch(self.device)
         )
+        # wp.launch(
+        #     kernel=depth_point_cloud_kernel,
+        #     dim=(self.num_envs, *self.cfg_dict['resolution']),
+        #     inputs=[
+        #         self.mesh_id,
+        #         self.sensor_pos_design,
+        #         self.sensor_quat_design,
+        #         self.sensor_pos,
+        #         self.sensor_quat,
+        #         self.K_inv,
+        #         self.c_u,
+        #         self.c_v,
+        #         self.far_clip,
+        #         self._depth_raw_wp,
+        #         self._cloud_wp,
+        #         self._cloud_valid_wp
+        #     ],
+        #     device=wp.device_from_torch(self.device)
+        # )
 
     # def _process_voxel_grid(self):
     #     def process(voxel: torch.Tensor, noise_level):
@@ -134,3 +160,109 @@ class DepthCam(SensorBase):
     #
     #     if self.cfg.reconstruction.recon_each_step or (self.global_counter % self.cfg.depth.update_interval == 0):
     #         process(self.voxel_grid_terrain, 0)
+
+
+@wp.kernel
+def depth_only_kernel(
+        mesh_id: wp.uint64,
+        cam_pos_arr: wp.array1d(dtype=wp.vec3f),
+        cam_quat_arr: wp.array1d(dtype=wp.quat),
+        K_inv: wp.mat44,
+        c_u: int,
+        c_v: int,
+        far_clip: float,
+        depth_image: wp.array3d(dtype=float),
+):
+    # get the index for current pixel
+    env_id, u, v = wp.tid()
+
+    cam_pos = cam_pos_arr[env_id]
+    cam_quat = cam_quat_arr[env_id]
+
+    # obtain ray vector in image coordinate system
+    cam_coords = wp.vec3f(float(u), float(v), 1.0)
+    cam_coords_principal = wp.vec3f(float(c_u), float(c_v), 1.0)  # get the vector of principal axis
+
+    # convert to camera coordinate system
+    uv = wp.transform_vector(K_inv, cam_coords)
+    uv_principal = wp.transform_vector(K_inv, cam_coords_principal)  # uv for principal axis
+
+    # convert to base frame
+    uv_world = wp.vec3f(uv[2], -uv[0], -uv[1])
+    uv_principal_world = wp.vec3f(uv_principal[2], -uv_principal[0], -uv_principal[1])
+
+    # tf the direction from camera to world frame and normalize
+    ray_dir = wp.normalize(wp.quat_rotate(cam_quat, uv_world))
+    ray_dir_principal = wp.normalize(wp.quat_rotate(cam_quat, uv_principal_world))  # ray direction of principal axis
+
+    # multiplier to project each ray on principal axis for depth instead of range
+    multiplier = wp.dot(ray_dir, ray_dir_principal)
+
+    # perform ray casting
+    query = wp.mesh_query_ray(mesh_id, cam_pos, ray_dir, far_clip / multiplier)
+
+    dist = far_clip
+    if query.result:
+        # compute the depth of this pixel
+        dist = multiplier * query.t
+
+    depth_image[env_id, v, u] = dist
+
+
+@wp.kernel
+def depth_point_cloud_kernel(
+        mesh_id: wp.uint64,
+        cam_pos_design_arr: wp.array1d(dtype=wp.vec3f),  # camera position and quaterion by design
+        cam_quat_design_arr: wp.array1d(dtype=wp.quat),
+        cam_pos_arr: wp.array1d(dtype=wp.vec3f),  # camera position and quaterion by randomization
+        cam_quat_arr: wp.array1d(dtype=wp.quat),
+        K_inv: wp.mat44,
+        c_u: int,
+        c_v: int,
+        far_clip: float,
+        depth_image: wp.array3d(dtype=float),
+        cloud: wp.array3d(dtype=wp.vec3f),
+        cloud_valid: wp.array3d(dtype=bool)
+):
+    # get the index for current pixel
+    env_id, u, v = wp.tid()
+
+    cam_pos = cam_pos_arr[env_id]
+    cam_quat = cam_quat_arr[env_id]
+
+    # obtain ray vector in image coordinate system
+    cam_coords = wp.vec3f(float(u), float(v), 1.0)
+    cam_coords_principal = wp.vec3f(float(c_u), float(c_v), 1.0)  # get the vector of principal axis
+
+    # convert to camera coordinate system
+    uv = wp.transform_vector(K_inv, cam_coords)
+    uv_principal = wp.transform_vector(K_inv, cam_coords_principal)  # uv for principal axis
+
+    # convert to base frame
+    uv_world = wp.vec3f(uv[2], -uv[0], -uv[1])
+    uv_principal_world = wp.vec3f(uv_principal[2], -uv_principal[0], -uv_principal[1])
+
+    # tf the direction from camera to world frame and normalize
+    ray_dir = wp.normalize(wp.quat_rotate(cam_quat, uv_world))
+    ray_dir_principal = wp.normalize(wp.quat_rotate(cam_quat, uv_principal_world))  # ray direction of principal axis
+
+    # multiplier to project each ray on principal axis for depth instead of range
+    multiplier = wp.dot(ray_dir, ray_dir_principal)
+
+    # perform ray casting
+    query = wp.mesh_query_ray(mesh_id, cam_pos, ray_dir, far_clip / multiplier)
+
+    dist = far_clip
+    cloud_valid[env_id, v, u] = query.result
+    if query.result:
+        # compute the depth of this pixel
+        dist = multiplier * query.t
+
+        # compute the position of the pixel in world frame
+        cam_pos_design = cam_pos_design_arr[env_id]
+        ray_dir_design = wp.normalize(wp.quat_rotate(cam_quat_design_arr[env_id], uv_world))
+
+        pt_pos = cam_pos_design + ray_dir_design * query.t
+        cloud[env_id, v, u] = pt_pos
+
+    depth_image[env_id, v, u] = dist

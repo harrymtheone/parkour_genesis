@@ -38,7 +38,7 @@ class Transition:
 
 
 class PPODreamWaQ(BaseAlgorithm):
-    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu')):
+    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), **kwargs):
         # PPO parameters
         self.cfg = train_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate

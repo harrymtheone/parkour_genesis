@@ -39,7 +39,8 @@ class Transition:
 
 
 class PPO_ZJU(BaseAlgorithm):
-    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu')):
+    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), env=None, **kwargs):
+        self.env = env
 
         # PPO parameters
         self.cfg = train_cfg.algorithm
@@ -71,7 +72,8 @@ class PPO_ZJU(BaseAlgorithm):
             if self.actor.is_recurrent:
                 self.transition.obs_enc_hidden_states, self.transition.recon_hidden_states = self.actor.get_hidden_state()
 
-            actions = self.actor.act(obs, use_estimated_values=use_estimated_values)
+            actions, recon = self.actor.act(obs, use_estimated_values=use_estimated_values)
+            # self.env.draw_hmap(recon)
 
             if self.actor.is_recurrent and self.transition.obs_enc_hidden_states is None:
                 # only for the first step where hidden_state is None
@@ -264,15 +266,15 @@ class PPO_ZJU(BaseAlgorithm):
     def _update_recon(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             if self.actor.is_recurrent:
-                batch_size = 16
-                indices = torch.randperm(batch['actions'].size(1))[:batch_size]
+                batch_size = 4
+                # indices = torch.randperm(batch['actions'].size(1))[:batch_size]
 
-                obs_batch = batch['observations'][:, indices]
-                obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'][:, indices].contiguous()
-                recon_hidden_states_batch = batch['recon_hidden_states'][:, indices].contiguous()
-                obs_next_batch = batch['observations_next'][:, indices]
-                mask_batch = batch['masks'][:, indices, 0]
-                use_estimated_values_batch = batch['use_estimated_values'][:, indices]
+                obs_batch = batch['observations'][:batch_size]
+                obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'][:batch_size].contiguous()
+                recon_hidden_states_batch = batch['recon_hidden_states'][:batch_size].contiguous()
+                obs_next_batch = batch['observations_next'][:batch_size]
+                mask_batch = batch['masks'][:batch_size, :, 0]
+                use_estimated_values_batch = batch['use_estimated_values'][:batch_size]
             else:
                 batch_size = 256
                 indices = torch.randperm(batch['actions'].size(0))[:batch_size]
@@ -338,11 +340,16 @@ class PPO_ZJU(BaseAlgorithm):
         self.critic.train()
 
     def load(self, loaded_dict, load_optimizer=True):
+        # actor_state_dict = loaded_dict['actor_state_dict']
+        # self.actor.obs_gru.load_state_dict({k[len('obs_gru.'):]: v for k, v in actor_state_dict.items() if k.startswith('obs_gru')})
+        # self.actor.transformer.load_state_dict({k[len('transformer.'):]: v for k, v in actor_state_dict.items() if k.startswith('transformer')})
+        # self.actor.actor.load_state_dict({k[len('actor.'):]: v for k, v in actor_state_dict.items() if k.startswith('actor')})
+
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
         self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
-        if load_optimizer:
-            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+        # if load_optimizer:
+        #     self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
