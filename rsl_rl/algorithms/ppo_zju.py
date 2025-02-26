@@ -340,12 +340,14 @@ class PPO_ZJU(BaseAlgorithm):
         self.critic.train()
 
     def load(self, loaded_dict, load_optimizer=True):
-        # actor_state_dict = loaded_dict['actor_state_dict']
-        # self.actor.obs_gru.load_state_dict({k[len('obs_gru.'):]: v for k, v in actor_state_dict.items() if k.startswith('obs_gru')})
-        # self.actor.transformer.load_state_dict({k[len('transformer.'):]: v for k, v in actor_state_dict.items() if k.startswith('transformer')})
-        # self.actor.actor.load_state_dict({k[len('actor.'):]: v for k, v in actor_state_dict.items() if k.startswith('actor')})
+        try:
+            self.actor.load_state_dict(loaded_dict['actor_state_dict'])
+        except:
+            actor_state_dict = loaded_dict['actor_state_dict']
+            self.actor.obs_gru.load_state_dict({k[len('obs_gru.'):]: v for k, v in actor_state_dict.items() if k.startswith('obs_gru')})
+            self.actor.transformer.load_state_dict({k[len('transformer.'):]: v for k, v in actor_state_dict.items() if k.startswith('transformer')})
+            self.actor.actor.load_state_dict({k[len('actor.'):]: v for k, v in actor_state_dict.items() if k.startswith('actor')})
 
-        self.actor.load_state_dict(loaded_dict['actor_state_dict'])
         self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
         # if load_optimizer:

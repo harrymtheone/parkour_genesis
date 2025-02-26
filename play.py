@@ -29,10 +29,10 @@ def play(args):
     env_cfg.play.control = False
     env_cfg.env.num_envs = 1
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
-    env_cfg.terrain.num_rows = 5
+    env_cfg.terrain.num_rows = 2
     env_cfg.terrain.curriculum = True
     env_cfg.terrain.max_difficulty = False
-    env_cfg.terrain.max_init_terrain_level = 4
+    env_cfg.terrain.max_init_terrain_level = 0
     # env_cfg.asset.disable_gravity = True
 
     # env_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera

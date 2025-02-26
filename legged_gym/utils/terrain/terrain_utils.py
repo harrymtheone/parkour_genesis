@@ -428,11 +428,9 @@ def parkour_stair_terrain(terrain: SubTerrain,
         last_stair_height = stair_height
 
     goals = np.zeros((num_goals, 2))
-    goals[0] = [platform_len + round(1 / terrain.horizontal_scale), mid_y]
-    goals[1] = [mid_x_stair, mid_y]
-    # goals[1] = [mid_x_stair, mid_y * 2 * random.random()]  # TODO: unknow bug??????????
-    goals[2] = [dis_x + round(1 / terrain.horizontal_scale), mid_y]
-    for i in range(3, num_goals):
+    goals[0] = [mid_x_stair, mid_y]
+    goals[1] = [dis_x + round(1 / terrain.horizontal_scale), mid_y]
+    for i in range(2, num_goals):
         goals[i] = goals[i - 1]
 
     terrain.goals = goals * terrain.horizontal_scale

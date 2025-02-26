@@ -55,6 +55,9 @@ class Terrain:
         structure = np.ones((half_edge_width * 2 + 1, half_edge_width * 2 + 1))
         self.edge_mask = binary_dilation(self.edge_mask, structure=structure)
 
+        print(f'Created {self.vertices.shape[0]} vertices')
+        print(f'Created {self.triangles.shape[0]} triangles')
+
         if cfg.description_type == "trimesh" and self.cfg.simplify_grid:
             mesh_simplifier = pyfqmr.Simplify()
             mesh_simplifier.setMesh(self.vertices, self.triangles)
@@ -64,8 +67,8 @@ class Terrain:
             self.vertices = self.vertices.astype(np.float32)
             self.triangles = self.triangles.astype(np.uint32)
 
-            print(f'Created {self.vertices.shape[0]} vertices')
-            print(f'Created {self.triangles.shape[0]} triangles')
+            print(f'Simplified to {self.vertices.shape[0]} vertices')
+            print(f'Simplified to {self.triangles.shape[0]} triangles')
 
     def curriculum(self, max_difficulty=False):
         terrain_mat = np.empty((self.cfg.num_rows, self.cfg.num_cols), dtype=object)

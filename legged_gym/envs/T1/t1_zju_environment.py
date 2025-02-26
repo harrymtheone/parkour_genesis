@@ -33,14 +33,13 @@ class CriticObs(ObsBase):
         self.scan = scan.clone()
 
 
-class PddZJUEnvironment(HumanoidEnv):
+class T1ZJUEnvironment(HumanoidEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
         env_cfg = self.cfg.env
-
-        self.prop_his_buf = HistoryBuffer(env_cfg.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
-        self.critic_his_buf = HistoryBuffer(env_cfg.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
+        self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
+        self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)
         self.feet_hmap_points = self._init_height_points(self.cfg.terrain.feet_pts_x, self.cfg.terrain.feet_pts_y)
@@ -71,26 +70,27 @@ class PddZJUEnvironment(HumanoidEnv):
         sin_pos_l = sin_pos.clone()
         sin_pos_r = sin_pos.clone()
 
-        self.ref_dof_pos[:] = 0.
+        ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
         scale_1 = self.cfg.rewards.target_joint_pos_scale
         scale_2 = 2 * scale_1
 
         # left swing
         sin_pos_l[sin_pos_l > 0] = 0
-        self.ref_dof_pos[:, 2] = sin_pos_l * scale_1
-        self.ref_dof_pos[:, 3] = -sin_pos_l * scale_2
-        self.ref_dof_pos[:, 4] = sin_pos_l * scale_1
+        ref_dof_pos[:, 0] = sin_pos_l * scale_1
+        ref_dof_pos[:, 3] = -sin_pos_l * scale_2
+        ref_dof_pos[:, 4] = sin_pos_l * scale_1
 
         # right swing
         sin_pos_r[sin_pos_r < 0] = 0
-        self.ref_dof_pos[:, 7] = -sin_pos_r * scale_1
-        self.ref_dof_pos[:, 8] = sin_pos_r * scale_2
-        self.ref_dof_pos[:, 9] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 6] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 9] = sin_pos_r * scale_2
+        ref_dof_pos[:, 10] = -sin_pos_r * scale_1
 
-        # Add double support phase
-        self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
+        # # Add double support phase
+        # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
 
-        self.ref_dof_pos[:] += self.init_state_dof_pos
+        self.ref_dof_pos[:] = self.init_state_dof_pos
+        self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
 
     def _compute_observations(self):
         """
@@ -128,9 +128,9 @@ class PddZJUEnvironment(HumanoidEnv):
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
             command_input,  # 5
-            (dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
-            dof_vel * self.obs_scales.dof_vel,  # 10D
-            self.last_action_output,  # 10D
+            (dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 12D
+            dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
+            self.last_action_output,  # 12D
         ), dim=-1)
 
         # explicit privileged information
@@ -141,9 +141,9 @@ class PddZJUEnvironment(HumanoidEnv):
             self.base_ang_vel * self.obs_scales.ang_vel,  # 3
             self.base_euler * self.obs_scales.quat,  # 3
             command_input,  # 5D
-            self.last_action_output,  # 10D
-            (self.sim.dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
-            self.sim.dof_vel * self.obs_scales.dof_vel,  # 10D
+            self.last_action_output,  # 12D
+            (self.sim.dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 12D
+            self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.ext_force[:, :2],  # 2
             self.ext_torque,  # 3
             self.sim.friction_coeffs,  # 1

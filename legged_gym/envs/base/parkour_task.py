@@ -404,24 +404,20 @@ class ParkourTask(BaseTask):
         return x
 
     # ----------------------------------------- Graphics -------------------------------------------
-
-    def render(self):
-        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
-            self.draw_goals()
-
-        self.sim.render()
-
     def draw_hmap(self, hmap, color=(0, 1, 0)):
-        hmap = hmap[self.lookat_id].flatten().cpu().numpy()
-        base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
-        yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
-        height_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
-        height_points[:, :2] += base_pos[None, :2]
+        def func(hmap, color):
+            hmap = hmap[self.lookat_id].flatten().cpu().numpy()
+            base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
+            yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
+            height_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
+            height_points[:, :2] += base_pos[None, :2]
 
-        height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
-        self.sim.draw_points(height_points, color=color)
+            height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
+            self.sim.draw_points(height_points, color=color)
 
-    def draw_goals(self):
+        self.pending_vis_task.append((func, hmap, color))
+
+    def _draw_goals(self):
         goals = self.env_goals[self.lookat_id].cpu().numpy()
         self.sim.draw_points(goals, self.cfg.env.next_goal_threshold, (1, 0, 0), sphere_lines=16)
 
@@ -453,6 +449,73 @@ class ParkourTask(BaseTask):
         #         pose_arrow = pose_robot[:2] + 0.1 * (i + 3) * target_vec_norm[self.lookat_id, :2].cpu().numpy()
         #         pose = gymapi.Transform(gymapi.Vec3(pose_arrow[0], pose_arrow[1], pose_robot[2]), r=None)
         #         gymutil.draw_lines(sphere_geom_arrow, self.gym, self.viewer, self.envs[self.lookat_id], pose)
+
+    # def _draw_feet_at_edge(self):
+    #     if hasattr(self, 'feet_at_edge'):
+    #         non_edge_geom = gymutil.WireframeSphereGeometry(0.022, 8, 8, None, color=(0, 1, 0))
+    #         edge_geom = gymutil.WireframeSphereGeometry(0.022, 8, 8, None, color=(1, 0, 0))
+    #         stumble_geom = gymutil.WireframeSphereGeometry(0.04, 8, 8, None, color=(1, 1, 0))
+    #
+    #         feet_pos = self.rigid_body_states[self.lookat_id, self.feet_indices, :3]
+    #         force = self.contact_forces[self.lookat_id, self.feet_indices]
+    #         stumble = torch.norm(force[:, :2], dim=1) > 4 * torch.abs(force[:, 2])
+    #
+    #         for i in range(4):
+    #             pose = gymapi.Transform(gymapi.Vec3(feet_pos[i, 0], feet_pos[i, 1], feet_pos[i, 2]), r=None)
+    #
+    #             if self.feet_at_edge[self.lookat_id, i]:
+    #                 gymutil.draw_lines(edge_geom, self.gym, self.viewer, self.envs[self.lookat_id], pose)
+    #             else:
+    #                 gymutil.draw_lines(non_edge_geom, self.gym, self.viewer, self.envs[self.lookat_id], pose)
+    #
+    #             if stumble[i]:
+    #                 gymutil.draw_lines(stumble_geom, self.gym, self.viewer, self.envs[self.lookat_id], pose)
+
+    def _draw_height_field(self, draw_guidance=True):
+        # for debug use!!!
+        # draw height lines
+        if self.init_done or (not self.cfg.terrain.measure_heights):
+            return
+
+        pts = []
+        for i in range(self.sim.height_samples.shape[0]):
+            for j in range(self.sim.height_samples.shape[1]):
+                if j % 10 != 0:
+                    continue
+
+                x = i * self.cfg.terrain.horizontal_scale - self.cfg.terrain.border_size
+                y = j * self.cfg.terrain.horizontal_scale - self.cfg.terrain.border_size
+
+                if draw_guidance:
+                    z = self.sim.height_guidance[i, j] * self.cfg.terrain.vertical_scale + 0.02
+                else:
+                    z = self.sim.height_samples[i, j] * self.cfg.terrain.vertical_scale + 0.02
+
+                pts.append((x, y, z))
+        self.sim.draw_points(pts)
+
+    def _draw_edge(self):
+        # for debug use!!!
+        if self.init_done or (not self.cfg.terrain.measure_heights):
+            return
+
+        pts_edge = []
+        pts_non_edge = []
+        for i in range(self.sim.edge_mask.shape[0]):
+            for j in range(self.sim.edge_mask.shape[1]):
+                if j % 10 != 0:
+                    continue
+                x = i * self.cfg.terrain.horizontal_scale - self.cfg.terrain.border_size
+                y = j * self.cfg.terrain.horizontal_scale - self.cfg.terrain.border_size
+                z = self.sim.height_samples[i, j] * self.cfg.terrain.vertical_scale + 0.02
+
+                if self.sim.edge_mask[i, j]:
+                    pts_edge.append((x, y, z))
+                else:
+                    pts_non_edge.append((x, y, z))
+
+        self.sim.draw_points(pts_edge, color=(0, 1, 0))
+        self.sim.draw_points(pts_non_edge, color=(1, 0, 0))
 
     # def _draw_cloud_depth(self):
     #     cloud = self.cloud_depth[self.lookat_id]
@@ -513,16 +576,16 @@ class ParkourTask(BaseTask):
     #     self._draw_point_cloud(pts, sample_rate=1, color=color)
     #     return pts
 
-    def _draw_point_cloud(self, cloud: np.ndarray, sample_rate=1.0, color=(0, 1, 0), env_id=None):
-        if sample_rate < 1:
-            cloud_idx = np.random.choice(np.arange(len(cloud)), int(len(cloud) * 0.1), replace=False)
-        else:
-            cloud_idx = np.arange(len(cloud))
-
-        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=color)
-
-        env_id = self.lookat_id is env_id is None
-
-        for idx in cloud_idx:
-            sphere_pose = gymapi.Transform(gymapi.Vec3(cloud[idx, 0], cloud[idx, 1], cloud[idx, 2] + 0.02), r=None)
-            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[env_id], sphere_pose)
+    # def _draw_point_cloud(self, cloud: np.ndarray, sample_rate=1.0, color=(0, 1, 0), env_id=None):
+    #     if sample_rate < 1:
+    #         cloud_idx = np.random.choice(np.arange(len(cloud)), int(len(cloud) * 0.1), replace=False)
+    #     else:
+    #         cloud_idx = np.arange(len(cloud))
+    #
+    #     sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=color)
+    #
+    #     env_id = self.lookat_id is env_id is None
+    #
+    #     for idx in cloud_idx:
+    #         sphere_pose = gymapi.Transform(gymapi.Vec3(cloud[idx, 0], cloud[idx, 1], cloud[idx, 2] + 0.02), r=None)
+    #         gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[env_id], sphere_pose)

@@ -1,23 +1,23 @@
 import numpy as np
 
-from .pdd_base_config import PddBaseCfg, PddBaseCfgPPO
+from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 
-class PddZJUCfg(PddBaseCfg):
-    class env(PddBaseCfg.env):
+class T1ZJUCfg(T1BaseCfg):
+    class env(T1BaseCfg.env):
         num_envs = 2048  # 6144
 
-        n_proprio = 41
+        n_proprio = 47
         len_prop_his = 10
 
         len_depth_his = 2
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 77
+        num_critic_obs = 83
         len_critic_his = 50
 
-        num_actions = 10
+        num_actions = 12
         episode_length_s = 30  # episode length in seconds
 
     class sensors:
@@ -41,7 +41,7 @@ class PddZJUCfg(PddBaseCfg):
             dis_noise_global = 0.01  # in meters
             dis_noise_gaussian = 0.01  # in meters
 
-    class terrain(PddBaseCfg.terrain):
+    class terrain(T1BaseCfg.terrain):
         scan_pts_x = np.linspace(-0.5, 1.1, 32)
         scan_pts_y = np.linspace(-0.4, 0.4, 16)
         body_pts_x = np.linspace(-0.2, 0.2, 4)
@@ -71,7 +71,7 @@ class PddZJUCfg(PddBaseCfg):
             'parkour_flat': 0,
         }
 
-    class domain_rand(PddBaseCfg.domain_rand):
+    class domain_rand(T1BaseCfg.domain_rand):
         switch = True
 
         randomize_start_pos = False
@@ -103,17 +103,17 @@ class PddZJUCfg(PddBaseCfg):
         randomize_coulomb_friction = switch
 
     class rewards:
-        base_height_target = 0.6
+        base_height_target = 0.7
         feet_height_target = 0.04
-        feet_height_target_max = 0.07
+        feet_height_target_max = 0.06
         use_guidance_terrain = True
         only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
 
-        cycle_time = 0.64  # 0.64
-        target_joint_pos_scale = 0.19  # 0.3
+        cycle_time = 0.7  # 0.64
+        target_joint_pos_scale = 0.3  # 0.19
 
         min_dist = 0.18
         max_dist = 0.50
@@ -159,7 +159,7 @@ class PddZJUCfg(PddBaseCfg):
             # stand_still = 2.0
 
 
-class PddZJUCfgPPO(PddBaseCfgPPO):
+class T1ZJUCfgPPO(T1BaseCfgPPO):
     seed = -1
     runner_name = 'rl_dream'  # rl, distil, mixed
     algorithm_name = 'ppo_zju'
@@ -201,7 +201,7 @@ class PddZJUCfgPPO(PddBaseCfgPPO):
         use_amp = True
         continue_from_last_std = True
 
-    class runner(PddBaseCfgPPO.runner):
+    class runner(T1BaseCfgPPO.runner):
         max_iterations = 50000  # number of policy updates
 
         # logging

@@ -21,7 +21,17 @@ class ObsGRU(nn.Module):
         super().__init__()
         activation = nn.ReLU(inplace=True)
 
-        if env_cfg.n_proprio == 45:
+        if env_cfg.n_proprio == 47:  # Booster, ref
+            self.conv_layers = nn.Sequential(
+                nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4),
+                activation,
+                nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=2),
+                activation,
+                nn.Conv1d(in_channels=32, out_channels=64, kernel_size=4, stride=1),  # (8 * channel_size, 1)
+                activation,
+                nn.Flatten()
+            )
+        elif env_cfg.n_proprio == 45:  # Go1
             self.conv_layers = nn.Sequential(
                 nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4, padding=1),
                 activation,
@@ -31,7 +41,7 @@ class ObsGRU(nn.Module):
                 activation,
                 nn.Flatten()
             )
-        elif env_cfg.n_proprio == 41:
+        elif env_cfg.n_proprio == 41:  # pdd, ref
             self.conv_layers = nn.Sequential(
                 nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4, padding=1),
                 activation,
@@ -41,16 +51,16 @@ class ObsGRU(nn.Module):
                 activation,
                 nn.Flatten()
             )
-        elif env_cfg.n_proprio == 39:
-            self.conv_layers = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4),
-                activation,
-                nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=1),
-                activation,
-                nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=1),  # (8 * channel_size, 1)
-                activation,
-                nn.Flatten()
-            )
+        # elif env_cfg.n_proprio == 39:  #
+        #     self.conv_layers = nn.Sequential(
+        #         nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4),
+        #         activation,
+        #         nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=1),
+        #         activation,
+        #         nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=1),  # (8 * channel_size, 1)
+        #         activation,
+        #         nn.Flatten()
+        #     )
         else:
             raise NotImplementedError
 
@@ -191,30 +201,30 @@ class ReconGRU(nn.Module):
         #     activation,
         #     nn.Conv2d(4, 1, kernel_size=3, stride=1, padding=1),
         # )
-        self.recon_rough = nn.Sequential(
-            nn.Unflatten(1, (8, 8, 4)),
-            nn.Conv2d(8, 8, kernel_size=3, padding=1),
-            activation,
-            nn.Upsample(scale_factor=2),
-            nn.Conv2d(8, 4, kernel_size=3, padding=1),
-            activation,
-            nn.Upsample(scale_factor=2),
-            nn.Conv2d(4, 1, kernel_size=3, padding=1),
-        )
-
         # self.recon_rough = nn.Sequential(
-        #     nn.Linear(policy_cfg.recon_gru_hidden_size, 3 * 32 * 16),
-        #     nn.ELU(),
-        #     nn.Unflatten(1, (3, 32, 16)),
-        #
-        #     nn.Conv2d(3, 16, kernel_size=3, padding=1),  # (16, 32, 16)
-        #     nn.ELU(),
-        #     nn.Conv2d(16, 32, kernel_size=3, padding=1),  # (8, 32, 16)
-        #     nn.ELU(),
-        #     nn.Conv2d(32, 16, kernel_size=3, padding=1),  # (8, 32, 16)
-        #     nn.ELU(),
-        #     nn.Conv2d(16, 1, kernel_size=3, padding=1)  # (1, 32, 16)
+        #     nn.Unflatten(1, (8, 8, 4)),
+        #     nn.Conv2d(8, 8, kernel_size=3, padding=1),
+        #     activation,
+        #     nn.Upsample(scale_factor=2),
+        #     nn.Conv2d(8, 4, kernel_size=3, padding=1),
+        #     activation,
+        #     nn.Upsample(scale_factor=2),
+        #     nn.Conv2d(4, 1, kernel_size=3, padding=1),
         # )
+
+        self.recon_rough = nn.Sequential(
+            nn.Linear(policy_cfg.recon_gru_hidden_size, 3 * 32 * 16),
+            activation,
+            nn.Unflatten(1, (3, 32, 16)),
+
+            nn.Conv2d(3, 16, kernel_size=3, padding=1),  # (16, 32, 16)
+            activation,
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),  # (8, 32, 16)
+            activation,
+            nn.Conv2d(32, 16, kernel_size=3, padding=1),  # (8, 32, 16)
+            activation,
+            nn.Conv2d(16, 1, kernel_size=3, padding=1)  # (1, 32, 16)
+        )
 
         self.recon_refine = UNet()
 

@@ -25,6 +25,7 @@ class HumanoidEnv(ParkourTask):
         self.feet_air_time_avg = self._zero_tensor(self.num_envs, self.feet_indices.shape[0]) + 0.1
         self.contact_filt = self._zero_tensor(self.num_envs, len(self.feet_indices), dtype=torch.bool)
         self.contact_forces_avg = self._zero_tensor(self.num_envs, len(self.feet_indices))
+        self.feet_at_edge = self._zero_tensor(self.num_envs, len(self.feet_indices), dtype=torch.bool)
 
         self.phase = self._zero_tensor(self.num_envs)
         self.phase_length_buf = self._zero_tensor(self.num_envs)
@@ -49,6 +50,13 @@ class HumanoidEnv(ParkourTask):
 
         contact = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1) > 2.
         self.contact_filt[:] = contact | self.last_contacts | self._get_stance_mask()
+
+        feet_pos_xy = self.sim.link_pos[:, self.feet_indices, :2] + self.cfg.terrain.border_size
+        feet_pos_xy = (feet_pos_xy / self.cfg.terrain.horizontal_scale).round().long()
+        feet_pos_xy[..., 0] = torch.clip(feet_pos_xy[..., 0], 0, self.sim.edge_mask.shape[0] - 1)
+        feet_pos_xy[..., 1] = torch.clip(feet_pos_xy[..., 1], 0, self.sim.edge_mask.shape[1] - 1)
+        feet_at_edge = self.sim.edge_mask[feet_pos_xy[..., 0], feet_pos_xy[..., 1]]
+        self.feet_at_edge[:] = self.contact_filt & feet_at_edge
 
         # update feet height
         feet_pos = self.sim.link_pos[:, self.feet_indices]
@@ -451,3 +459,7 @@ class HumanoidEnv(ParkourTask):
     #     # clip to max error = 1 rad/s per joint to avoid huge penalties
     #     self.dof_vel_limits[[4, 9]] = 10
     #     return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits * self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)
+
+    def _reward_feet_edge(self):
+        rew = torch.sum(self.feet_at_edge.float(), dim=-1)
+        return rew

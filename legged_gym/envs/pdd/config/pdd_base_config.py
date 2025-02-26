@@ -44,7 +44,7 @@ class PddBaseCfg(BaseConfig):
         y_range = [-0.4, 0.4]
 
         edge_width_thresh = 0.05
-        horizontal_scale = 0.05  # [m] influence computation time by a lot
+        horizontal_scale = 0.02  # [m] influence computation time by a lot
         vertical_scale = 0.005  # [m]
         border_size = 5  # [m]
         roughness_height = [0.0, 0.03]

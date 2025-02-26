@@ -135,6 +135,7 @@ class BaseTask:
         self.extras = {}
 
         if not self.sim.headless:
+            self.pending_vis_task = []
             self.joystick_handler = JoystickHandler(self.sim, force_connected=self.cfg.play.control)
 
     # ---------------------------------------------- Robots Creation ----------------------------------------------
@@ -408,6 +409,10 @@ class BaseTask:
         self.sim.apply_perturbation(apply_force, apply_torque)
 
     def render(self):
+        while len(self.pending_vis_task) > 0:
+            t = self.pending_vis_task.pop(0)
+            t[0](*t[1:])
+
         self.sim.render()
 
     # ---------------------------------------------- Robots Reset ----------------------------------------------
