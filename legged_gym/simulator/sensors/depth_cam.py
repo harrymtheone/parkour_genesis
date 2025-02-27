@@ -37,9 +37,12 @@ class DepthCam(SensorBase):
                                 delay_prop=cfg_dict['delay_prop'],
                                 device=device)
 
-    def get(self, get_cloud=False, get_raw=False, **kwargs):
+    def get(self, get_cloud=False, get_pos=False, get_raw=False, **kwargs):
         if get_cloud:
             return self.cloud, self.cloud_valid
+
+        if get_pos:
+            return self.sensor_pos.numpy()
 
         if get_raw:
             return self.depth_raw.clone()

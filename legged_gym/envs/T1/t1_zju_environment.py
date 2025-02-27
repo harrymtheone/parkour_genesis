@@ -179,6 +179,7 @@ class T1ZJUEnvironment(HumanoidEnv):
             self._draw_goals()
             # self._draw_height_field()
             # self._draw_edge()
+            self._draw_camera()
 
         if self.cfg.sensors.activated:
             depth_img = self.sensors.get('depth_0')

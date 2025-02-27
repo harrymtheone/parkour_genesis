@@ -24,7 +24,7 @@ class T1ZJUCfg(T1BaseCfg):
         activated = True
 
         class depth_0:
-            position = [0.10, 0, 0.0]  # front camera
+            position = [0.13, 0, 0.38]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch = 60  # positive is looking down
             pitch_range = [-1, 1]
@@ -52,7 +52,7 @@ class T1ZJUCfg(T1BaseCfg):
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
-        curriculum = False
+        curriculum = True
 
         terrain_dict = {
             'smooth_slope': 1,
@@ -100,7 +100,7 @@ class T1ZJUCfg(T1BaseCfg):
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = switch
-        randomize_coulomb_friction = switch
+        randomize_coulomb_friction = False
 
     class rewards:
         base_height_target = 0.7

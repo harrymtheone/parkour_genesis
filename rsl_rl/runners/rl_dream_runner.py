@@ -110,18 +110,18 @@ class RLDreamRunner:
             collection_time = time.time() - start
             start = time.time()
 
-            update_info = self.alg.update(update_est=True)
-            # if self.cur_it > 2000 and self.cur_it % 5 == 0:
-            #     print('Updating estimation')
-            #     update_info = self.alg.update(update_est=True)
-            # else:
-            #     update_info = self.alg.update(update_est=False)
+            # update_info = self.alg.update(update_est=True)
+            if self.cur_it > 2000:
+                print('Updating estimation')
+                update_info = self.alg.update(update_est=True)
+            else:
+                update_info = self.alg.update(update_est=False)
 
             torch.cuda.synchronize()
             learn_time = time.time() - start
 
-            # if self.env.cfg.rewards.only_positive_rewards:
-            #     self.env.only_positive_rewards = (self.cur_it - self.start_it) < 1000
+            if self.env.cfg.rewards.only_positive_rewards:
+                self.env.only_positive_rewards = (self.cur_it - self.start_it) < 1000
 
             # self.env.reward_scales['orientation'] = linear_change(-1.0 * 3, -1.0, 1000, 500, self.cur_it)
             # self.env.reward_scales['base_height'] = linear_change(-1.0 * 3, -1.0, 1000, 500, self.cur_it)

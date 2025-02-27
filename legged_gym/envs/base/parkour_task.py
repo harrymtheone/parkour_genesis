@@ -429,6 +429,11 @@ class ParkourTask(BaseTask):
         else:
             self.sim.draw_points([cur_goal], self.cfg.env.next_goal_threshold, (0, 0, 1), sphere_lines=16)
 
+    def _draw_camera(self):
+        cam_pos = self.sensors.get('depth_0', get_pos=True)
+        self.sim.draw_points(cam_pos, 0.05, (1, 0, 0), sphere_lines=16)
+
+
         # for i, goal in enumerate(self.env_goals[self.lookat_id].cpu().numpy()):
         #     pose = gymapi.Transform(gymapi.Vec3(goal[0], goal[1], goal_z), r=None)
         #
