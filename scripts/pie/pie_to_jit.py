@@ -29,7 +29,8 @@ class Policy(nn.Module):
 
 def trace():
     # proj, cfg, exptid, checkpoint = 't1', 't1_pie', 't1_pie_002', 25600
-    proj, cfg, exptid, checkpoint = 't1', 't1_pie', 't1_pie_004', 1300
+    # proj, cfg, exptid, checkpoint = 't1', 't1_pie', 't1_pie_004', 1300
+    proj, cfg, exptid, checkpoint = 't1', 't1_pie', 't1_pie_005', 5200
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):

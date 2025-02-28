@@ -109,8 +109,6 @@ class PPO_PIE(BaseAlgorithm):
         self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
     def update(self, update_est=True, **kwargs):
-        update_est = True  # this improves the performance
-
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0

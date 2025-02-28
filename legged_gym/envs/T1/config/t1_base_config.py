@@ -72,8 +72,6 @@ class T1BaseCfg(BaseConfig):
         slope_treshold = 1.  # slopes above this threshold will be corrected to vertical surfaces
         origin_zero_z = False
 
-        num_goals = 8
-
     class commands:
         num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 8.  # time before command are changed[s]
@@ -139,7 +137,7 @@ class T1BaseCfg(BaseConfig):
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
         randomize_action_delay_each_step = False
-        action_delay_range = [(0, 0), (0, 10), (5, 40), (10, 40)]
+        action_delay_range = [(0, 0), (0, 10), (5, 20), (10, 40)]
         action_delay_update_steps = 3000 * 24
 
         add_dof_lag = False

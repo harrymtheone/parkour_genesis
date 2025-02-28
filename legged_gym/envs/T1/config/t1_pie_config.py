@@ -52,7 +52,7 @@ class T1PIECfg(T1BaseCfg):
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
-        curriculum = False
+        # curriculum = False
 
         terrain_dict = {
             'smooth_slope': 1,
@@ -67,7 +67,7 @@ class T1PIECfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 0,
+            'parkour_stair': 2,
             'parkour_flat': 0,
         }
 
@@ -93,6 +93,7 @@ class T1PIECfg(T1BaseCfg):
 
         push_robots = switch
         action_delay = switch
+        action_delay_range = [(0, 10), (5, 20)]
         add_dof_lag = False
         add_imu_lag = False
 

@@ -33,7 +33,7 @@ class CriticObs(ObsBase):
         self.scan = scan.clone()
 
 
-class T1VbblEnvironment(HumanoidEnv):
+class T1GaitEnvironment(HumanoidEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -43,6 +43,30 @@ class T1VbblEnvironment(HumanoidEnv):
 
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)
         self.feet_hmap_points = self._init_height_points(self.cfg.terrain.feet_pts_x, self.cfg.terrain.feet_pts_y)
+        
+        self.phase_increment_ratio = self._zero_tensor(self.num_envs)
+        
+    def step(self, actions):
+        self.phase_increment_ratio[:] = torch.clip(actions[:, -1], min=-0.5, max=0.5) + 1
+        return super().step(actions[:, :-1])
+
+    def _post_physics_pre_step(self):
+        self.episode_length_buf[:] += 1
+
+        if self.cfg.domain_rand.action_delay and (self.global_counter % self.cfg.domain_rand.action_delay_update_steps == 0):
+            if len(self.cfg.domain_rand.action_delay_range) > 0:
+                self.action_delay_buf.update_delay_range(self.cfg.domain_rand.action_delay_range.pop(0))
+
+        alpha = self.cfg.rewards.EMA_update_alpha
+        self.contact_forces_avg[self.contact_filt] = alpha * self.contact_forces_avg[self.contact_filt]
+        self.contact_forces_avg[self.contact_filt] += (1 - alpha) * self.sim.contact_forces[:, self.feet_indices][self.contact_filt][:, 2]
+
+        first_contact = (self.feet_air_time > 0.) * self.contact_filt
+        self.feet_air_time[self.contact_filt | self.is_zero_command.unsqueeze(1)] += self.dt
+        self.feet_air_time_avg[first_contact] = alpha * self.feet_air_time_avg[first_contact] + (1 - alpha) * self.feet_air_time[first_contact]
+
+        self.phase_length_buf[:] += self.dt * self.phase_increment_ratio
+        self._update_phase()
 
     def get_feet_hmap(self):
         feet_pos = self.sim.link_pos[:, self.feet_indices]
@@ -179,7 +203,7 @@ class T1VbblEnvironment(HumanoidEnv):
             self._draw_goals()
             # self._draw_height_field()
             # self._draw_edge()
-            # self._draw_camera()
+            self._draw_camera()
             self._draw_feet_at_edge()
 
         if self.cfg.sensors.activated:
@@ -198,7 +222,7 @@ class T1VbblEnvironment(HumanoidEnv):
             # pts = cloud[cloud_valid]
             #
             # if len(pts) > 0:
-            #     indices = torch.randperm(len(pts))[:200]
-            #     self.sim.draw_points(pts[indices])
+            #     indices = torch.randperm(len(pts))[:400]
+            #     self.sim.draw_points(pts[indices], color=(1, 0, 0))
 
         super().render()

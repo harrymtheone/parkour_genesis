@@ -82,7 +82,9 @@ class ParkourTask(BaseTask):
             print('normal terrain env number:', torch.sum(self.env_class < 4).cpu().numpy())
 
             self.terrain_goals = torch.from_numpy(self.sim.terrain.goals).to(self.device).to(torch.float)
+            self.terrain_goal_num = torch.from_numpy(self.sim.terrain.num_goals).to(self.device).to(torch.long)
             self.env_goals = self.terrain_goals[self.env_levels, self.env_cols]  # (num_envs, num_goals, 3))
+            self.env_goal_num = self.terrain_goal_num[self.env_levels, self.env_cols]  # (num_envs, num_goals))
 
             self.target_pos_rel = self._zero_tensor(self.num_envs, 2)
             self.target_yaw = self._zero_tensor(self.num_envs)
@@ -205,7 +207,7 @@ class ParkourTask(BaseTask):
 
     def _check_termination(self):
         super()._check_termination()
-        self.reach_goal_cutoff[:] = self.cur_goal_idx >= self.cfg.terrain.num_goals
+        self.reach_goal_cutoff[:] = (self.cur_goal_idx >= self.env_goal_num) & (self.env_class >= 4)
         self.reset_buf[:] |= self.reach_goal_cutoff
 
     def _post_physics_mid_step(self):
@@ -215,7 +217,7 @@ class ParkourTask(BaseTask):
 
         # update goals
         dist = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1)
-        self.reached_goal_ids[:] = dist < self.cfg.env.next_goal_threshold
+        self.reached_goal_ids[:] = (dist < self.cfg.env.next_goal_threshold) & (self.env_class >= 4)
 
         # update goals
         self.reach_goal_timer[self.reached_goal_ids] += 1
@@ -265,8 +267,8 @@ class ParkourTask(BaseTask):
         # curriculum logic for parkour terrain
         env_is_parkour = self.env_class[env_ids] >= 4
         if len(env_is_parkour) > 0:
-            move_up[env_is_parkour] = self.cur_goal_idx[env_ids][env_is_parkour] >= self.cfg.terrain.num_goals
-            move_down[env_is_parkour] = self.cur_goal_idx[env_ids][env_is_parkour] < self.cfg.terrain.num_goals // 2
+            move_up[env_is_parkour] = (self.cur_goal_idx >= self.env_goal_num)[env_ids][env_is_parkour]
+            move_down[env_is_parkour] = (self.cur_goal_idx < self.env_goal_num // 2)[env_ids][env_is_parkour]
 
         self.env_levels[env_ids] += 1 * move_up - 1 * move_down
 
@@ -294,6 +296,7 @@ class ParkourTask(BaseTask):
         self.env_origins[env_ids] = self.terrain_origins[self.env_levels[env_ids], self.env_cols[env_ids]]
         self.env_class[env_ids] = self.terrain_class[self.env_levels[env_ids], self.env_cols[env_ids]]
         self.env_goals[:] = self.terrain_goals[self.env_levels, self.env_cols]
+        self.env_goal_num[:] = self.terrain_goal_num[self.env_levels, self.env_cols]
 
     def _resample_commands(self, env_ids: torch.Tensor):
         self.commands[env_ids] = 0
@@ -426,7 +429,10 @@ class ParkourTask(BaseTask):
         self.pending_vis_task.append((func, hmap, color))
 
     def _draw_goals(self):
-        goals = self.env_goals[self.lookat_id].cpu().numpy()
+        if self.env_goal_num[self.lookat_id] == 0:
+            return
+
+        goals = self.env_goals[self.lookat_id, :self.env_goal_num[self.lookat_id]].cpu().numpy()
         self.sim.draw_points(goals, self.cfg.env.next_goal_threshold, (1, 0, 0), sphere_lines=16)
 
         cur_goal_idx = min(self.cur_goal_idx[self.lookat_id].item(), len(goals) - 1)

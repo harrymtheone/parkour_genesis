@@ -70,8 +70,6 @@ class Go1BaseCfg(BaseConfig):
         slope_treshold = 1.5  # slopes above this threshold will be corrected to vertical surfaces
         origin_zero_z = False
 
-        num_goals = 8
-
     class commands:
         num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 8.  # time before command are changed[s]

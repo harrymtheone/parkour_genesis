@@ -1,20 +1,24 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy.stats import vonmises
 
-# Parameters for the von Mises distribution
-kappa = 4  # Concentration parameter
-mu = 0     # Mean (location) parameter
-
 # Create an array of angles (in radians) from -π to π
-theta = np.linspace(-np.pi, np.pi, 1000)
+theta = np.linspace(0., 1., 1000)
 
 # Compute the PDF of the von Mises distribution
-pdf_values = vonmises.pdf(theta, kappa, loc=mu)
+swing1 = vonmises.cdf(2 * np.pi * theta, 50, loc=0.2 * 2 * np.pi)
+swing2 = vonmises.cdf(2 * np.pi * theta, 50, loc=0.6 * 2 * np.pi)
+swing = swing1 * (1 - swing2)
+
+stance1 = vonmises.cdf(2 * np.pi * theta, 50, loc=0.6 * 2 * np.pi)
+stance2 = vonmises.cdf(2 * np.pi * theta, 50, loc=0.2 * 2 * np.pi)
+stance = stance1 * (1 - stance2)
+
+c = stance
 
 # Plot the von Mises distribution
 plt.figure(figsize=(8, 6))
-plt.plot(theta, pdf_values, label=f"κ = {kappa}, μ = {mu}", color='blue')
+plt.plot(theta, c, color='blue')
 plt.title("Von Mises Distribution")
 plt.xlabel("Angle (radians)")
 plt.ylabel("Probability Density")

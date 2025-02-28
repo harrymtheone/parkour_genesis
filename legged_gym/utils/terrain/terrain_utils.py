@@ -136,7 +136,6 @@ def pit_terrain(terrain: SubTerrain, depth, num_goal=8, bottom_size=1.):
 def parkour_terrain(terrain: SubTerrain,
                     platform_len=2.5,
                     platform_height=0.,
-                    num_stones=8,
                     x_range=[1.8, 1.9],
                     y_range=[0., 0.1],
                     z_range=[-0.2, 0.2],
@@ -148,8 +147,10 @@ def parkour_terrain(terrain: SubTerrain,
                     last_incline_height=0.6,
                     last_stone_len=1.6,
                     pit_depth=[0.5, 1.]):
+    num_stones = 8
+
     # 1st dimension: x, 2nd dimension: y
-    goals = np.zeros((num_stones + 2, 2))
+    goals = np.zeros((num_stones, 2))
     terrain.height_field_raw[:] = -round(np.random.uniform(pit_depth[0], pit_depth[1]) / terrain.vertical_scale)
 
     mid_y = terrain.length // 2  # length is actually y width
@@ -177,7 +178,7 @@ def parkour_terrain(terrain: SubTerrain,
     # dis_z = np.random.randint(dis_z_min, dis_z_max)
     dis_z = 0
 
-    for i in range(num_stones):
+    for i in range(num_stones - 2):
         dis_x += np.random.randint(dis_x_min, dis_x_max)
         pos_neg = round(2 * (left_right_flag - 0.5))
         dis_y = mid_y + pos_neg * np.random.randint(dis_y_min, dis_y_max)
@@ -213,7 +214,6 @@ def parkour_terrain(terrain: SubTerrain,
 def parkour_gap_terrain(terrain: SubTerrain,
                         platform_len=2.5,
                         platform_height=0.,
-                        num_gaps=8,
                         gap_size=0.3,
                         x_range=[1.6, 2.4],
                         y_range=[-1.2, 1.2],
@@ -222,7 +222,9 @@ def parkour_gap_terrain(terrain: SubTerrain,
                         pad_width=0.1,
                         pad_height=0.5,
                         flat=False):
-    goals = np.zeros((num_gaps + 2, 2))
+    num_gaps = 8
+
+    goals = np.zeros((num_gaps, 2))
     # terrain.height_field_raw[:] = -200
     # import ipdb; ipdb.set_trace()
     mid_y = terrain.length // 2  # length is actually y width
@@ -250,7 +252,7 @@ def parkour_gap_terrain(terrain: SubTerrain,
     dis_x = platform_len
     goals[0] = [platform_len - 1, mid_y]
     last_dis_x = dis_x
-    for i in range(num_gaps):
+    for i in range(num_gaps - 2):
         rand_x = np.random.randint(dis_x_min, dis_x_max)
         dis_x += rand_x
         rand_y = np.random.randint(dis_y_min, dis_y_max)
@@ -284,12 +286,13 @@ def parkour_gap_terrain(terrain: SubTerrain,
 
 
 def parkour_box_terrain(terrain: SubTerrain,
-                        num_goals=8,
                         platform_len=1.5,
                         box_length=(1., 2.0),
                         box_width=(1.5, 3),
                         box_height=(0.2, 0.5),
                         x_range=(3, 4)):
+    num_box = 3
+
     mid_y = terrain.length // 2  # length is actually y width
     platform_len = round(platform_len / terrain.horizontal_scale)
 
@@ -305,24 +308,19 @@ def parkour_box_terrain(terrain: SubTerrain,
 
     cur_x = platform_len
 
-    goals = np.zeros((num_goals, 2))
+    goals = np.zeros((num_box + 2, 2))
     goals[0] = [platform_len - 1, mid_y]
 
-    for i in range(num_goals - 1):
+    for i in range(num_box):
         rand_x = np.random.randint(dis_x_min, dis_x_max)
         rand_len = np.random.randint(box_length_min, box_length_max)
         rand_wid = np.random.randint(box_width_min, box_width_max)
         rand_height = np.random.randint(box_height_min, box_height_max)
         cur_x += rand_x
 
-        if cur_x + rand_len // 2 > terrain.width - platform_len:
-            goals[i + 1] = goals[i]
-
-        else:
-            goals[i + 1] = [cur_x, mid_y]
-
-            terrain.height_field_raw[cur_x - rand_len // 2: cur_x + rand_len // 2,
-            mid_y - rand_wid // 2: mid_y + rand_wid // 2] = rand_height
+        goals[i + 1] = [cur_x, mid_y]
+        terrain.height_field_raw[cur_x - rand_len // 2: cur_x + rand_len // 2,
+        mid_y - rand_wid // 2: mid_y + rand_wid // 2] = rand_height
 
     goals[-1] = [terrain.width, mid_y]
     terrain.goals = goals * terrain.horizontal_scale
@@ -331,13 +329,14 @@ def parkour_box_terrain(terrain: SubTerrain,
 def parkour_step_terrain(terrain: SubTerrain,
                          platform_len=2.5,
                          platform_height=0.,
-                         num_stones=8,
                          x_range=[0.2, 0.4],
                          y_range=[-0.15, 0.15],
                          half_valid_width=[0.15, 0.2],
                          step_height=0.2,
                          pad_width=0.1,
                          pad_height=0.5):
+    num_stones = 6
+
     goals = np.zeros((num_stones + 2, 2))
     mid_y = terrain.length // 2  # length is actually y width
 
@@ -392,7 +391,6 @@ def parkour_step_terrain(terrain: SubTerrain,
 def parkour_stair_terrain(terrain: SubTerrain,
                           platform_len=2.5,
                           num_steps=16,
-                          num_goals=8,
                           step_height=0.2,
                           step_width=0.2):
     terrain.height_field_guidance = terrain.height_field_raw.copy()
@@ -427,12 +425,9 @@ def parkour_stair_terrain(terrain: SubTerrain,
         dis_x += step_width
         last_stair_height = stair_height
 
-    goals = np.zeros((num_goals, 2))
+    goals = np.zeros((2, 2))
     goals[0] = [mid_x_stair, mid_y]
     goals[1] = [dis_x + round(1 / terrain.horizontal_scale), mid_y]
-    for i in range(2, num_goals):
-        goals[i] = goals[i - 1]
-
     terrain.goals = goals * terrain.horizontal_scale
 
 

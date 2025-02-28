@@ -107,7 +107,6 @@ class RLDreamRunner:
             collection_time = time.time() - start
             start = time.time()
 
-            # update_info = self.alg.update(update_est=True)
             if self.cur_it > 2000:
                 print('Updating estimation')
                 update_info = self.alg.update(update_est=True)

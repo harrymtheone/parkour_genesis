@@ -3,7 +3,7 @@ import numpy as np
 from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 
-class T1VbblCfg(T1BaseCfg):
+class T1GaitCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 2048  # 6144
 
@@ -52,13 +52,13 @@ class T1VbblCfg(T1BaseCfg):
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
-        curriculum = True
+        # curriculum = False
 
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 1,
-            'stairs_down': 1,
+            'stairs_up': 0,
+            'stairs_down': 0,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -67,7 +67,7 @@ class T1VbblCfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,
+            'parkour_stair': 2,
             'parkour_flat': 0,
         }
 
@@ -93,7 +93,6 @@ class T1VbblCfg(T1BaseCfg):
 
         push_robots = switch
         action_delay = switch
-        action_delay_range = [(0, 10)]
         add_dof_lag = False
         add_imu_lag = False
 
@@ -129,15 +128,15 @@ class T1VbblCfg(T1BaseCfg):
             # gait
             joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 1.2  # 0.2
+            feet_clearance = 0.2  # 0.2
             feet_air_time = 1.
-            foot_slip = -1.
-            feet_distance = 0.5
-            knee_distance = 0.5
+            foot_slip = -0.1  # -1.
+            feet_distance = 0.2
+            knee_distance = 0.2
             feet_rotation = 0.3
 
             # contact
-            feet_contact_forces = -0.1
+            feet_contact_forces = -0.01  # -0.1
             feet_stumble = -3.0
             feet_edge = -1.0
 
@@ -163,10 +162,10 @@ class T1VbblCfg(T1BaseCfg):
             # stand_still = 2.0
 
 
-class T1VbblCfgPPO(T1BaseCfgPPO):
+class T1GaitCfgPPO(T1BaseCfgPPO):
     seed = -1
     runner_name = 'rl_dream'  # rl, distil, mixed
-    algorithm_name = 'ppo_vbbl'
+    algorithm_name = 'ppo_gait'
 
     class policy:
         # actor parameters
@@ -177,23 +176,20 @@ class T1VbblCfgPPO(T1BaseCfgPPO):
         critic_hidden_dims = [512, 256, 128]
 
         use_recurrent_policy = True
+        estimator_gru_hidden_size = 256
 
-        recon_gru_hidden_size = 256
-        modulator_hidden_size = 256
-
-        len_latent = 16
         len_base_vel = 3
         len_latent_feet = 8
         len_latent_body = 16
-        transformer_embed_dim = 64
+        len_hmap_latent = 128
 
     class algorithm:
         # training params
         value_loss_coef = 1.0
         use_clipped_value_loss = True
         clip_param = 0.2
-        entropy_coef = 0.005
-        num_learning_epochs = 5
+        entropy_coef = 0.01
+        num_learning_epochs = 10
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
