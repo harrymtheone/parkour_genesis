@@ -350,12 +350,15 @@ class ParkourTask(BaseTask):
                                                            len(env_ids_parkour))
             motion_type[env_ids_parkour] = sample_motion_type([1, 0, 0, 9], len(env_ids_parkour))
 
-        # for parkour stair, we don't want too large speed
-        env_ids_parkour_stair = env_ids[self.env_class[env_ids] == Terrain.terrain_type.parkour_stair]
-        if len(env_ids_parkour_stair) > 0:
-            self.commands[env_ids_parkour_stair, 0] = torch.abs(sample_cmd(self.cmd_ranges_stair["lin_vel_x"],
-                                                                           self.cfg.commands.lin_vel_clip,
-                                                                           len(env_ids_parkour_stair)))
+        # # for parkour stair, we don't want too large speed
+        # env_ids_parkour_stair = env_ids[self.env_class[env_ids] == Terrain.terrain_type.parkour_stair]
+        # if len(env_ids_parkour_stair) > 0:
+        #     # self.commands[env_ids_parkour_stair, 0] = torch.abs(sample_cmd(self.cmd_ranges_stair["lin_vel_x"],
+        #     #                                                                self.cfg.commands.lin_vel_clip,
+        #     #                                                                len(env_ids_parkour_stair)))
+        #     self.commands_parkour[env_ids_parkour_stair, 0] = torch.abs(sample_cmd(self.cmd_ranges_stair["lin_vel_x"],
+        #                                                                            self.cfg.commands.lin_vel_clip,
+        #                                                                            len(env_ids_parkour_stair)))
 
         # re-scale command (to prevent speed norm greater than x_vel_max)
         commands_normal = self.commands[self.env_class < 4]
@@ -368,6 +371,8 @@ class ParkourTask(BaseTask):
         self.commands[env_ids[motion_type == 0]] = 0  # stationary
         self.commands[env_ids[motion_type == 1], 2:4] = 0  # xy
         self.commands[env_ids[motion_type == 2], :2] = 0  # yaw
+
+        self.command_x_parkour[:] = self.commands[:, 0]
 
     def _update_command(self):
         super()._update_command()
@@ -382,7 +387,7 @@ class ParkourTask(BaseTask):
         self.target_yaw[:] = torch.atan2(target_vec_norm[:, 1], target_vec_norm[:, 0])
 
         if self.global_counter % 5 == 0:
-            self.delta_yaw[:] = self.target_yaw - self.base_euler[:, 2]
+            self.delta_yaw[:] = wrap_to_pi(self.target_yaw - self.base_euler[:, 2])
 
         if not self.cfg.play.control:
             # stair terrains use heading commands
@@ -394,8 +399,11 @@ class ParkourTask(BaseTask):
 
             # envs' yaw value of parkour terrain is computed using yaw difference
             env_is_parkour = self.env_class >= 4
-            self.commands[env_is_parkour, 2] = wrap_to_pi(self.delta_yaw[env_is_parkour])
+            self.commands[env_is_parkour, 2] = self.delta_yaw[env_is_parkour]
             self.commands[env_is_parkour, 2] = torch.clip(self.commands[env_is_parkour, 2], *self.cmd_ranges_parkour['ang_vel_yaw'])
+
+            cmd_ratio = torch.clip(1 - 2 * torch.abs(self.delta_yaw / torch.pi), min=0)
+            self.commands[env_is_parkour, 0] = (cmd_ratio * self.command_x_parkour)[env_is_parkour]
 
     def _add_noise(self, x, scale):
         if self.cfg.noise.add_noise:
@@ -433,7 +441,6 @@ class ParkourTask(BaseTask):
         cam_pos = self.sensors.get('depth_0', get_pos=True)
         self.sim.draw_points(cam_pos, 0.05, (1, 0, 0), sphere_lines=16)
 
-
         # for i, goal in enumerate(self.env_goals[self.lookat_id].cpu().numpy()):
         #     pose = gymapi.Transform(gymapi.Vec3(goal[0], goal[1], goal_z), r=None)
         #
@@ -454,27 +461,6 @@ class ParkourTask(BaseTask):
         #         pose_arrow = pose_robot[:2] + 0.1 * (i + 3) * target_vec_norm[self.lookat_id, :2].cpu().numpy()
         #         pose = gymapi.Transform(gymapi.Vec3(pose_arrow[0], pose_arrow[1], pose_robot[2]), r=None)
         #         gymutil.draw_lines(sphere_geom_arrow, self.gym, self.viewer, self.envs[self.lookat_id], pose)
-
-    # def _draw_feet_at_edge(self):
-    #     if hasattr(self, 'feet_at_edge'):
-    #         non_edge_geom = gymutil.WireframeSphereGeometry(0.022, 8, 8, None, color=(0, 1, 0))
-    #         edge_geom = gymutil.WireframeSphereGeometry(0.022, 8, 8, None, color=(1, 0, 0))
-    #         stumble_geom = gymutil.WireframeSphereGeometry(0.04, 8, 8, None, color=(1, 1, 0))
-    #
-    #         feet_pos = self.rigid_body_states[self.lookat_id, self.feet_indices, :3]
-    #         force = self.contact_forces[self.lookat_id, self.feet_indices]
-    #         stumble = torch.norm(force[:, :2], dim=1) > 4 * torch.abs(force[:, 2])
-    #
-    #         for i in range(4):
-    #             pose = gymapi.Transform(gymapi.Vec3(feet_pos[i, 0], feet_pos[i, 1], feet_pos[i, 2]), r=None)
-    #
-    #             if self.feet_at_edge[self.lookat_id, i]:
-    #                 gymutil.draw_lines(edge_geom, self.gym, self.viewer, self.envs[self.lookat_id], pose)
-    #             else:
-    #                 gymutil.draw_lines(non_edge_geom, self.gym, self.viewer, self.envs[self.lookat_id], pose)
-    #
-    #             if stumble[i]:
-    #                 gymutil.draw_lines(stumble_geom, self.gym, self.viewer, self.envs[self.lookat_id], pose)
 
     def _draw_height_field(self, draw_guidance=True):
         # for debug use!!!

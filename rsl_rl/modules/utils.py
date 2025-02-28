@@ -22,7 +22,7 @@ def get_activation(act_name):
         return None
 
 
-def make_linear_layers(*shape, activation_func=None):
+def make_linear_layers(*shape, activation_func=None, output_activation=True):
     if activation_func is None:
         raise ValueError('activation_func cannot be None!')
 
@@ -31,6 +31,9 @@ def make_linear_layers(*shape, activation_func=None):
     for l1, l2 in zip(shape[:-1], shape[1:]):
         layers.append(nn.Linear(l1, l2))
         layers.append(activation_func)
+
+    if not output_activation:
+        layers.pop(-1)
 
     return layers
 

@@ -1,7 +1,11 @@
 from .T1.t1_dreamwaq_environment import T1DreamWaqEnvironment
 from .T1.t1_zju_environment import T1ZJUEnvironment
+from .T1.t1_pie_environment import T1PIEEnvironment
+from .T1.t1_vbbl_environment import T1VbblEnvironment
 from .T1.config.t1_dreamwaq_config import T1DreamWaqCfg, T1DreamWaqCfgPPO
 from .T1.config.t1_zju_config import T1ZJUCfg, T1ZJUCfgPPO
+from .T1.config.t1_pie_config import T1PIECfg, T1PIECfgPPO
+from .T1.config.t1_vbbl_config import T1VbblCfg, T1VbblCfgPPO
 
 from .pdd.config.pdd_dreamwaq_config import PddDreamWaqCfg, PddDreamWaqCfgPPO, PddDreamWaqGRUCfgPPO
 from .pdd.config.pdd_scan_config import PddScanCfg, PddScanCfgPPO, PddScanStairCfg, PddScanStairCfgPPO
@@ -24,6 +28,8 @@ task_list = [
 
     ['t1_dreamwaq', T1DreamWaqEnvironment, T1DreamWaqCfg(), T1DreamWaqCfgPPO()],
     ['t1_zju', T1ZJUEnvironment, T1ZJUCfg(), T1ZJUCfgPPO()],
+    ['t1_pie', T1PIEEnvironment, T1PIECfg(), T1PIECfgPPO()],
+    ['t1_vbbl', T1VbblEnvironment, T1VbblCfg(), T1VbblCfgPPO()],
 
     ['go1_zju', Go1ZJUEnvironment, Go1ZJUCfg(), Go1ZJUCfgPPO()]
 

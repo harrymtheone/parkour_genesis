@@ -69,7 +69,7 @@ class T1BaseCfg(BaseConfig):
         terrain_parkour_size = [18., 4.]
 
         # trimesh only:
-        slope_treshold = 1.5  # slopes above this threshold will be corrected to vertical surfaces
+        slope_treshold = 1.  # slopes above this threshold will be corrected to vertical surfaces
         origin_zero_z = False
 
         num_goals = 8
@@ -139,7 +139,7 @@ class T1BaseCfg(BaseConfig):
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
         randomize_action_delay_each_step = False
-        action_delay_range = [(0, 0), (0, 5), (0, 10)]
+        action_delay_range = [(0, 0), (0, 10), (5, 40), (10, 40)]
         action_delay_update_steps = 3000 * 24
 
         add_dof_lag = False

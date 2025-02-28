@@ -4,7 +4,7 @@ import time
 import torch
 import wandb
 
-from ..algorithms import BaseAlgorithm, algorithm_dict
+from rsl_rl.algorithms import BaseAlgorithm, algorithm_dict
 
 
 def linear_change(start, end, span, start_it, cur_it):
@@ -38,9 +38,6 @@ class RLDreamRunner:
         self.cur_it = 0
 
     def learn(self, init_at_random_ep_len=True):
-        mean_value_loss = 0.
-        mean_surrogate_loss = 0.
-
         if init_at_random_ep_len:
             self.env.episode_length_buf = torch.randint_like(self.env.episode_length_buf, high=int(self.env.max_episode_length))
 
@@ -101,7 +98,7 @@ class RLDreamRunner:
                         rew_terrain = mean_env_reward[self.env.env_class == t]
                         coefficient_variation[i] = rew_terrain.std() / (rew_terrain.mean().abs() + 1e-5)
 
-                    p_smpl = 0.9 * p_smpl + 0.1 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
+                    p_smpl = 0.99 * p_smpl + 0.01 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
 
                 # Learning step
                 self.alg.compute_returns(critic_obs)
@@ -120,8 +117,9 @@ class RLDreamRunner:
             torch.cuda.synchronize()
             learn_time = time.time() - start
 
-            if self.env.cfg.rewards.only_positive_rewards:
-                self.env.only_positive_rewards = (self.cur_it - self.start_it) < 1000
+            # if self.env.cfg.rewards.only_positive_rewards:
+            #     # self.env.only_positive_rewards = (self.cur_it - self.start_it) < 1000
+            #     # self.env.only_positive_rewards = self.cur_it < 10000
 
             # self.env.reward_scales['orientation'] = linear_change(-1.0 * 3, -1.0, 1000, 500, self.cur_it)
             # self.env.reward_scales['base_height'] = linear_change(-1.0 * 3, -1.0, 1000, 500, self.cur_it)

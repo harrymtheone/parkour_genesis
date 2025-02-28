@@ -33,7 +33,7 @@ class CriticObs(ObsBase):
         self.scan = scan.clone()
 
 
-class T1ZJUEnvironment(HumanoidEnv):
+class T1VbblEnvironment(HumanoidEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -179,7 +179,7 @@ class T1ZJUEnvironment(HumanoidEnv):
             self._draw_goals()
             # self._draw_height_field()
             # self._draw_edge()
-            self._draw_camera()
+            # self._draw_camera()
             self._draw_feet_at_edge()
 
         if self.cfg.sensors.activated:

@@ -71,6 +71,9 @@ class T1ZJUCfg(T1BaseCfg):
             'parkour_flat': 0,
         }
 
+    class noise(T1BaseCfg.noise):
+        add_noise = True
+
     class domain_rand(T1BaseCfg.domain_rand):
         switch = True
 
@@ -115,7 +118,7 @@ class T1ZJUCfg(T1BaseCfg):
         cycle_time = 0.7  # 0.64
         target_joint_pos_scale = 0.3  # 0.19
 
-        min_dist = 0.18
+        min_dist = 0.2
         max_dist = 0.50
         max_contact_force = 300
 
@@ -124,12 +127,12 @@ class T1ZJUCfg(T1BaseCfg):
         class scales:
             # gait
             joint_pos = 2.
-            feet_clearance = 1.2  # 0.2
             feet_contact_number = 1.2
+            feet_clearance = 1.2  # 0.2
             feet_air_time = 1.
             foot_slip = -1.
-            feet_distance = 0.2
-            knee_distance = 0.2
+            feet_distance = 0.5
+            knee_distance = 0.5
             feet_rotation = 0.3
 
             # contact

@@ -33,7 +33,7 @@ class CriticObs(ObsBase):
         self.scan = scan.clone()
 
 
-class T1ZJUEnvironment(HumanoidEnv):
+class T1PIEEnvironment(HumanoidEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -198,7 +198,7 @@ class T1ZJUEnvironment(HumanoidEnv):
             # pts = cloud[cloud_valid]
             #
             # if len(pts) > 0:
-            #     indices = torch.randperm(len(pts))[:200]
-            #     self.sim.draw_points(pts[indices])
+            #     indices = torch.randperm(len(pts))[:400]
+            #     self.sim.draw_points(pts[indices], color=(1, 0, 0))
 
         super().render()

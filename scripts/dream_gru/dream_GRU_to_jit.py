@@ -48,7 +48,7 @@ def trace():
     # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_003', 4900
     proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_006', 17000
 
-    trace_path = os.path.join('../dream_gru/traced')
+    trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):
         os.mkdir(trace_path)
 

@@ -85,10 +85,10 @@ class PddScanCfg(PddBaseCfg):
 
         class scales:
             joint_pos = 2.0
-            feet_clearance = 0.2
             feet_contact_number = 1.6
 
             # gait
+            feet_clearance = 0.2
             feet_air_time = 1.
             foot_slip = -0.05
             feet_distance = 0.2

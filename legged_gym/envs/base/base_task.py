@@ -106,6 +106,7 @@ class BaseTask:
         self.episode_length_buf = self._zero_tensor(self.num_envs, dtype=torch.long)
         self.time_out_cutoff = self._zero_tensor(self.num_envs, dtype=torch.bool)
         self.commands = self._zero_tensor(self.num_envs, self.cfg.commands.num_commands)  # x vel, y vel, yaw vel, heading
+        self.command_x_parkour = self._zero_tensor(self.num_envs)  # x vel
         self.is_zero_command = self._zero_tensor(self.num_envs, dtype=torch.bool)
 
         # Lag buffer
@@ -358,7 +359,8 @@ class BaseTask:
     def _update_command(self):
         # resample command target
         env_ids = self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt) == 0
-        self._resample_commands(torch.arange(self.num_envs, device=self.device)[env_ids])
+        if torch.any(env_ids):
+            self._resample_commands(torch.arange(self.num_envs, device=self.device)[env_ids])
 
     def _check_termination(self):
         """ Check if environments need to be reset

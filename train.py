@@ -13,7 +13,7 @@ from legged_gym.utils.task_registry import TaskRegistry
 
 
 def train(args):
-    args.headless = False
+    args.headless = True
     # args.simulator = SimulatorType.Genesis
     args.simulator = SimulatorType.IsaacGym
 

@@ -184,12 +184,12 @@ class HumanoidEnv(ParkourTask):
         """
         Calculates the reward based on the distance between the knee of the humanoid.
         """
-        foot_pos = self.sim.link_pos[:, self.knee_indices, :2]
-        foot_dist = torch.norm(foot_pos[:, 0, :] - foot_pos[:, 1, :], dim=1)
+        knee_pos = self.sim.link_pos[:, self.knee_indices, :2]
+        knee_dist = torch.norm(knee_pos[:, 0, :] - knee_pos[:, 1, :], dim=1)
         fd = self.cfg.rewards.min_dist
         max_df = self.cfg.rewards.max_dist / 2
-        d_min = torch.clamp(foot_dist - fd, -0.5, 0.)
-        d_max = torch.clamp(foot_dist - max_df, 0, 0.5)
+        d_min = torch.clamp(knee_dist - fd, -0.5, 0.)
+        d_max = torch.clamp(knee_dist - max_df, 0, 0.5)
         return (torch.exp(-torch.abs(d_min) * 100) + torch.exp(-torch.abs(d_max) * 100)) / 2
 
     def _reward_feet_contact_forces(self):
@@ -197,8 +197,9 @@ class HumanoidEnv(ParkourTask):
         Calculates the reward for keeping contact forces within a specified range. Penalizes
         high contact forces on the feet.
         """
-        # print(self.contact_forces[:, self.feet_indices, :])
-        return torch.sum((torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1) - self.cfg.rewards.max_contact_force).clip(0, 400), dim=1)
+        # print(self.sim.contact_forces[:, self.feet_indices, 2].cpu().numpy())
+        contact_forces = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1)
+        return torch.sum((contact_forces - self.cfg.rewards.max_contact_force).clip(0, 400), dim=1)
 
     def _reward_tracking_lin_vel(self):
         """
@@ -207,6 +208,10 @@ class HumanoidEnv(ParkourTask):
         """
         lin_vel_error_abs = torch.sum(torch.abs(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
         lin_vel_error_square = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+
+        env_is_parkour = self.env_class >= 4
+        lin_vel_error_abs[env_is_parkour] *= 0.2
+        lin_vel_error_square[env_is_parkour] *= 0.2
 
         rew = torch.where(
             self.is_zero_command,
@@ -463,3 +468,24 @@ class HumanoidEnv(ParkourTask):
     def _reward_feet_edge(self):
         rew = torch.sum(self.feet_at_edge.float(), dim=-1)
         return rew
+
+    def _draw_feet_at_edge(self):
+        if hasattr(self, 'feet_at_edge'):
+            feet_pos = self.sim.link_pos[self.lookat_id, self.feet_indices, :3]
+            force = self.sim.contact_forces[self.lookat_id, self.feet_indices]
+            stumble = torch.norm(force[:, :2], dim=1) > 4 * torch.abs(force[:, 2])
+
+            feet_good_pos = []
+            feet_at_edge_pos = []
+            feet_stumble_pos = []
+            for i in range(len(self.feet_indices)):
+                if stumble[i]:
+                    feet_stumble_pos.append(feet_pos[i])
+                elif self.feet_at_edge[self.lookat_id, i]:
+                    feet_at_edge_pos.append(feet_pos[i])
+                else:
+                    feet_good_pos.append(feet_pos[i])
+
+            self.sim.draw_points(feet_good_pos, radius=0.05, color=(0, 1, 0), sphere_lines=8)
+            self.sim.draw_points(feet_at_edge_pos, radius=0.05, color=(1, 0, 0), sphere_lines=8)
+            self.sim.draw_points(feet_stumble_pos, radius=0.05, color=(1, 1, 0), sphere_lines=8)

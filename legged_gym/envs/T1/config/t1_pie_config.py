@@ -1,30 +1,30 @@
 import numpy as np
 
-from .pdd_base_config import PddBaseCfg, PddBaseCfgPPO
+from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 
-class PddZJUCfg(PddBaseCfg):
-    class env(PddBaseCfg.env):
+class T1PIECfg(T1BaseCfg):
+    class env(T1BaseCfg.env):
         num_envs = 2048  # 6144
 
-        n_proprio = 41
+        n_proprio = 47
         len_prop_his = 10
 
         len_depth_his = 2
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 77
+        num_critic_obs = 83
         len_critic_his = 50
 
-        num_actions = 10
+        num_actions = 12
         episode_length_s = 30  # episode length in seconds
 
     class sensors:
         activated = True
 
         class depth_0:
-            position = [0.10, 0, 0.0]  # front camera
+            position = [0.13, 0, 0.38]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch = 60  # positive is looking down
             pitch_range = [-1, 1]
@@ -41,7 +41,7 @@ class PddZJUCfg(PddBaseCfg):
             dis_noise_global = 0.01  # in meters
             dis_noise_gaussian = 0.01  # in meters
 
-    class terrain(PddBaseCfg.terrain):
+    class terrain(T1BaseCfg.terrain):
         scan_pts_x = np.linspace(-0.5, 1.1, 32)
         scan_pts_y = np.linspace(-0.4, 0.4, 16)
         body_pts_x = np.linspace(-0.2, 0.2, 4)
@@ -57,8 +57,8 @@ class PddZJUCfg(PddBaseCfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 1,
-            'stairs_down': 1,
+            'stairs_up': 0,
+            'stairs_down': 0,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -67,11 +67,14 @@ class PddZJUCfg(PddBaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,
+            'parkour_stair': 0,
             'parkour_flat': 0,
         }
 
-    class domain_rand(PddBaseCfg.domain_rand):
+    class noise(T1BaseCfg.noise):
+        add_noise = True
+
+    class domain_rand(T1BaseCfg.domain_rand):
         switch = True
 
         randomize_start_pos = False
@@ -100,22 +103,22 @@ class PddZJUCfg(PddBaseCfg):
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = switch
-        randomize_coulomb_friction = switch
+        randomize_coulomb_friction = False
 
     class rewards:
-        base_height_target = 0.6
+        base_height_target = 0.7
         feet_height_target = 0.04
-        feet_height_target_max = 0.07
+        feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
 
-        cycle_time = 0.64  # 0.64
-        target_joint_pos_scale = 0.19  # 0.3
+        cycle_time = 0.7  # 0.64
+        target_joint_pos_scale = 0.3  # 0.19
 
-        min_dist = 0.18
+        min_dist = 0.2
         max_dist = 0.50
         max_contact_force = 300
 
@@ -125,15 +128,15 @@ class PddZJUCfg(PddBaseCfg):
             # gait
             joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 1.2  # 0.2
+            feet_clearance = 0.2  # 0.2
             feet_air_time = 1.
-            foot_slip = -1.
+            foot_slip = -0.1  # -1.
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.3
 
             # contact
-            feet_contact_forces = -0.1
+            feet_contact_forces = -0.01  # -0.1
             feet_stumble = -3.0
             feet_edge = -1.0
 
@@ -159,10 +162,10 @@ class PddZJUCfg(PddBaseCfg):
             # stand_still = 2.0
 
 
-class PddZJUCfgPPO(PddBaseCfgPPO):
+class T1PIECfgPPO(T1BaseCfgPPO):
     seed = -1
     runner_name = 'rl_dream'  # rl, distil, mixed
-    algorithm_name = 'ppo_zju'
+    algorithm_name = 'ppo_pie'
 
     class policy:
         # actor parameters
@@ -173,23 +176,20 @@ class PddZJUCfgPPO(PddBaseCfgPPO):
         critic_hidden_dims = [512, 256, 128]
 
         use_recurrent_policy = True
+        estimator_gru_hidden_size = 256
 
-        obs_gru_hidden_size = 64
-        recon_gru_hidden_size = 256
-
-        len_latent = 16
         len_base_vel = 3
         len_latent_feet = 8
         len_latent_body = 16
-        transformer_embed_dim = 64
+        len_hmap_latent = 128
 
     class algorithm:
         # training params
         value_loss_coef = 1.0
         use_clipped_value_loss = True
         clip_param = 0.2
-        entropy_coef = 0.005
-        num_learning_epochs = 5
+        entropy_coef = 0.01
+        num_learning_epochs = 10
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
@@ -201,7 +201,7 @@ class PddZJUCfgPPO(PddBaseCfgPPO):
         use_amp = True
         continue_from_last_std = True
 
-    class runner(PddBaseCfgPPO.runner):
+    class runner(T1BaseCfgPPO.runner):
         max_iterations = 50000  # number of policy updates
 
         # logging

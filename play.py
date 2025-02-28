@@ -32,7 +32,7 @@ def play(args):
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.curriculum = True
     env_cfg.terrain.max_difficulty = False
-    env_cfg.terrain.max_init_terrain_level = 0
+    env_cfg.terrain.max_init_terrain_level = 4
     # env_cfg.asset.disable_gravity = True
 
     # env_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
@@ -44,7 +44,7 @@ def play(args):
 
     env_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
-        'rough_slope': 0,
+        'rough_slope': 1,
         'stairs_up': 0,
         'stairs_down': 0,
         'discrete': 0,
@@ -55,7 +55,7 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
+        'parkour_stair': 0,
         'parkour_flat': 0,
     }
     env_cfg.terrain.num_cols = sum(env_cfg.terrain.terrain_dict.values())
@@ -73,7 +73,7 @@ def play(args):
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, use_estimated_values=False)
+            rtn = runner.play_act(obs, use_estimated_values=True)
             # rtn = runner.play_act(obs, use_estimated_values=random.random() > 0.6)
 
             if type(rtn) is tuple:

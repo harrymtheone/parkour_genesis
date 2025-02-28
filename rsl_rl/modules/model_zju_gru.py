@@ -76,8 +76,7 @@ class ObsGRU(nn.Module):
         else:
             # update forward
             out = gru_wrapper(self.conv_layers.forward, obs_his)
-            out, _ = self.gru(out, hidden_state)
-            return out
+            return self.gru(out, hidden_state)
 
     def detach_hidden_state(self):
         if self.hidden_state is None:
@@ -247,12 +246,12 @@ class ReconGRU(nn.Module):
 
             # concatenate the two latent vectors
             gru_input = torch.cat([enc_depth, prop_latent], dim=2)
-            enc_gru, _ = self.gru(gru_input, hidden_state)
+            enc_gru, hidden_state = self.gru(gru_input, hidden_state)
 
             # reconstruct
             hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
             hmap_refine = gru_wrapper(self.recon_refine.forward, hmap_rough)
-            return hmap_rough, hmap_refine
+            return hmap_rough, hmap_refine, hidden_state
 
     def detach_hidden_state(self):
         if self.hidden_state is None:
@@ -449,11 +448,11 @@ class EstimatorGRU(nn.Module):
         obs = obs.clone()  # encode history proprio
         obs_enc_hidden_states, recon_hidden_states = hidden_states
 
-        latent_obs = self.obs_gru(obs.prop_his, obs_enc_hidden_states)
+        latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden_states)
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine = self.reconstructor(obs.depth, latent_obs, recon_hidden_states)
+            recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs, recon_hidden_states)
 
         # cross-model mixing using transformer
         recon_input = torch.where(
@@ -476,8 +475,8 @@ class EstimatorGRU(nn.Module):
 
     def reconstruct(self, obs, obs_enc_hidden, recon_hidden, use_estimated_values):
         # encode history proprio
-        latent_obs = self.obs_gru(obs.prop_his, obs_enc_hidden)
-        recon_rough, recon_refine = self.reconstructor(obs.depth, latent_obs, recon_hidden)
+        latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden)
+        recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs, recon_hidden)
 
         recon_input = torch.where(
             use_estimated_values.unsqueeze(-1).unsqueeze(-1),

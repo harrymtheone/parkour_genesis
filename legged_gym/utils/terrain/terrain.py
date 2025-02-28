@@ -151,7 +151,7 @@ class Terrain:
                 terrain.terrain_type = Terrain.terrain_type.stairs_down
                 pyramid_stairs_terrain(terrain, step_width=0.31, step_height=step_down_height, platform_size=3.)
 
-            self.add_roughness(terrain, difficulty)
+            # self.add_roughness(terrain, difficulty)
 
         elif choice < self.proportions[4]:
             terrain.terrain_type = Terrain.terrain_type.discrete
@@ -237,7 +237,7 @@ class Terrain:
                                   step_height=step_height_goal,
                                   step_width=0.31)
             terrain.centered_origin = False
-            self.add_roughness(terrain, difficulty)
+            # self.add_roughness(terrain, difficulty)
 
         elif choice < self.proportions[13]:
             terrain.terrain_type = Terrain.terrain_type.parkour_flat
