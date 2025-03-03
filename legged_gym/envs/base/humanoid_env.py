@@ -130,12 +130,10 @@ class HumanoidEnv(ParkourTask):
         )
         diff = diff[:, self.dof_activated]
 
-        r = torch.exp(-2 * torch.norm(diff, dim=1)) - 0.2 * torch.norm(diff, dim=1).clamp(0, 0.5)
-        r[self.env_class == 12] *= 0.1
-        # r[torch.norm(self.commands[:, :1], dim=1) > 1.0] = 1.0
-        # r[stand_command] = r.clone()[stand_command] * 0.6
-        # r[self.is_zero_command] = 1.0
-        return r
+        rew = torch.exp(-2 * torch.norm(diff, dim=1)) - 0.2 * torch.norm(diff, dim=1).clamp(0, 0.5)
+
+        rew[self.env_class == 12] *= 0.1  # parkour stair
+        return rew
 
     def _reward_feet_clearance(self):
         swing_mask = ~self._get_stance_mask()
@@ -209,17 +207,18 @@ class HumanoidEnv(ParkourTask):
         lin_vel_error_abs = torch.sum(torch.abs(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
         lin_vel_error_square = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
 
-        env_is_parkour = self.env_class >= 4
-        lin_vel_error_abs[env_is_parkour] *= 0.2
-        lin_vel_error_square[env_is_parkour] *= 0.2
-
         rew = torch.where(
             self.is_zero_command,
-            torch.exp(-lin_vel_error_abs * self.cfg.rewards.tracking_sigma * 2),
-            torch.exp(-lin_vel_error_square * self.cfg.rewards.tracking_sigma)
+            -lin_vel_error_abs * 2,
+            -lin_vel_error_square
         )
 
-        return rew
+        env_is_parkour = self.env_class >= 4
+        return torch.where(
+            env_is_parkour,
+            torch.exp(rew * self.cfg.rewards.tracking_sigma * 0.1),
+            torch.exp(rew * self.cfg.rewards.tracking_sigma)
+        )
 
     # def _reward_tracking_lin_vel(self):
     #     """

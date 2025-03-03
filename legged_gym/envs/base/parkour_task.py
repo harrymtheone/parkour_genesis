@@ -375,7 +375,7 @@ class ParkourTask(BaseTask):
         self.commands[env_ids[motion_type == 1], 2:4] = 0  # xy
         self.commands[env_ids[motion_type == 2], :2] = 0  # yaw
 
-        self.command_x_parkour[:] = self.commands[:, 0]
+        self.command_x_parkour[env_ids_parkour] = self.commands[env_ids_parkour, 0]
 
     def _update_command(self):
         super()._update_command()
@@ -390,7 +390,7 @@ class ParkourTask(BaseTask):
         self.target_yaw[:] = torch.atan2(target_vec_norm[:, 1], target_vec_norm[:, 0])
 
         if self.global_counter % 5 == 0:
-            self.delta_yaw[:] = wrap_to_pi(self.target_yaw - self.base_euler[:, 2])
+            self.delta_yaw[:] = wrap_to_pi(2 * (self.target_yaw - self.base_euler[:, 2]))
 
         if not self.cfg.play.control:
             # stair terrains use heading commands

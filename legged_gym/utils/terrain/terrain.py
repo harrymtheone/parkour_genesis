@@ -99,7 +99,9 @@ class Terrain:
                     self.num_goals[row, col] = 0
                 else:
                     self.num_goals[row, col] = len(terrain_mat[row, col].goals)
-        self.goals = np.zeros((self.cfg.num_rows, self.cfg.num_cols, self.num_goals.max(), 3))
+
+        max_goal_num = max(1, self.num_goals.max())
+        self.goals = np.zeros((self.cfg.num_rows, self.cfg.num_cols, max_goal_num, 3))
 
         self.add_terrains_to_map(terrain_mat)
 
@@ -136,7 +138,7 @@ class Terrain:
         slope = difficulty * 0.4
         step_up_height = 0.02 + 0.08 * difficulty
         step_down_height = 0.02 + 0.08 * difficulty
-        step_height_goal = 0.06 + 0.1 * difficulty  # 跑酷楼梯的高度
+        step_height_goal = 0.03 + 0.1 * difficulty  # 跑酷楼梯的高度
         discrete_obstacles_height = 0.03 + difficulty * 0.15
         stepping_stones_size = 1.5 * (1.05 - difficulty)
         stone_distance = 0.05 if difficulty == 0 else 0.1
@@ -251,7 +253,7 @@ class Terrain:
 
         elif choice < self.proportions[13]:
             terrain.terrain_type = Terrain.terrain_type.parkour_flat
-            parkour_flat_terrain(terrain, num_goals=self.num_goals)
+            parkour_flat_terrain(terrain)
             terrain.centered_origin = False
             self.add_roughness(terrain, difficulty)
 

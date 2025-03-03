@@ -433,7 +433,6 @@ def parkour_stair_terrain(terrain: SubTerrain,
 
 def parkour_flat_terrain(terrain: SubTerrain,
                          platform_len=2.,
-                         num_goals=12,
                          x_range=(1.5, 2.4),
                          y_range=(-1., 1.)):
     mid_y = terrain.length // 2  # length is actually y width
@@ -445,10 +444,10 @@ def parkour_flat_terrain(terrain: SubTerrain,
     dis_y_max = round(y_range[1] / terrain.horizontal_scale)
 
     cur_x = platform_len
-    goals = np.zeros((num_goals, 2))
+    goals = np.zeros((8, 2))
     goals[0] = [platform_len, mid_y]
 
-    for i in range(num_goals - 2):
+    for i in range(6):
         rand_x = np.random.randint(dis_x_min, dis_x_max)
         rand_y = np.random.randint(dis_y_min, dis_y_max)
         cur_x += rand_x

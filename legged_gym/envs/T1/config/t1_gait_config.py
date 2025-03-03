@@ -127,6 +127,8 @@ class T1GaitCfg(T1BaseCfg):
         class scales:
             # gait
             joint_pos = 2.
+            phase_increment_ratio = -0.01
+
             feet_contact_number = 1.2
             feet_clearance = 0.2  # 0.2
             feet_air_time = 1.

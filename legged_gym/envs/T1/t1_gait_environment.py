@@ -47,7 +47,8 @@ class T1GaitEnvironment(HumanoidEnv):
         self.phase_increment_ratio = self._zero_tensor(self.num_envs)
         
     def step(self, actions):
-        self.phase_increment_ratio[:] = torch.clip(actions[:, -1], min=-0.5, max=0.5) + 1
+        self.phase_increment_ratio[:] = torch.clip(actions[:, -1], min=-0.5, max=0.5)
+        print(self.phase_increment_ratio)
         return super().step(actions[:, :-1])
 
     def _post_physics_pre_step(self):
@@ -65,7 +66,7 @@ class T1GaitEnvironment(HumanoidEnv):
         self.feet_air_time[self.contact_filt | self.is_zero_command.unsqueeze(1)] += self.dt
         self.feet_air_time_avg[first_contact] = alpha * self.feet_air_time_avg[first_contact] + (1 - alpha) * self.feet_air_time[first_contact]
 
-        self.phase_length_buf[:] += self.dt * self.phase_increment_ratio
+        self.phase_length_buf[:] += self.dt * (self.phase_increment_ratio + 1)
         self._update_phase()
 
     def get_feet_hmap(self):
@@ -226,3 +227,7 @@ class T1GaitEnvironment(HumanoidEnv):
             #     self.sim.draw_points(pts[indices], color=(1, 0, 0))
 
         super().render()
+
+    def _reward_phase_increment_ratio(self):
+        return torch.abs(self.phase_increment_ratio)
+

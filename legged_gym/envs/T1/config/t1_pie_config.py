@@ -57,8 +57,8 @@ class T1PIECfg(T1BaseCfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 0,
-            'stairs_down': 0,
+            'stairs_up': 1,
+            'stairs_down': 1,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -77,9 +77,9 @@ class T1PIECfg(T1BaseCfg):
     class domain_rand(T1BaseCfg.domain_rand):
         switch = True
 
-        randomize_start_pos = False
+        randomize_start_pos = switch
         randomize_start_y = switch
-        randomize_start_yaw = switch
+        randomize_start_yaw = False
         randomize_start_vel = switch
         randomize_start_pitch = switch
 
@@ -93,7 +93,6 @@ class T1PIECfg(T1BaseCfg):
 
         push_robots = switch
         action_delay = switch
-        action_delay_range = [(0, 10), (5, 20)]
         add_dof_lag = False
         add_imu_lag = False
 
@@ -139,7 +138,7 @@ class T1PIECfg(T1BaseCfg):
             # contact
             feet_contact_forces = -0.01  # -0.1
             feet_stumble = -3.0
-            feet_edge = -1.0
+            feet_edge = -3.0
 
             # vel tracking
             tracking_lin_vel = 1.2
@@ -189,7 +188,7 @@ class T1PIECfgPPO(T1BaseCfgPPO):
         value_loss_coef = 1.0
         use_clipped_value_loss = True
         clip_param = 0.2
-        entropy_coef = 0.01
+        entropy_coef = 0.005
         num_learning_epochs = 10
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4

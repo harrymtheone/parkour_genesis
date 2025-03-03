@@ -109,6 +109,8 @@ class PPO_PIE(BaseAlgorithm):
         self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
     def update(self, update_est=True, **kwargs):
+        update_est = True
+
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
@@ -299,8 +301,8 @@ class PPO_PIE(BaseAlgorithm):
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
         self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
-        # if load_optimizer:
-        #     self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+        if load_optimizer:
+            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
