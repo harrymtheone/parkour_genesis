@@ -20,11 +20,11 @@ class Estimator(nn.Module):
         activation = nn.ELU()
 
         self.prop_his_enc = nn.Sequential(
-            nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=32, kernel_size=7, stride=4),
+            nn.Conv1d(in_channels=env_cfg.n_proprio, out_channels=32, kernel_size=4),
             activation,
-            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=2),
+            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=4),
             activation,
-            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=4, stride=1),
+            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=4),
             activation,
             nn.Flatten()
         )
@@ -63,7 +63,7 @@ class Estimator(nn.Module):
     def forward(self, prop_his, depth_his, hidden_states=None, get_recon=False):
         if hidden_states is None:
             # inference forward
-            prop_latent = self.prop_his_enc(prop_his)
+            prop_latent = self.prop_his_enc(prop_his.transpose(1, 2))
             depth_latent = self.depth_enc(depth_his)
 
             gru_input = torch.cat((prop_latent, depth_latent), dim=1)
@@ -80,7 +80,7 @@ class Estimator(nn.Module):
 
         else:
             # update forward
-            prop_latent = gru_wrapper(self.prop_his_enc.forward, prop_his)
+            prop_latent = gru_wrapper(self.prop_his_enc.forward, prop_his.transpose(2, 3))
             depth_latent = gru_wrapper(self.depth_enc.forward, depth_his)
 
             gru_input = torch.cat((prop_latent, depth_latent), dim=2)
@@ -194,3 +194,66 @@ class Policy(nn.Module):
 
     def reset(self, dones):
         self.estimator.reset(dones)
+
+
+class Critic(nn.Module):
+    from legged_gym.envs.pdd.pdd_scan_environment import CriticObs
+
+    def __init__(self, env_cfg, train_cfg):
+        super().__init__()
+        if env_cfg.num_critic_obs == 77:  # pdd
+            self.encoder = nn.Sequential(
+                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4),
+                nn.ELU(),
+                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
+                nn.ELU(),
+                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=3, stride=1),
+                nn.ELU(),
+                nn.Flatten()
+            )
+
+        elif env_cfg.num_critic_obs == 83:  # pdd
+            self.encoder = nn.Sequential(
+                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4, padding=1),
+                nn.ELU(),
+                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
+                nn.ELU(),
+                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=4, stride=1),
+                nn.ELU(),
+                nn.Flatten()
+            )
+        elif env_cfg.num_critic_obs == 91:  # Go1
+            self.encoder = nn.Sequential(
+                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4, padding=1),
+                nn.ELU(),
+                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
+                nn.ELU(),
+                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=5, stride=1),
+                nn.ELU(),
+                nn.Flatten()
+            )
+        else:
+            raise NotImplementedError
+
+        self.critic = make_linear_layers(128 * 5 + env_cfg.n_scan, *train_cfg.policy.critic_hidden_dims, 1,
+                                         activation_func=nn.ELU())
+        self.critic.pop(-1)
+
+    def evaluate(self, obs: CriticObs, masks=None):
+        if obs.priv_his.ndim == 3:
+            priv_his = obs.priv_his
+            scan = obs.scan.flatten(1)
+        else:
+            n_steps = obs.priv_his.size(0)
+            priv_his = obs.priv_his.flatten(0, 1)
+            scan = obs.scan.flatten(0, 1).flatten(1)
+
+        his_enc = self.encoder(priv_his)
+        evaluation = self.critic(torch.cat([his_enc, scan], dim=1))
+
+        if obs.priv_his.ndim == 3:
+            return evaluation
+        else:
+            return evaluation.unflatten(0, (n_steps, -1))
+
+

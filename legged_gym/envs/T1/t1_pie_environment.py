@@ -20,6 +20,21 @@ class ActorObs(ObsBase):
         # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
 
+    def mirror(self):
+        return type(self)(*[
+            mirror_proprio_by_x(self.proprio),
+            mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
+            torch.flip(self.depth, dims=[3]),
+            self.priv_actor,
+            torch.flip(self.scan, dims=[2]),
+        ])
+
+    @staticmethod
+    def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
+        dof_prop_mirrored = dof_prop.clone()
+        mirror_dof_prop_by_x(dof_prop_mirrored, 0)
+        return dof_prop_mirrored
+
 
 class ObsNext(ObsBase):
     def __init__(self, proprio):
@@ -76,15 +91,15 @@ class T1PIEEnvironment(HumanoidEnv):
 
         # left swing
         sin_pos_l[sin_pos_l > 0] = 0
-        ref_dof_pos[:, 0] = sin_pos_l * scale_1
-        ref_dof_pos[:, 3] = -sin_pos_l * scale_2
-        ref_dof_pos[:, 4] = sin_pos_l * scale_1
+        ref_dof_pos[:, 1] = sin_pos_l * scale_1
+        ref_dof_pos[:, 4] = -sin_pos_l * scale_2
+        ref_dof_pos[:, 5] = sin_pos_l * scale_1
 
         # right swing
         sin_pos_r[sin_pos_r < 0] = 0
-        ref_dof_pos[:, 6] = -sin_pos_r * scale_1
-        ref_dof_pos[:, 9] = sin_pos_r * scale_2
-        ref_dof_pos[:, 10] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 7] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 10] = sin_pos_r * scale_2
+        ref_dof_pos[:, 11] = -sin_pos_r * scale_1
 
         # # Add double support phase
         # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
@@ -128,9 +143,9 @@ class T1PIEEnvironment(HumanoidEnv):
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
             command_input,  # 5
-            (dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 12D
-            dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
-            self.last_action_output,  # 12D
+            (dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 13
+            dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 13
+            self.last_action_output,  # 13
         ), dim=-1)
 
         # explicit privileged information
@@ -202,3 +217,62 @@ class T1PIEEnvironment(HumanoidEnv):
             #     self.sim.draw_points(pts[indices], color=(1, 0, 0))
 
         super().render()
+
+
+@torch.jit.script
+def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):
+    # [-switch(hip), switch(thigh), switch(calf)]
+    left_idx = torch.tensor([1, 2, 3, 4, 5, 6], dtype=torch.long, device=prop.device) + start_idx
+    right_idx = left_idx + 6
+
+    dof_left = prop[:, left_idx].clone()
+    prop[:, left_idx] = prop[:, right_idx]
+    prop[:, right_idx] = dof_left
+
+    invert_idx = torch.tensor([2, 3, 6], dtype=torch.long, device=prop.device)
+    prop[:, invert_idx] *= -1.
+
+
+@torch.jit.script
+def mirror_proprio_by_x(prop: torch.Tensor) -> torch.Tensor:
+    prop = prop.clone()
+
+    # base angular velocity
+    prop[:, 0:3] = prop[:, 0:3] * torch.tensor([[-1, 1, -1]], device=prop.device)  # [-roll, pitch, -yaw]
+
+    # projected gravity
+    prop[:, 3:6] = prop[:, 3:6] * torch.tensor([[1, -1, 1]], device=prop.device)  # [x, -y, z]
+
+    # commands
+    prop[:, 6:9] = prop[:, 6:9] * torch.tensor([[1, -1, -1]], device=prop.device)  # [x, -y, -yaw]
+
+    # dof pos
+    mirror_dof_prop_by_x(prop, 11)
+
+    # dof vel
+    mirror_dof_prop_by_x(prop, 11 + 13)
+
+    # last actions
+    mirror_dof_prop_by_x(prop, 11 + 13 + 13)
+
+    return prop
+
+
+@torch.jit.script
+def mirror_priv_by_x(priv: torch.Tensor) -> torch.Tensor:
+    priv = priv.clone()
+
+    # base velocity
+    priv[:, 0:3] = priv[:, 0:3] * torch.tensor([[1, -1, 1]], device=priv.device)  # [x, -y, z]
+
+    # feet height map
+    feet_hmap = priv[:, 3:19].unflatten(1, (4, 2, 2))
+    feet_hmap = torch.flip(feet_hmap, dims=[1, 3])
+    priv[:, 3:19] = feet_hmap.flatten(1)
+
+    # feet height map
+    body_hmap = priv[:, 19:35].unflatten(1, (4, 4))
+    body_hmap = torch.flip(body_hmap, dims=[2])
+    priv[:, 19:35] = body_hmap.flatten(1)
+
+    return priv

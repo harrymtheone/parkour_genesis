@@ -7,24 +7,24 @@ class T1ZJUCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 2048  # 6144
 
-        n_proprio = 47
+        n_proprio = 50
         len_prop_his = 10
 
         len_depth_his = 2
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 83
+        num_critic_obs = 86
         len_critic_his = 50
 
-        num_actions = 12
+        num_actions = 13
         episode_length_s = 30  # episode length in seconds
 
     class sensors:
         activated = True
 
         class depth_0:
-            position = [0.13, 0, 0.38]  # front camera
+            position = [0.15, 0, 0.38]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch = 60  # positive is looking down
             pitch_range = [-1, 1]
@@ -106,8 +106,8 @@ class T1ZJUCfg(T1BaseCfg):
         randomize_coulomb_friction = False
 
     class rewards:
-        base_height_target = 0.7
-        feet_height_target = 0.04
+        base_height_target = 0.6
+        feet_height_target = 0.05
         feet_height_target_max = 0.06
         use_guidance_terrain = True
         only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
@@ -130,13 +130,13 @@ class T1ZJUCfg(T1BaseCfg):
             feet_contact_number = 1.2
             feet_clearance = 1.2  # 0.2
             feet_air_time = 1.
-            foot_slip = -1.
+            feet_slip = -1.
             feet_distance = 0.5
             knee_distance = 0.5
             feet_rotation = 0.3
 
             # contact
-            feet_contact_forces = -0.1
+            feet_contact_forces = -0.01
             feet_stumble = -3.0
             feet_edge = -1.0
 

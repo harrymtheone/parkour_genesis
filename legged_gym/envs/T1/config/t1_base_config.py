@@ -137,7 +137,7 @@ class T1BaseCfg(BaseConfig):
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
         randomize_action_delay_each_step = False
-        action_delay_range = [(0, 0), (0, 10), (5, 20), (10, 40)]
+        action_delay_range = [(0, 0), (0, 10), (0, 20)]
         action_delay_update_steps = 3000 * 24
 
         add_dof_lag = False
@@ -238,7 +238,8 @@ class T1BaseCfg(BaseConfig):
             'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3, 'Waist': 3.0  # not used yet, set randomly
         }
 
-        activated = ['Hip', 'Knee', 'Ankle']
+        # activated = ['Hip', 'Knee', 'Ankle']
+        activated = ['Hip', 'Knee', 'Ankle', 'Waist']
 
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5

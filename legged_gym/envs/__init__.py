@@ -4,7 +4,7 @@ from .T1.t1_pie_environment import T1PIEEnvironment
 from .T1.t1_gait_environment import T1GaitEnvironment
 from .T1.config.t1_dreamwaq_config import T1DreamWaqCfg, T1DreamWaqCfgPPO
 from .T1.config.t1_zju_config import T1ZJUCfg, T1ZJUCfgPPO
-from .T1.config.t1_pie_config import T1PIECfg, T1PIECfgPPO
+from .T1.config.t1_pie_config import T1PIECfg, T1PIECfgPPO, T1PIEStairCfg
 from .T1.config.t1_gait_config import T1GaitCfg, T1GaitCfgPPO
 
 from .pdd.config.pdd_dreamwaq_config import PddDreamWaqCfg, PddDreamWaqCfgPPO, PddDreamWaqGRUCfgPPO
@@ -28,7 +28,9 @@ task_list = [
 
     ['t1_dreamwaq', T1DreamWaqEnvironment, T1DreamWaqCfg(), T1DreamWaqCfgPPO()],
     ['t1_zju', T1ZJUEnvironment, T1ZJUCfg(), T1ZJUCfgPPO()],
+
     ['t1_pie', T1PIEEnvironment, T1PIECfg(), T1PIECfgPPO()],
+    ['t1_pie_stair', T1PIEEnvironment, T1PIEStairCfg(), T1PIECfgPPO()],
 
     ['t1_gait', T1GaitEnvironment, T1GaitCfg(), T1GaitCfgPPO()],
 

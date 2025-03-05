@@ -24,16 +24,16 @@ class VAE(nn.Module):
         activation = nn.ELU()
 
         self.mlp_mu = make_linear_layers(gru_hidden_size, 128, encoder_output_size,
-                                         activation_func=activation)
-        self.mlp_mu.pop(-1)
+                                         activation_func=activation,
+                                         output_activation=False)
 
         self.mlp_logvar = make_linear_layers(gru_hidden_size, 128, encoder_output_size,
-                                             activation_func=activation)
-        self.mlp_logvar.pop(-1)
+                                             activation_func=activation,
+                                             output_activation=False)
 
         self.decoder = make_linear_layers(encoder_output_size, 64, env_cfg.n_proprio,
-                                          activation_func=activation)
-        self.decoder.pop(-1)
+                                          activation_func=activation,
+                                          output_activation=False)
 
     def forward(self, obs_enc, mu_only=False):
         if mu_only:

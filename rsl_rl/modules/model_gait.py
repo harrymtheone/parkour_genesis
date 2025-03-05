@@ -113,7 +113,7 @@ class Actor(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         self.actor = make_linear_layers(env_cfg.n_proprio + policy_cfg.estimator_gru_hidden_size,
-                                        *policy_cfg.actor_hidden_dims, env_cfg.num_actions + 1,
+                                        *policy_cfg.actor_hidden_dims, env_cfg.num_actions,
                                         activation_func=nn.ELU(), output_activation=False)
 
     def forward(self, obs, priv):
@@ -133,7 +133,7 @@ class Policy(nn.Module):
         self.estimator = Estimator(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
-        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions + 1)))
+        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
         self.distribution = None
 
     def act(self,

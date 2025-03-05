@@ -395,34 +395,13 @@ class Critic(nn.Module):
 
     def __init__(self, env_cfg, train_cfg):
         super().__init__()
-        if env_cfg.num_critic_obs == 77:  # pdd
+        if env_cfg.len_critic_his == 50:
             self.encoder = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4),
+                nn.Conv1d(in_channels=env_cfg.num_critic_obs, out_channels=64, kernel_size=8, stride=4, padding=1),
                 nn.ELU(),
-                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
+                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=5),
                 nn.ELU(),
-                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=3, stride=1),
-                nn.ELU(),
-                nn.Flatten()
-            )
-
-        elif env_cfg.num_critic_obs == 83:  # pdd
-            self.encoder = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4, padding=1),
-                nn.ELU(),
-                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
-                nn.ELU(),
-                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=4, stride=1),
-                nn.ELU(),
-                nn.Flatten()
-            )
-        elif env_cfg.num_critic_obs == 91:  # Go1
-            self.encoder = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4, padding=1),
-                nn.ELU(),
-                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
-                nn.ELU(),
-                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=5, stride=1),
+                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=4),
                 nn.ELU(),
                 nn.Flatten()
             )
@@ -435,11 +414,11 @@ class Critic(nn.Module):
 
     def evaluate(self, obs: CriticObs, masks=None):
         if obs.priv_his.ndim == 3:
-            priv_his = obs.priv_his
+            priv_his = obs.priv_his.transpose(1, 2)
             scan = obs.scan.flatten(1)
         else:
             n_steps = obs.priv_his.size(0)
-            priv_his = obs.priv_his.flatten(0, 1)
+            priv_his = obs.priv_his.flatten(0, 1).transpose(1, 2)
             scan = obs.scan.flatten(0, 1).flatten(1)
 
         his_enc = self.encoder(priv_his)

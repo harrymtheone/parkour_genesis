@@ -135,11 +135,22 @@ class HumanoidEnv(ParkourTask):
         rew[self.env_class == 12] *= 0.1  # parkour stair
         return rew
 
+    def _reward_feet_contact_number(self):
+        """
+        Calculates a reward based on the number of feet contacts aligning with the gait phase.
+        Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
+        """
+        contact = self.sim.contact_forces[:, self.feet_indices, 2] > 5.
+        stance_mask = self._get_stance_mask()
+        reward = torch.where(contact == stance_mask, 1, -0.3)
+        return torch.mean(reward, dim=1)
+
     def _reward_feet_clearance(self):
         swing_mask = ~self._get_stance_mask()
 
         # encourage the robot to lift its legs when it moves
         # rew = (self.feet_height > self.cfg.rewards.feet_height_target) * (self.feet_height < self.cfg.rewards.feet_height_target_max)
+
         rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, 0, 1)
         rew = torch.sum(rew * swing_mask, dim=1, dtype=torch.float)
         return rew
@@ -154,17 +165,15 @@ class HumanoidEnv(ParkourTask):
         air_time = self.feet_air_time.clamp(0, 0.5) * first_contact
         return air_time.sum(dim=1)
 
-    def _reward_foot_slip(self):
+    def _reward_feet_slip(self):
         """
         Calculates the reward for minimizing foot slip. The reward is based on the contact forces
         and the speed of the feet. A contact threshold is used to determine if the foot is in contact
         with the ground. The speed of the foot is calculated and scaled by the contact conditions.
         """
         contact = self.sim.contact_forces[:, self.feet_indices, 2] > 5.
-        foot_speed_norm = torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2)
-        rew = torch.sqrt(foot_speed_norm)
-        rew *= contact
-        return torch.sum(rew, dim=1)
+        foot_speed_norm_contact = contact * torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2)
+        return torch.sum(foot_speed_norm_contact.sqrt(), dim=1)
 
     def _reward_feet_distance(self):
         """
@@ -199,6 +208,21 @@ class HumanoidEnv(ParkourTask):
         contact_forces = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1)
         return torch.sum((contact_forces - self.cfg.rewards.max_contact_force).clip(0, 400), dim=1)
 
+    # def _reward_tracking_lin_vel(self):
+    #     """
+    #     Tracks linear velocity commands along the xy axes.
+    #     Calculates a reward based on how closely the robot's linear velocity matches the commanded values.
+    #     """
+    #     # stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
+    #     lin_vel_error = torch.sum(torch.square(
+    #         self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+    #     # lin_vel_error[stand_command] = torch.sum(torch.abs(
+    #     #     self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)[stand_command]
+    #     r = torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
+    #     # r[stand_command] = r.clone()[stand_command] * 0.6
+    #     # r[stand_command] = 1.0
+    #     return r
+
     def _reward_tracking_lin_vel(self):
         """
         Tracks linear velocity commands along the xy axes.
@@ -213,24 +237,23 @@ class HumanoidEnv(ParkourTask):
             -lin_vel_error_square
         )
 
-        env_is_parkour = self.env_class >= 4
         return torch.where(
-            env_is_parkour,
+            self.env_class >= 4,  # env_is_parkour
             torch.exp(rew * self.cfg.rewards.tracking_sigma * 0.1),
             torch.exp(rew * self.cfg.rewards.tracking_sigma)
         )
 
-    # def _reward_tracking_lin_vel(self):
+    # def _reward_tracking_ang_vel(self):
     #     """
-    #     Tracks linear velocity commands along the xy axes.
-    #     Calculates a reward based on how closely the robot's linear velocity matches the commanded values.
+    #     Tracks angular velocity commands for yaw rotation.
+    #     Computes a reward based on how closely the robot's angular velocity matches the commanded yaw values.
     #     """
     #     # stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
-    #     lin_vel_error = torch.sum(torch.square(
-    #         self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
-    #     # lin_vel_error[stand_command] = torch.sum(torch.abs(
-    #     #     self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)[stand_command]
-    #     r = torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
+    #     ang_vel_error = torch.square(
+    #         self.commands[:, 2] - self.base_ang_vel[:, 2])
+    #     # ang_vel_error[stand_command] = torch.abs(
+    #     #     self.commands[:, 2] - self.base_ang_vel[:, 2])[stand_command]
+    #     r = torch.exp(-ang_vel_error * self.cfg.rewards.tracking_sigma)
     #     # r[stand_command] = r.clone()[stand_command] * 0.6
     #     # r[stand_command] = 1.0
     #     return r
@@ -249,21 +272,6 @@ class HumanoidEnv(ParkourTask):
             torch.exp(-ang_vel_error_square * self.cfg.rewards.tracking_sigma)
         )
         return rew
-
-    # def _reward_tracking_ang_vel(self):
-    #     """
-    #     Tracks angular velocity commands for yaw rotation.
-    #     Computes a reward based on how closely the robot's angular velocity matches the commanded yaw values.
-    #     """
-    #     # stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
-    #     ang_vel_error = torch.square(
-    #         self.commands[:, 2] - self.base_ang_vel[:, 2])
-    #     # ang_vel_error[stand_command] = torch.abs(
-    #     #     self.commands[:, 2] - self.base_ang_vel[:, 2])[stand_command]
-    #     r = torch.exp(-ang_vel_error * self.cfg.rewards.tracking_sigma)
-    #     # r[stand_command] = r.clone()[stand_command] * 0.6
-    #     # r[stand_command] = 1.0
-    #     return r
 
     def _reward_vel_mismatch_exp(self):
         """
@@ -341,16 +349,6 @@ class HumanoidEnv(ParkourTask):
         yaw_roll = torch.norm(left_yaw_roll, dim=1) + torch.norm(right_yaw_roll, dim=1)
         yaw_roll = torch.clamp(yaw_roll - 0.1, 0, 50)
         return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1)
-
-    def _reward_feet_contact_number(self):
-        """
-        Calculates a reward based on the number of feet contacts aligning with the gait phase.
-        Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
-        """
-        contact = self.sim.contact_forces[:, self.feet_indices, 2] > 5.
-        stance_mask = self._get_stance_mask()
-        reward = torch.where(contact == stance_mask, 1, -0.3)
-        return torch.mean(reward, dim=1)
 
     def _reward_orientation(self):
         """

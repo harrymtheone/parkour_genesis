@@ -100,12 +100,12 @@ class Go1ZJUCfg(Go1BaseCfg):
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = switch
-        randomize_coulomb_friction = switch
+        randomize_coulomb_friction = False
 
     class rewards:
         base_height_target = 0.3
         feet_height_target = 0.05
-        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
         use_guidance_terrain = True
         tracking_sigma = 0.2  # 0.2 tracking reward = exp(-error^2/sigma)
         soft_dof_pos_limit = 0.9
@@ -117,6 +117,7 @@ class Go1ZJUCfg(Go1BaseCfg):
             tracking_lin_vel = 1.5
             tracking_goal_vel = 1.5
             tracking_yaw = 0.5
+
             lin_vel_z = -1.0
             ang_vel_xy = -0.05
             orientation = -0.2

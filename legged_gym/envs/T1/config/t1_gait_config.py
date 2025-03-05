@@ -5,7 +5,7 @@ from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 class T1GaitCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
-        num_envs = 2048  # 6144
+        num_envs = 4096  # 6144
 
         n_proprio = 47
         len_prop_his = 10
@@ -101,67 +101,49 @@ class T1GaitCfg(T1BaseCfg):
         randomize_motor_offset = switch
         randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
-        randomize_joint_friction = False
-        randomize_joint_armature = switch
+        randomize_joint_friction = switch
+        randomize_joint_armature = False
         randomize_coulomb_friction = False
 
     class rewards:
-        base_height_target = 0.7
-        feet_height_target = 0.04
-        feet_height_target_max = 0.06
+        base_height_target = 0.65
+        feet_height_target = 0.05
         use_guidance_terrain = True
-        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
 
         cycle_time = 0.7  # 0.64
-        target_joint_pos_scale = 0.3  # 0.19
 
         min_dist = 0.2
-        max_dist = 0.50
+        max_dist = 0.5
         max_contact_force = 300
 
         rew_norm_factor = 1.0
 
         class scales:
-            # gait
-            joint_pos = 2.
-            phase_increment_ratio = -0.01
+            tracking_lin_vel = 1.0
+            tracking_ang_vel = 0.5
 
-            feet_contact_number = 1.2
-            feet_clearance = 0.2  # 0.2
-            feet_air_time = 1.
-            foot_slip = -0.1  # -1.
-            feet_distance = 0.2
-            knee_distance = 0.2
-            feet_rotation = 0.3
+            lin_vel_z = -2.0
+            ang_vel_xy = -0.05
+            orientation = -1.0
+            base_height = -10.0
 
-            # contact
-            feet_contact_forces = -0.01  # -0.1
-            feet_stumble = -3.0
-            feet_edge = -1.0
+            torques = -0.00001
+            dof_acc = -2.5e-7
+            dof_vel = -1e-3
+            action_rate = -0.01
+            dof_pos_limits = -5.0
+            alive = 0.15
+            hip_pos = -1.0
 
-            # vel tracking
-            tracking_lin_vel = 1.2
-            tracking_ang_vel = 1.1
-            vel_mismatch_exp = 0.5
-            low_speed = 0.2
-            track_vel_hard = 0.5
-
-            # base pos
-            default_joint_pos = 0.5
-            orientation = 1.
-            base_height = 0.2
-            base_acc = 0.2
-
-            # energy
-            action_smoothness = -0.003
-            torques = -1e-5
-            dof_vel = -5e-4
-            dof_acc = -1e-7
+            feet_slip = -0.2
+            feet_clearance = -20.0
+            feet_air_time = 1.0
+            feet_contact_number = 0.18
             collision = -1.
-            # stand_still = 2.0
 
 
 class T1GaitCfgPPO(T1BaseCfgPPO):

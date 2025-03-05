@@ -21,46 +21,16 @@ class ObsGRU(nn.Module):
         super().__init__()
         activation = nn.ReLU(inplace=True)
 
-        if env_cfg.n_proprio == 47:  # Booster, ref
+        if env_cfg.len_prop_his == 10:
             self.conv_layers = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4),
+                nn.Conv1d(in_channels=env_cfg.n_proprio, out_channels=64, kernel_size=4),
                 activation,
-                nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=2),
+                nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4),
                 activation,
-                nn.Conv1d(in_channels=32, out_channels=64, kernel_size=4, stride=1),  # (8 * channel_size, 1)
+                nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4),  # (64, 1)
                 activation,
                 nn.Flatten()
             )
-        elif env_cfg.n_proprio == 45:  # Go1
-            self.conv_layers = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4, padding=1),
-                activation,
-                nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=2, padding=1),
-                activation,
-                nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=1),  # (8 * channel_size, 1)
-                activation,
-                nn.Flatten()
-            )
-        elif env_cfg.n_proprio == 41:  # pdd, ref
-            self.conv_layers = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4, padding=1),
-                activation,
-                nn.Conv1d(in_channels=16, out_channels=32, kernel_size=6, stride=1),
-                activation,
-                nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=1),  # (8 * channel_size, 1)
-                activation,
-                nn.Flatten()
-            )
-        # elif env_cfg.n_proprio == 39:  #
-        #     self.conv_layers = nn.Sequential(
-        #         nn.Conv1d(in_channels=env_cfg.len_prop_his, out_channels=16, kernel_size=7, stride=4),
-        #         activation,
-        #         nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=1),
-        #         activation,
-        #         nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=1),  # (8 * channel_size, 1)
-        #         activation,
-        #         nn.Flatten()
-        #     )
         else:
             raise NotImplementedError
 
@@ -70,12 +40,12 @@ class ObsGRU(nn.Module):
     def forward(self, obs_his, hidden_state=None):
         if hidden_state is None:
             # inference forward
-            out = self.conv_layers(obs_his)
+            out = self.conv_layers(obs_his.transpose(1, 2))
             out, self.hidden_state = self.gru(out.unsqueeze(0), self.hidden_state)
             return out.squeeze(0)
         else:
             # update forward
-            out = gru_wrapper(self.conv_layers.forward, obs_his)
+            out = gru_wrapper(self.conv_layers.forward, obs_his.transpose(2, 3))
             return self.gru(out, hidden_state)
 
     def detach_hidden_state(self):
@@ -192,37 +162,15 @@ class ReconGRU(nn.Module):
                           num_layers=2)
         self.hidden_state = None
 
-        # self.recon_rough = nn.Sequential(
-        #     nn.Unflatten(1, (8, 8, 4)),
-        #     nn.ConvTranspose2d(8, 4, kernel_size=4, stride=2, padding=1),
-        #     activation,
-        #     nn.ConvTranspose2d(4, 4, kernel_size=4, stride=2, padding=1),
-        #     activation,
-        #     nn.Conv2d(4, 1, kernel_size=3, stride=1, padding=1),
-        # )
-        # self.recon_rough = nn.Sequential(
-        #     nn.Unflatten(1, (8, 8, 4)),
-        #     nn.Conv2d(8, 8, kernel_size=3, padding=1),
-        #     activation,
-        #     nn.Upsample(scale_factor=2),
-        #     nn.Conv2d(8, 4, kernel_size=3, padding=1),
-        #     activation,
-        #     nn.Upsample(scale_factor=2),
-        #     nn.Conv2d(4, 1, kernel_size=3, padding=1),
-        # )
-
         self.recon_rough = nn.Sequential(
-            nn.Linear(policy_cfg.recon_gru_hidden_size, 3 * 32 * 16),
+            nn.Unflatten(1, (8, 8, 4)),
+            nn.Conv2d(8, 8, kernel_size=3, padding=1),
             activation,
-            nn.Unflatten(1, (3, 32, 16)),
-
-            nn.Conv2d(3, 16, kernel_size=3, padding=1),  # (16, 32, 16)
+            nn.Upsample(scale_factor=2),
+            nn.Conv2d(8, 4, kernel_size=3, padding=1),
             activation,
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),  # (8, 32, 16)
-            activation,
-            nn.Conv2d(32, 16, kernel_size=3, padding=1),  # (8, 32, 16)
-            activation,
-            nn.Conv2d(16, 1, kernel_size=3, padding=1)  # (1, 32, 16)
+            nn.Upsample(scale_factor=2),
+            nn.Conv2d(4, 1, kernel_size=3, padding=1),
         )
 
         self.recon_refine = UNet()
@@ -366,8 +314,8 @@ class Actor(nn.Module):
         self.actor = make_linear_layers(env_cfg.n_proprio + vae_output_dim,
                                         *policy_cfg.actor_hidden_dims,
                                         env_cfg.num_actions,
-                                        activation_func=nn.ELU())
-        self.actor.pop(-1)
+                                        activation_func=nn.ELU(),
+                                        output_activation=False)
 
     def forward(self, obs, priv):
         if obs.ndim == 2:
@@ -437,7 +385,7 @@ class EstimatorGRU(nn.Module):
         else:
             # sample action from distribution
             self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
-            return self.distribution.sample(), recon_refine.squeeze(1)
+            return self.distribution.sample()
 
     def train_act(
             self,

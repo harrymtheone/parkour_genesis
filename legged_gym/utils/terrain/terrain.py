@@ -142,8 +142,8 @@ class Terrain:
         discrete_obstacles_height = 0.03 + difficulty * 0.15
         stepping_stones_size = 1.5 * (1.05 - difficulty)
         stone_distance = 0.05 if difficulty == 0 else 0.1
-        gap_size = 0.1 + 0.7 * difficulty
-        pit_depth = 0.01 + 0.05 * difficulty
+        gap_size = 0.1 + 0.4 * difficulty
+        pit_depth = 0.1 + 0.4 * difficulty
 
         if choice < self.proportions[0]:
             terrain.terrain_type = Terrain.terrain_type.smooth_slope

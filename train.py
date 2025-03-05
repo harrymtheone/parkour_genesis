@@ -33,7 +33,7 @@ def train(args):
         mode = "disabled"
         env_cfg.terrain.num_rows = 10
         env_cfg.terrain.num_cols = 4
-        env_cfg.env.num_envs = 1
+        env_cfg.env.num_envs = 128
     else:
         mode = "online"
 

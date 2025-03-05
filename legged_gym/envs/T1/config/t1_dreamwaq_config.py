@@ -6,16 +6,16 @@ from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 class T1DreamWaqCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
-        n_proprio = 47
+        n_proprio = 50
         len_prop_his = 50
 
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 59
+        num_critic_obs = 62
         len_critic_his = 50
 
-        num_actions = 12
+        num_actions = 13
         episode_length_s = 30  # episode length in seconds
 
     class terrain(T1BaseCfg.terrain):
@@ -103,7 +103,7 @@ class T1DreamWaqCfg(T1BaseCfg):
             feet_contact_number = 1.2
             feet_clearance = 0.2  # 0.2
             feet_air_time = 1.
-            foot_slip = -1.
+            feet_slip = -1.
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5

@@ -26,13 +26,13 @@ def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
 
     # override some parameters for testing
-    env_cfg.play.control = False
-    env_cfg.env.num_envs = 1
+    env_cfg.play.control = True
+    env_cfg.env.num_envs = 4
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.curriculum = True
     env_cfg.terrain.max_difficulty = False
-    env_cfg.terrain.max_init_terrain_level = 0
+    env_cfg.terrain.max_init_terrain_level = 4
     # env_cfg.asset.disable_gravity = True
 
     # env_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
@@ -74,7 +74,7 @@ def play(args):
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, use_estimated_values=True)
+            rtn = runner.play_act(obs, use_estimated_values=False)
             # rtn = runner.play_act(obs, use_estimated_values=random.random() > 0.6)
 
             if type(rtn) is tuple:
@@ -90,8 +90,12 @@ def play(args):
             # env.draw_hmap(obs.scan)
             # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
 
-            # actions[env.lookat_id, 0] = env.joystick_handler.get_control_input()[0]
-            # for testing reference motion
+            # for calibration of mirroring of dof
+            # actions.zero_()
+            # actions[env.lookat_id, 5] = env.joystick_handler.get_control_input()[0]
+            # actions[env.lookat_id, 5 + 6] = env.joystick_handler.get_control_input()[0]
+
+            # # for testing reference motion
             # actions[env.lookat_id] = (env.ref_dof_pos - env.init_state_dof_pos)[env.lookat_id, env.dof_activated]
             # actions[env.lookat_id] /= env.cfg.control.action_scale
 

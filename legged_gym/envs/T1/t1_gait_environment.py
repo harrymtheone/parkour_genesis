@@ -35,6 +35,11 @@ class CriticObs(ObsBase):
 
 class T1GaitEnvironment(HumanoidEnv):
 
+    def _init_robot_props(self):
+        super()._init_robot_props()
+        self.hip_indices = self.sim.create_indices(
+            self.sim.get_full_names("Hip", True), True)
+
     def _init_buffers(self):
         super()._init_buffers()
         env_cfg = self.cfg.env
@@ -43,31 +48,6 @@ class T1GaitEnvironment(HumanoidEnv):
 
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)
         self.feet_hmap_points = self._init_height_points(self.cfg.terrain.feet_pts_x, self.cfg.terrain.feet_pts_y)
-        
-        self.phase_increment_ratio = self._zero_tensor(self.num_envs)
-        
-    def step(self, actions):
-        self.phase_increment_ratio[:] = torch.clip(actions[:, -1], min=-0.5, max=0.5)
-        print(self.phase_increment_ratio)
-        return super().step(actions[:, :-1])
-
-    def _post_physics_pre_step(self):
-        self.episode_length_buf[:] += 1
-
-        if self.cfg.domain_rand.action_delay and (self.global_counter % self.cfg.domain_rand.action_delay_update_steps == 0):
-            if len(self.cfg.domain_rand.action_delay_range) > 0:
-                self.action_delay_buf.update_delay_range(self.cfg.domain_rand.action_delay_range.pop(0))
-
-        alpha = self.cfg.rewards.EMA_update_alpha
-        self.contact_forces_avg[self.contact_filt] = alpha * self.contact_forces_avg[self.contact_filt]
-        self.contact_forces_avg[self.contact_filt] += (1 - alpha) * self.sim.contact_forces[:, self.feet_indices][self.contact_filt][:, 2]
-
-        first_contact = (self.feet_air_time > 0.) * self.contact_filt
-        self.feet_air_time[self.contact_filt | self.is_zero_command.unsqueeze(1)] += self.dt
-        self.feet_air_time_avg[first_contact] = alpha * self.feet_air_time_avg[first_contact] + (1 - alpha) * self.feet_air_time[first_contact]
-
-        self.phase_length_buf[:] += self.dt * (self.phase_increment_ratio + 1)
-        self._update_phase()
 
     def get_feet_hmap(self):
         feet_pos = self.sim.link_pos[:, self.feet_indices]
@@ -89,33 +69,6 @@ class T1GaitEnvironment(HumanoidEnv):
 
         hmap = self._get_heights(points + self.cfg.terrain.border_size)
         return self.sim.root_pos[:, 2:3] - hmap  # to relative height
-
-    def _compute_ref_state(self):
-        sin_pos = torch.sin(2 * torch.pi * self.phase)
-        sin_pos_l = sin_pos.clone()
-        sin_pos_r = sin_pos.clone()
-
-        ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
-        scale_1 = self.cfg.rewards.target_joint_pos_scale
-        scale_2 = 2 * scale_1
-
-        # left swing
-        sin_pos_l[sin_pos_l > 0] = 0
-        ref_dof_pos[:, 0] = sin_pos_l * scale_1
-        ref_dof_pos[:, 3] = -sin_pos_l * scale_2
-        ref_dof_pos[:, 4] = sin_pos_l * scale_1
-
-        # right swing
-        sin_pos_r[sin_pos_r < 0] = 0
-        ref_dof_pos[:, 6] = -sin_pos_r * scale_1
-        ref_dof_pos[:, 9] = sin_pos_r * scale_2
-        ref_dof_pos[:, 10] = -sin_pos_r * scale_1
-
-        # # Add double support phase
-        # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
-
-        self.ref_dof_pos[:] = self.init_state_dof_pos
-        self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
 
     def _compute_observations(self):
         """
@@ -141,8 +94,6 @@ class T1GaitEnvironment(HumanoidEnv):
         dof_vel = self._add_noise(dof_vel, self.cfg.noise.noise_scales.dof_vel)
         base_ang_vel = self._add_noise(base_ang_vel, self.cfg.noise.noise_scales.ang_vel)
         projected_gravity = self._add_noise(projected_gravity, self.cfg.noise.noise_scales.gravity)
-
-        self._compute_ref_state()
 
         sin_pos = torch.sin(2 * torch.pi * self.phase).unsqueeze(1)
         cos_pos = torch.cos(2 * torch.pi * self.phase).unsqueeze(1)
@@ -228,6 +179,41 @@ class T1GaitEnvironment(HumanoidEnv):
 
         super().render()
 
-    def _reward_phase_increment_ratio(self):
-        return torch.abs(self.phase_increment_ratio)
+    def _reward_lin_vel_z(self):
+        rew = torch.square(self.base_lin_vel[:, 2])
 
+        rew[torch.logical_and(self.env_class >= 4, self.env_class < 12)] *= 0.5
+        return rew
+
+    def _reward_ang_vel_xy(self):
+        rew = torch.square(self.base_ang_vel[:, :2])
+
+        rew *= torch.tensor([[1, 3]], device=self.device)
+        rew = torch.sum(rew, dim=1)
+
+        rew[torch.logical_and(self.env_class >= 4, self.env_class < 12)] *= 0.3
+        return rew
+
+    def _reward_feet_clearance(self):
+        # from unitree
+        pos_error = torch.square(self.sim.link_pos[:, self.feet_indices, 2] - self.cfg.rewards.feet_height_target) * ~self.contact_filt
+        return torch.sum(pos_error, dim=1)
+
+    def _reward_action_rate(self):
+        rew = (self.actions - self.last_actions).square().sum(dim=1)
+        rew[torch.logical_and(self.env_class >= 4, self.env_class < 13)] *= 0.5
+        return rew
+
+    def _reward_dof_pos_limits(self):
+        # Penalize dof positions too close to the limit
+        out_of_limits = -(self.sim.dof_pos - self.sim.dof_pos_limits[:, 0]).clip(max=0.)  # lower limit
+        out_of_limits += (self.sim.dof_pos - self.sim.dof_pos_limits[:, 1]).clip(min=0.)
+        return torch.sum(out_of_limits, dim=1)
+
+    @staticmethod
+    def _reward_alive():
+        # Reward for staying alive
+        return 1.0
+
+    def _reward_hip_pos(self):
+        return torch.sum(torch.square(self.sim.dof_pos[:, self.hip_indices]), dim=1)

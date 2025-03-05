@@ -52,15 +52,15 @@ class T1DreamWaqEnvironment(HumanoidEnv):
 
         # left swing
         sin_pos_l[sin_pos_l > 0] = 0
-        ref_dof_pos[:, 0] = sin_pos_l * scale_1
-        ref_dof_pos[:, 3] = -sin_pos_l * scale_2
-        ref_dof_pos[:, 4] = sin_pos_l * scale_1
+        ref_dof_pos[:, 1] = sin_pos_l * scale_1
+        ref_dof_pos[:, 4] = -sin_pos_l * scale_2
+        ref_dof_pos[:, 5] = sin_pos_l * scale_1
 
         # right swing
         sin_pos_r[sin_pos_r < 0] = 0
-        ref_dof_pos[:, 6] = -sin_pos_r * scale_1
-        ref_dof_pos[:, 9] = sin_pos_r * scale_2
-        ref_dof_pos[:, 10] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 7] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 10] = sin_pos_r * scale_2
+        ref_dof_pos[:, 11] = -sin_pos_r * scale_1
 
         # # Add double support phase
         # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.

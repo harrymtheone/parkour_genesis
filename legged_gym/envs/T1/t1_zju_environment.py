@@ -20,6 +20,21 @@ class ActorObs(ObsBase):
         # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
 
+    def mirror(self):
+        return type(self)(*[
+            mirror_proprio_by_x(self.proprio),
+            mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
+            torch.flip(self.depth, dims=[3]),
+            self.priv_actor,
+            torch.flip(self.scan, dims=[2]),
+        ])
+
+    @staticmethod
+    def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
+        dof_prop_mirrored = dof_prop.clone()
+        mirror_dof_prop_by_x(dof_prop_mirrored, 0)
+        return dof_prop_mirrored
+
 
 class ObsNext(ObsBase):
     def __init__(self, proprio):
@@ -43,6 +58,13 @@ class T1ZJUEnvironment(HumanoidEnv):
 
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)
         self.feet_hmap_points = self._init_height_points(self.cfg.terrain.feet_pts_x, self.cfg.terrain.feet_pts_y)
+
+        self.base_lin_vel_xy_avg = self._zero_tensor(self.num_envs)  # in base frame
+
+    def _post_physics_pre_step(self):
+        super()._post_physics_pre_step()
+
+        self.base_lin_vel_xy_avg[:] = 0.99 * self.base_lin_vel_xy_avg + 0.01 * self.base_lin_vel[:, 0]
 
     def get_feet_hmap(self):
         feet_pos = self.sim.link_pos[:, self.feet_indices]
@@ -76,15 +98,15 @@ class T1ZJUEnvironment(HumanoidEnv):
 
         # left swing
         sin_pos_l[sin_pos_l > 0] = 0
-        ref_dof_pos[:, 0] = sin_pos_l * scale_1
-        ref_dof_pos[:, 3] = -sin_pos_l * scale_2
-        ref_dof_pos[:, 4] = sin_pos_l * scale_1
+        ref_dof_pos[:, 1] = sin_pos_l * scale_1
+        ref_dof_pos[:, 4] = -sin_pos_l * scale_2
+        ref_dof_pos[:, 5] = sin_pos_l * scale_1
 
         # right swing
         sin_pos_r[sin_pos_r < 0] = 0
-        ref_dof_pos[:, 6] = -sin_pos_r * scale_1
-        ref_dof_pos[:, 9] = sin_pos_r * scale_2
-        ref_dof_pos[:, 10] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 7] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 10] = sin_pos_r * scale_2
+        ref_dof_pos[:, 11] = -sin_pos_r * scale_1
 
         # # Add double support phase
         # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
@@ -202,3 +224,82 @@ class T1ZJUEnvironment(HumanoidEnv):
             #     self.sim.draw_points(pts[indices])
 
         super().render()
+
+    def _reward_tracking_lin_vel(self):
+        """
+        Tracks linear velocity commands along the xy axes.
+        Calculates a reward based on how closely the robot's linear velocity matches the commanded values.
+        """
+
+        base_lin_vel = torch.where(
+            self.env_class >= 4,  # env_is_parkour
+            self.base_lin_vel_xy_avg,
+            self.base_lin_vel[:, :2]
+        )
+
+        vel_error = torch.where(
+            self.is_zero_command,
+            torch.sum(torch.abs(self.commands[:, :2] - base_lin_vel), dim=1) * 2,
+            torch.sum(torch.square(self.commands[:, :2] - base_lin_vel), dim=1)
+        )
+
+        return torch.exp(-vel_error * self.cfg.rewards.tracking_sigma)
+
+
+@torch.jit.script
+def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):
+    # [-switch(hip), switch(thigh), switch(calf)]
+    left_idx = torch.tensor([1, 2, 3, 4, 5, 6], dtype=torch.long, device=prop.device) + start_idx
+    right_idx = left_idx + 6
+
+    dof_left = prop[:, left_idx].clone()
+    prop[:, left_idx] = prop[:, right_idx]
+    prop[:, right_idx] = dof_left
+
+    invert_idx = torch.tensor([2, 3, 6], dtype=torch.long, device=prop.device)
+    prop[:, invert_idx] *= -1.
+
+
+@torch.jit.script
+def mirror_proprio_by_x(prop: torch.Tensor) -> torch.Tensor:
+    prop = prop.clone()
+
+    # base angular velocity
+    prop[:, 0:3] = prop[:, 0:3] * torch.tensor([[-1, 1, -1]], device=prop.device)  # [-roll, pitch, -yaw]
+
+    # projected gravity
+    prop[:, 3:6] = prop[:, 3:6] * torch.tensor([[1, -1, 1]], device=prop.device)  # [x, -y, z]
+
+    # commands
+    prop[:, 6:9] = prop[:, 6:9] * torch.tensor([[1, -1, -1]], device=prop.device)  # [x, -y, -yaw]
+
+    # dof pos
+    mirror_dof_prop_by_x(prop, 11)
+
+    # dof vel
+    mirror_dof_prop_by_x(prop, 11 + 13)
+
+    # last actions
+    mirror_dof_prop_by_x(prop, 11 + 13 + 13)
+
+    return prop
+
+
+@torch.jit.script
+def mirror_priv_by_x(priv: torch.Tensor) -> torch.Tensor:
+    priv = priv.clone()
+
+    # base velocity
+    priv[:, 0:3] = priv[:, 0:3] * torch.tensor([[1, -1, 1]], device=priv.device)  # [x, -y, z]
+
+    # feet height map
+    feet_hmap = priv[:, 3:19].unflatten(1, (4, 2, 2))
+    feet_hmap = torch.flip(feet_hmap, dims=[1, 3])
+    priv[:, 3:19] = feet_hmap.flatten(1)
+
+    # feet height map
+    body_hmap = priv[:, 19:35].unflatten(1, (4, 4))
+    body_hmap = torch.flip(body_hmap, dims=[2])
+    priv[:, 19:35] = body_hmap.flatten(1)
+
+    return priv

@@ -17,20 +17,20 @@ class ObsBase:
             if v is not None:
                 torch.clip(v, -thresh, thresh, out=v)
 
-    # def flatten(self, start, stop):
-    #     sliced_v = []
-    #     for v in self.__dict__.values():
-    #         if v is not None:
-    #             sliced_v.append(v.flatten(start, stop))
-    #     return type(self)(*sliced_v)
-    #
-    # def unflatten(self, dim, shape):
-    #     sliced_v = []
-    #     for v in self.__dict__.values():
-    #         if v is not None:
-    #             sliced_v.append(v.unflatten(dim, shape))
-    #     return type(self)(*sliced_v)
-    #
+    def flatten(self, start, stop):
+        sliced_v = []
+        for v in self.__dict__.values():
+            if v is not None:
+                sliced_v.append(v.flatten(start, stop))
+        return type(self)(*sliced_v)
+
+    def unflatten(self, dim, shape):
+        sliced_v = []
+        for v in self.__dict__.values():
+            if v is not None:
+                sliced_v.append(v.unflatten(dim, shape))
+        return type(self)(*sliced_v)
+
     # def transpose(self, dim0, dim1):
     #     for n, v in self.__dict__.items():
     #         setattr(self, n, v.transpose(dim0, dim1))
