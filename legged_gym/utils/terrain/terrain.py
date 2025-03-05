@@ -2,10 +2,10 @@ import random
 from enum import Enum
 
 import pyfqmr
-from scipy.ndimage import binary_dilation
+import scipy
 
 from .terrain_utils import *
-from .utils import convert_heightfield_to_trimesh, add_fractal_roughness
+from .utils import convert_heightfield_to_trimesh, add_fractal_roughness, edge_detection
 
 
 class Terrain:
@@ -37,26 +37,32 @@ class Terrain:
         self.cfg.num_sub_terrains = cfg.num_rows * cfg.num_cols
         self.env_origins = np.zeros((cfg.num_rows, cfg.num_cols, 3))
         self.terrain_type = np.zeros((cfg.num_rows, cfg.num_cols))
-        # self.goals = None
-        # self.goals = np.zeros((cfg.num_rows, cfg.num_cols, cfg.num_goals, 3))
-        # self.num_goals = cfg.num_goals
         self.goals = None
         self.num_goals = None
 
         self.border = int(cfg.border_size / self.cfg.horizontal_scale)
         self.tot_cols = self.tot_rows = None
-        self.height_field_raw = None
-        self.height_field_guidance = None
+        self.height_field_raw: np.array
+        self.height_field_guidance: np.array
 
         self.curriculum(max_difficulty=cfg.max_difficulty)
 
-        self.vertices, self.triangles, self.edge_mask = convert_heightfield_to_trimesh(self.height_field_raw,
-                                                                                       self.cfg.horizontal_scale,
-                                                                                       self.cfg.vertical_scale,
-                                                                                       self.cfg.slope_treshold)
+        downsample_factor = self.cfg.horizontal_scale / self.cfg.horizontal_scale_downsample
+        self.height_field_raw_downsample = scipy.ndimage.zoom(self.height_field_raw, (downsample_factor, downsample_factor), order=1)
+        print(f'Downsample height_field_raw from {self.height_field_raw.shape} to {self.height_field_raw_downsample.shape}')
+
+        self.vertices, self.triangles = convert_heightfield_to_trimesh(self.height_field_raw_downsample,
+                                                                       self.cfg.horizontal_scale_downsample,
+                                                                       self.cfg.vertical_scale,
+                                                                       self.cfg.slope_treshold)
+
+        self.edge_mask = edge_detection(self.height_field_raw,
+                                        self.cfg.horizontal_scale,
+                                        self.cfg.vertical_scale,
+                                        self.cfg.slope_treshold)
         half_edge_width = int(self.cfg.edge_width_thresh / self.cfg.horizontal_scale)
         structure = np.ones((half_edge_width * 2 + 1, half_edge_width * 2 + 1))
-        self.edge_mask = binary_dilation(self.edge_mask, structure=structure)
+        self.edge_mask = scipy.ndimage.binary_dilation(self.edge_mask, structure=structure)
 
         print(f'Created {self.vertices.shape[0]} vertices')
         print(f'Created {self.triangles.shape[0]} triangles')

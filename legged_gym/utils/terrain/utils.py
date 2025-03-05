@@ -67,6 +67,33 @@ def convert_heightfield_to_trimesh(height_field_raw, horizontal_scale, vertical_
         triangles[start + 1:stop:2, 1] = ind2
         triangles[start + 1:stop:2, 2] = ind3
 
+    return vertices, triangles
+
+
+def convert_heightfield_to_trimesh_delatin(height_field_raw, horizontal_scale, vertical_scale, max_error=0.01):
+    mesh = Delatin(np.flip(height_field_raw, axis=1).T, z_scale=vertical_scale, max_error=max_error)
+    vertices = np.zeros_like(mesh.vertices)
+    vertices[:, :2] = mesh.vertices[:, :2] * horizontal_scale
+    vertices[:, 2] = mesh.vertices[:, 2]
+    return vertices, mesh.triangles
+
+
+def edge_detection(height_field_raw, horizontal_scale, vertical_scale, slope_threshold=None):
+    if slope_threshold is None:
+        raise ValueError('slope threshold cannot be None!!!')
+
+    hf = height_field_raw
+    num_rows = hf.shape[0]
+    num_cols = hf.shape[1]
+
+    slope_threshold *= horizontal_scale / vertical_scale
+    move_x = np.zeros((num_rows, num_cols))
+    move_y = np.zeros((num_rows, num_cols))
+    move_x[:num_rows - 1, :] += hf[1:num_rows, :] - hf[:num_rows - 1, :] > slope_threshold
+    move_x[1:num_rows, :] -= hf[:num_rows - 1, :] - hf[1:num_rows, :] > slope_threshold
+    move_y[:, :num_cols - 1] += hf[:, 1:num_cols] - hf[:, :num_cols - 1] > slope_threshold
+    move_y[:, 1:num_cols] -= hf[:, :num_cols - 1] - hf[:, 1:num_cols] > slope_threshold
+
     # compute edge (fixed by hzx)
     move_x[:num_rows - 1, :] += hf[1:num_rows, :] - hf[:num_rows - 1, :] > slope_threshold
     move_x[1:num_rows, :] += hf[1:num_rows, :] - hf[:num_rows - 1, :] > slope_threshold
@@ -80,15 +107,7 @@ def convert_heightfield_to_trimesh(height_field_raw, horizontal_scale, vertical_
     edge_x = move_x != 0
     edge_y = move_y != 0
 
-    return vertices, triangles, edge_x + edge_y
-
-
-def convert_heightfield_to_trimesh_delatin(height_field_raw, horizontal_scale, vertical_scale, max_error=0.01):
-    mesh = Delatin(np.flip(height_field_raw, axis=1).T, z_scale=vertical_scale, max_error=max_error)
-    vertices = np.zeros_like(mesh.vertices)
-    vertices[:, :2] = mesh.vertices[:, :2] * horizontal_scale
-    vertices[:, 2] = mesh.vertices[:, 2]
-    return vertices, mesh.triangles
+    return edge_x + edge_y
 
 
 def add_fractal_roughness(terrain, levels=8, scale=1.0):
