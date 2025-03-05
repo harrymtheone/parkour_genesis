@@ -327,7 +327,7 @@ class Actor(nn.Module):
 
 class EstimatorGRU(nn.Module):
     is_recurrent = True
-    from legged_gym.envs.pdd.pdd_scan_environment import ActorObs
+    from legged_gym.envs.T1.t1_zju_environment import ActorObs
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
@@ -347,7 +347,6 @@ class EstimatorGRU(nn.Module):
             use_estimated_values: Union[bool, torch.Tensor],
             eval_=False,
             ):  # <-- my mood be like
-        obs = obs.clone()
 
         # encode history proprio
         latent_obs = self.obs_gru(obs.prop_his)
@@ -391,9 +390,10 @@ class EstimatorGRU(nn.Module):
             self,
             obs: ActorObs,
             hidden_states,
-            use_estimated_values: Union[bool, torch.Tensor] = True,
+            use_estimated_values: torch.Tensor,
     ):  # <-- my mood be like
-        obs = obs.clone()  # encode history proprio
+
+        # encode history proprio
         obs_enc_hidden_states, recon_hidden_states = hidden_states
 
         latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden_states)

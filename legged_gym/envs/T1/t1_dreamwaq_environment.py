@@ -41,6 +41,11 @@ class T1DreamWaqEnvironment(HumanoidEnv):
         self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
         self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
+    def _init_robot_props(self):
+        super()._init_robot_props()
+        self.yaw_roll_dof_indices = self.sim.create_indices(
+            self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
+
     def _compute_ref_state(self):
         sin_pos = torch.sin(2 * torch.pi * self.phase)
         sin_pos_l = sin_pos.clone()

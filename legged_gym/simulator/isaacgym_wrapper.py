@@ -112,8 +112,8 @@ class IsaacGymWrapper(BaseWrapper):
         hf_params.column_scale = self.cfg.terrain.horizontal_scale
         hf_params.row_scale = self.cfg.terrain.horizontal_scale
         hf_params.vertical_scale = self.cfg.terrain.vertical_scale
-        hf_params.nbRows = self.terrain.tot_cols
-        hf_params.nbColumns = self.terrain.tot_rows
+        hf_params.nbRows = self.terrain.height_field_raw.shape[1]
+        hf_params.nbColumns = self.terrain.height_field_raw.shape[0]
         hf_params.transform.p.x = -self.terrain.border * self.cfg.terrain.horizontal_scale
         hf_params.transform.p.y = -self.terrain.border * self.cfg.terrain.horizontal_scale
         hf_params.transform.p.z = 0.0

@@ -18,6 +18,8 @@ class HumanoidEnv(ParkourTask):
         self.knee_indices = self.sim.create_indices(
             self.sim.get_full_names(self.cfg.asset.knee_name, True), True)
 
+        self.yaw_roll_dof_indices = None  # you should define this variable for your robot
+
     def _init_buffers(self):
         super()._init_buffers()
 
@@ -150,6 +152,8 @@ class HumanoidEnv(ParkourTask):
 
         # encourage the robot to lift its legs when it moves
         # rew = (self.feet_height > self.cfg.rewards.feet_height_target) * (self.feet_height < self.cfg.rewards.feet_height_target_max)
+        # rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, 0, 1)
+        # rew = torch.sum(rew * ~self._get_stance_mask(), dim=1, dtype=torch.float)
 
         rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, 0, 1)
         rew = torch.sum(rew * swing_mask, dim=1, dtype=torch.float)
@@ -177,7 +181,7 @@ class HumanoidEnv(ParkourTask):
 
     def _reward_feet_distance(self):
         """
-        Calculates the reward based on the distance between the feet. Penilize feet get close to each other or too far away.
+        Calculates the reward based on the distance between the feet. Penalize feet get close to each other or too far away.
         """
         foot_pos = self.sim.link_pos[:, self.feet_indices, :2]
         foot_dist = torch.norm(foot_pos[:, 0, :] - foot_pos[:, 1, :], dim=1)
@@ -242,21 +246,6 @@ class HumanoidEnv(ParkourTask):
             torch.exp(rew * self.cfg.rewards.tracking_sigma * 0.1),
             torch.exp(rew * self.cfg.rewards.tracking_sigma)
         )
-
-    # def _reward_tracking_ang_vel(self):
-    #     """
-    #     Tracks angular velocity commands for yaw rotation.
-    #     Computes a reward based on how closely the robot's angular velocity matches the commanded yaw values.
-    #     """
-    #     # stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
-    #     ang_vel_error = torch.square(
-    #         self.commands[:, 2] - self.base_ang_vel[:, 2])
-    #     # ang_vel_error[stand_command] = torch.abs(
-    #     #     self.commands[:, 2] - self.base_ang_vel[:, 2])[stand_command]
-    #     r = torch.exp(-ang_vel_error * self.cfg.rewards.tracking_sigma)
-    #     # r[stand_command] = r.clone()[stand_command] * 0.6
-    #     # r[stand_command] = 1.0
-    #     return r
 
     def _reward_tracking_ang_vel(self):
         """
@@ -334,8 +323,6 @@ class HumanoidEnv(ParkourTask):
 
         linear_error = 0.2 * (lin_vel_error + ang_vel_error)
         r = (lin_vel_error_exp + ang_vel_error_exp) / 2. - linear_error
-        # r[stand_command] = r.clone()[stand_command] * 0.7
-        # r[stand_command] = 1.0
         return r
 
     def _reward_default_joint_pos(self):
@@ -343,10 +330,10 @@ class HumanoidEnv(ParkourTask):
         Calculates the reward for keeping joint positions close to default positions, with a focus
         on penalizing deviation in yaw and roll directions. Excludes yaw and roll from the main penalty.
         """
+        assert self.yaw_roll_dof_indices is not None
         joint_diff = self.sim.dof_pos - self.init_state_dof_pos
-        left_yaw_roll = joint_diff[:, :2]
-        right_yaw_roll = joint_diff[:, 5:7]
-        yaw_roll = torch.norm(left_yaw_roll, dim=1) + torch.norm(right_yaw_roll, dim=1)
+        yaw_roll = joint_diff[:, self.yaw_roll_dof_indices]
+        yaw_roll = yaw_roll.square().sum(dim=1)
         yaw_roll = torch.clamp(yaw_roll - 0.1, 0, 50)
         return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1)
 
@@ -371,8 +358,8 @@ class HumanoidEnv(ParkourTask):
         # base_height = self.root_states[:, 2] - (measured_terrain_heights_around_base - 0.05)
         # return torch.exp(-torch.abs(base_height - self.cfg.rewards.base_height_target) * 100)
 
-        rew = torch.square(self.base_height - self.cfg.rewards.base_height_target)
-        return rew.clip(-1, 1)
+        rew = (self.base_height - self.cfg.rewards.base_height_target).square()
+        return rew
 
     def _reward_base_acc(self):
         """
@@ -420,26 +407,6 @@ class HumanoidEnv(ParkourTask):
         This encourages the robot to avoid undesired contact with objects or surfaces.
         """
         return torch.sum(1. * (torch.norm(self.sim.contact_forces[:, self.penalised_contact_indices], dim=-1) > 0.1), dim=1)
-
-    def _reward_stand_still(self):
-        # penalize motion at zero commands
-        # stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
-        # not_being_pushed = torch.norm(self.ext_forces, dim=1) < 100
-        # stand_command = torch.logical_and(stand_command, not_being_pushed)
-        dof_idx = [0, 1, 2, 3, 5, 6, 7, 8]
-        dof_default_error = self.sim.dof_pos[:, dof_idx] - self.init_state_dof_pos[:, dof_idx]
-        ankle_dof_error = self.feet_euler_xyz[:, :, 1]
-        rew = torch.exp(-dof_default_error.square().sum(dim=1) - ankle_dof_error.square().sum(dim=1))
-        rew[self.is_zero_command] = 0
-        return rew
-
-    # def _reward_stand_still(self):
-    #     # penalize motion at zero commands
-    #     stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
-    #     r = torch.exp(-torch.sum(torch.square(self.dof_pos - self.default_dof_pos), dim=1))
-    #     r = torch.where(stand_command, r.clone(),
-    #                     torch.zeros_like(r))
-    #     return r
 
     def _reward_termination(self):
         # Terminal reward / penalty

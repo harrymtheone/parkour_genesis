@@ -49,6 +49,10 @@ class CriticObs(ObsBase):
 
 
 class T1ZJUEnvironment(HumanoidEnv):
+    def _init_robot_props(self):
+        super()._init_robot_props()
+        self.yaw_roll_dof_indices = self.sim.create_indices(
+            self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -59,12 +63,12 @@ class T1ZJUEnvironment(HumanoidEnv):
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)
         self.feet_hmap_points = self._init_height_points(self.cfg.terrain.feet_pts_x, self.cfg.terrain.feet_pts_y)
 
-        self.base_lin_vel_xy_avg = self._zero_tensor(self.num_envs)  # in base frame
+        self.base_lin_vel_xy_avg = self._zero_tensor(self.num_envs, 2)  # in base frame
 
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
 
-        self.base_lin_vel_xy_avg[:] = 0.99 * self.base_lin_vel_xy_avg + 0.01 * self.base_lin_vel[:, 0]
+        self.base_lin_vel_xy_avg[:] = 0.99 * self.base_lin_vel_xy_avg + 0.01 * self.base_lin_vel[:, :2]
 
     def get_feet_hmap(self):
         feet_pos = self.sim.link_pos[:, self.feet_indices]
@@ -201,7 +205,7 @@ class T1ZJUEnvironment(HumanoidEnv):
             self._draw_goals()
             # self._draw_height_field()
             # self._draw_edge()
-            self._draw_camera()
+            # self._draw_camera()
             self._draw_feet_at_edge()
 
         if self.cfg.sensors.activated:
@@ -232,7 +236,7 @@ class T1ZJUEnvironment(HumanoidEnv):
         """
 
         base_lin_vel = torch.where(
-            self.env_class >= 4,  # env_is_parkour
+            self.env_class.unsqueeze(1) >= 4,  # env_is_parkour
             self.base_lin_vel_xy_avg,
             self.base_lin_vel[:, :2]
         )
@@ -245,6 +249,13 @@ class T1ZJUEnvironment(HumanoidEnv):
 
         return torch.exp(-vel_error * self.cfg.rewards.tracking_sigma)
 
+    def _reward_waist_pos(self):
+        joint_diff = self.sim.dof_pos - self.init_state_dof_pos
+        left_yaw_roll = joint_diff[:, :2]
+        right_yaw_roll = joint_diff[:, 5:7]
+        yaw_roll = torch.norm(left_yaw_roll, dim=1) + torch.norm(right_yaw_roll, dim=1)
+        yaw_roll = torch.clamp(yaw_roll - 0.1, 0, 50)
+        return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1)
 
 @torch.jit.script
 def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):

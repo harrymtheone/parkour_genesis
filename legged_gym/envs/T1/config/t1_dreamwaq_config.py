@@ -121,7 +121,7 @@ class T1DreamWaqCfg(T1BaseCfg):
             # base pos
             default_joint_pos = 0.5
             orientation = 1.
-            base_height = 0.2
+            base_height = -0.2
             base_acc = 0.2
 
             # energy

@@ -41,14 +41,13 @@ class Terrain:
         self.num_goals = None
 
         self.border = int(cfg.border_size / self.cfg.horizontal_scale)
-        self.tot_cols = self.tot_rows = None
         self.height_field_raw: np.array
         self.height_field_guidance: np.array
 
         self.curriculum(max_difficulty=cfg.max_difficulty)
 
         downsample_factor = self.cfg.horizontal_scale / self.cfg.horizontal_scale_downsample
-        self.height_field_raw_downsample = scipy.ndimage.zoom(self.height_field_raw, (downsample_factor, downsample_factor), order=1)
+        self.height_field_raw_downsample = scipy.ndimage.zoom(self.height_field_raw, (downsample_factor, downsample_factor), order=0)
         print(f'Downsample height_field_raw from {self.height_field_raw.shape} to {self.height_field_raw_downsample.shape}')
 
         self.vertices, self.triangles = convert_heightfield_to_trimesh(self.height_field_raw_downsample,
@@ -163,7 +162,7 @@ class Terrain:
             terrain.terrain_type = Terrain.terrain_type.rough_slope
             # self.terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
             # random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
-            add_fractal_roughness(terrain, levels=6, scale=0.5 * difficulty)
+            add_fractal_roughness(terrain, levels=8, scale=0.8 * difficulty)
             # self.add_roughness(terrain, difficulty)
 
         elif choice < self.proportions[3]:
@@ -366,8 +365,6 @@ class Terrain:
                     self.goals[row, col, :len(terrain.goals), :2] = goal_pos
 
         self.height_field_raw = np.pad(self.height_field_raw, (self.border,), 'constant', constant_values=(0,))
-        self.tot_rows, self.tot_cols = self.height_field_raw.shape
-
         self.height_field_guidance = np.pad(self.height_field_guidance, (self.border,), 'constant', constant_values=(0,))
 
     def add_terrains_to_map_compact(self, terrain_mat):
@@ -431,7 +428,5 @@ class Terrain:
 
         self.height_field_raw = concat_chunks(terrain_mat, 'height_field_raw')
         self.height_field_raw = np.pad(self.height_field_raw, (self.border,), 'constant', constant_values=(0,))
-        self.tot_rows, self.tot_cols = self.height_field_raw.shape
-
         self.height_field_guidance = concat_chunks(terrain_mat, 'height_field_guidance')
         self.height_field_guidance = np.pad(self.height_field_guidance, (self.border,), 'constant', constant_values=(0,))

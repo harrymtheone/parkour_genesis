@@ -146,7 +146,7 @@ class PPO_ZJU(BaseAlgorithm):
             mean_entropy_loss += entropy_loss
 
             estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss = self._compute_estimation_loss(batch)
-            loss += estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss + symmetry_loss
+            loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss + symmetry_loss
 
             # estimation statistics
             mean_estimation_loss += estimation_loss.item()
@@ -168,7 +168,7 @@ class PPO_ZJU(BaseAlgorithm):
 
             # Gradient step
             self.optimizer.zero_grad()
-            self.scaler.scale(loss).backward()
+            self.scaler.scale(loss + loss_est).backward()
             # self.scaler.unscale_(self.optimizer)
             # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
             self.scaler.step(self.optimizer)
@@ -207,7 +207,6 @@ class PPO_ZJU(BaseAlgorithm):
         }
         return return_dict
 
-    # @torch.compile(mode='default')
     def _compute_policy_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
@@ -258,7 +257,6 @@ class PPO_ZJU(BaseAlgorithm):
 
             return kl_mean, value_loss, surrogate_loss, entropy_loss
 
-    # @torch.compile(mode='default')
     def _compute_estimation_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             batch_size = 2
@@ -309,18 +307,10 @@ class PPO_ZJU(BaseAlgorithm):
 
     def load(self, loaded_dict, load_optimizer=True):
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
-
-        # try:
-        # except:
-        #     actor_state_dict = loaded_dict['actor_state_dict']
-        #     self.actor.obs_gru.load_state_dict({k[len('obs_gru.'):]: v for k, v in actor_state_dict.items() if k.startswith('obs_gru')})
-        #     self.actor.transformer.load_state_dict({k[len('transformer.'):]: v for k, v in actor_state_dict.items() if k.startswith('transformer')})
-        #     self.actor.actor.load_state_dict({k[len('actor.'):]: v for k, v in actor_state_dict.items() if k.startswith('actor')})
-
         self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
-        # if load_optimizer:
-        #     self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+        if load_optimizer:
+            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)

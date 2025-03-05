@@ -390,7 +390,7 @@ class ParkourTask(BaseTask):
         self.target_yaw[:] = torch.atan2(target_vec_norm[:, 1], target_vec_norm[:, 0])
 
         if self.global_counter % 5 == 0:
-            self.delta_yaw[:] = wrap_to_pi(2 * (self.target_yaw - self.base_euler[:, 2]))
+            self.delta_yaw[:] = wrap_to_pi(self.target_yaw - self.base_euler[:, 2]) * (self.command_x_parkour > self.cfg.commands.lin_vel_clip)
 
         if not self.cfg.play.control:
             # stair terrains use heading commands
@@ -480,7 +480,7 @@ class ParkourTask(BaseTask):
         pts = []
         for i in range(self.sim.height_samples.shape[0]):
             for j in range(self.sim.height_samples.shape[1]):
-                if j % 10 != 0:
+                if j % 50 != 0:
                     continue
 
                 x = i * self.cfg.terrain.horizontal_scale - self.cfg.terrain.border_size
@@ -503,10 +503,12 @@ class ParkourTask(BaseTask):
         pts_non_edge = []
         for i in range(self.sim.edge_mask.shape[0]):
             for j in range(self.sim.edge_mask.shape[1]):
-                if j % 10 != 0:
+                if j % 50 != 0:
                     continue
+
                 x = i * self.cfg.terrain.horizontal_scale - self.cfg.terrain.border_size
                 y = j * self.cfg.terrain.horizontal_scale - self.cfg.terrain.border_size
+
                 z = self.sim.height_samples[i, j] * self.cfg.terrain.vertical_scale + 0.02
 
                 if self.sim.edge_mask[i, j]:

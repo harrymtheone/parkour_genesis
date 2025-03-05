@@ -83,16 +83,14 @@ class BaseWrapper:
 
     def get_full_names(self, names, is_link) -> list:
         full_names = []
+        if type(names) is str:
+            names = [names]
 
-        if is_link:
-            if type(names) is str:
-                names = [names]
-
-            for n in names:
+        for n in names:
+            if is_link:
                 full_names.extend([s for s in self._body_names if n in s])
-
-        else:
-            full_names = [s for s in self._dof_names if names in s]
+            else:
+                full_names.extend([s for s in self._dof_names if n in s])
 
         assert len(full_names) > 0, "No names found!"
         return full_names

@@ -98,7 +98,7 @@ class RLDreamRunner:
                         rew_terrain = mean_env_reward[self.env.env_class == t]
                         coefficient_variation[i] = rew_terrain.std() / (rew_terrain.mean().abs() + 1e-5)
 
-                    p_smpl = 0.99 * p_smpl + 0.01 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
+                    p_smpl = 0.9 * p_smpl + 0.1 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
 
                 # Learning step
                 self.alg.compute_returns(critic_obs)
