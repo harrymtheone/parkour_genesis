@@ -4,7 +4,7 @@ import torch
 
 from legged_gym.envs.base.humanoid_env import HumanoidEnv
 from ..base.utils import ObsBase, HistoryBuffer
-from ...utils.math import transform_by_yaw
+from ...utils.math import transform_by_yaw, torch_rand_float
 
 
 class ActorObs(ObsBase):
@@ -91,33 +91,6 @@ class T1ZJUEnvironment(HumanoidEnv):
         hmap = self._get_heights(points + self.cfg.terrain.border_size)
         return self.sim.root_pos[:, 2:3] - hmap  # to relative height
 
-    def _compute_ref_state(self):
-        sin_pos = torch.sin(2 * torch.pi * self.phase)
-        sin_pos_l = sin_pos.clone()
-        sin_pos_r = sin_pos.clone()
-
-        ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
-        scale_1 = self.cfg.rewards.target_joint_pos_scale
-        scale_2 = 2 * scale_1
-
-        # left swing
-        sin_pos_l[sin_pos_l > 0] = 0
-        ref_dof_pos[:, 1] = sin_pos_l * scale_1
-        ref_dof_pos[:, 4] = -sin_pos_l * scale_2
-        ref_dof_pos[:, 5] = sin_pos_l * scale_1
-
-        # right swing
-        sin_pos_r[sin_pos_r < 0] = 0
-        ref_dof_pos[:, 7] = -sin_pos_r * scale_1
-        ref_dof_pos[:, 10] = sin_pos_r * scale_2
-        ref_dof_pos[:, 11] = -sin_pos_r * scale_1
-
-        # # Add double support phase
-        # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
-
-        self.ref_dof_pos[:] = self.init_state_dof_pos
-        self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
-
     def _compute_observations(self):
         """
         Computes observations
@@ -143,18 +116,16 @@ class T1ZJUEnvironment(HumanoidEnv):
         base_ang_vel = self._add_noise(base_ang_vel, self.cfg.noise.noise_scales.ang_vel)
         projected_gravity = self._add_noise(projected_gravity, self.cfg.noise.noise_scales.gravity)
 
-        self._compute_ref_state()
-
-        sin_pos = torch.sin(2 * torch.pi * self.phase).unsqueeze(1)
-        cos_pos = torch.cos(2 * torch.pi * self.phase).unsqueeze(1)
-        command_input = torch.cat((sin_pos, cos_pos, self.commands[:, :3] * self.commands_scale), dim=1)
+        clock = torch.stack(self._get_clock_input(), dim=1)
+        clock[:] = 0.
+        command_input = torch.cat((clock, self.commands[:, :3] * self.commands_scale), dim=1)
 
         # proprio observation
         proprio = torch.cat((
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
             command_input,  # 5
-            (dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 12D
+            (dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 12D
             dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.last_action_output,  # 12D
         ), dim=-1)
@@ -168,7 +139,7 @@ class T1ZJUEnvironment(HumanoidEnv):
             self.base_euler * self.obs_scales.quat,  # 3
             command_input,  # 5D
             self.last_action_output,  # 12D
-            (self.sim.dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 12D
+            (self.sim.dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 12D
             self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.ext_force[:, :2],  # 2
             self.ext_torque,  # 3
@@ -203,7 +174,7 @@ class T1ZJUEnvironment(HumanoidEnv):
     def render(self):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
             self._draw_goals()
-            # self._draw_height_field()
+            # self._draw_height_field(draw_guidance=True)
             # self._draw_edge()
             # self._draw_camera()
             self._draw_feet_at_edge()
@@ -228,6 +199,12 @@ class T1ZJUEnvironment(HumanoidEnv):
             #     self.sim.draw_points(pts[indices])
 
         super().render()
+
+    def _reward_feet_clearance(self):
+        rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, -1, 1)
+
+        rew[self.contact_filt] = 0.
+        return rew.sum(dim=1)
 
     def _reward_tracking_lin_vel(self):
         """
@@ -256,6 +233,11 @@ class T1ZJUEnvironment(HumanoidEnv):
         yaw_roll = torch.norm(left_yaw_roll, dim=1) + torch.norm(right_yaw_roll, dim=1)
         yaw_roll = torch.clamp(yaw_roll - 0.1, 0, 50)
         return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1)
+
+    def _reward_default_joint_pos(self):
+        joint_diff = self.sim.dof_pos - self.init_state_dof_pos
+        return -joint_diff.square().sum(dim=1)
+
 
 @torch.jit.script
 def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):

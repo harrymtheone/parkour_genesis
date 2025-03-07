@@ -31,7 +31,7 @@ class PddScanEnvironment(HumanoidEnv):
         self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
     def _compute_ref_state(self):
-        sin_pos = torch.sin(2 * torch.pi * self.phase)
+        sin_pos, _ = self._get_clock_input()
         sin_pos_l = sin_pos.clone()
         sin_pos_r = sin_pos.clone()
 
@@ -84,9 +84,8 @@ class PddScanEnvironment(HumanoidEnv):
 
         self._compute_ref_state()
 
-        sin_pos = torch.sin(2 * torch.pi * self.phase).unsqueeze(1)
-        cos_pos = torch.cos(2 * torch.pi * self.phase).unsqueeze(1)
-        command_input = torch.cat((sin_pos, cos_pos, self.commands[:, :3] * self.commands_scale), dim=1)
+        clock = torch.stack(self._get_clock_input(), dim=1)
+        command_input = torch.cat((clock, self.commands[:, :3] * self.commands_scale), dim=1)
 
         # proprio observation
         proprio = torch.cat((

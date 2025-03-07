@@ -59,7 +59,7 @@ class ObsGRU(nn.Module):
         return self.hidden_state.detach()
 
     def reset(self, dones):
-        self.hidden_state[:, dones].zero_()
+        self.hidden_state[:, dones] = 0.
 
 
 class UNet(nn.Module):
@@ -212,7 +212,7 @@ class ReconGRU(nn.Module):
         return self.hidden_state.detach()
 
     def reset(self, dones):
-        self.hidden_state[:, dones].zero_()
+        self.hidden_state[:, dones] = 0.
 
 
 class LocoTransformer(nn.Module):
@@ -408,7 +408,7 @@ class EstimatorGRU(nn.Module):
             recon_refine,
             obs.scan.unsqueeze(2)
         )
-        est_mu, _, _ = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
+        est_mu, _, _ = gru_wrapper(self.transformer.forward, recon_input, latent_obs)  # TODO: probably detach the vel and hmap gradient???
         latent_input = torch.where(
             use_estimated_values,
             est_mu,

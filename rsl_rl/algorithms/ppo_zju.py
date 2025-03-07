@@ -298,8 +298,8 @@ class PPO_ZJU(BaseAlgorithm):
 
         return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss
 
-    def play_act(self, obs, use_estimated_values=True):
-        return self.actor.act(obs, use_estimated_values=use_estimated_values, eval_=True)
+    def play_act(self, obs, **kwargs):
+        return self.actor.act(obs, **kwargs)
 
     def train(self):
         self.actor.train()

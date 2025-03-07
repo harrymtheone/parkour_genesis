@@ -5,41 +5,18 @@ from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 class T1GaitCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
-        num_envs = 4096  # 6144
+        num_envs = 4096
+        n_proprio = 50
+        len_prop_his = 50
 
-        n_proprio = 47
-        len_prop_his = 10
-
-        len_depth_his = 2
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 83
+        num_critic_obs = 62
         len_critic_his = 50
 
-        num_actions = 12
+        num_actions = 13
         episode_length_s = 30  # episode length in seconds
-
-    class sensors:
-        activated = True
-
-        class depth_0:
-            position = [0.13, 0, 0.38]  # front camera
-            position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-            pitch = 60  # positive is looking down
-            pitch_range = [-1, 1]
-
-            update_interval = 5  # 5 works without retraining, 8 worse
-            delay_prop = (5, 1)  # Gaussian (mean, std)
-
-            resolution = (106, 60)  # width, height
-            resized = (87, 58)  # (87, 58)
-            horizontal_fov = 87
-
-            near_clip = 0
-            far_clip = 2
-            dis_noise_global = 0.01  # in meters
-            dis_noise_gaussian = 0.01  # in meters
 
     class terrain(T1BaseCfg.terrain):
         scan_pts_x = np.linspace(-0.5, 1.1, 32)
@@ -52,7 +29,7 @@ class T1GaitCfg(T1BaseCfg):
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
-        # curriculum = False
+        curriculum = False
 
         terrain_dict = {
             'smooth_slope': 1,
@@ -67,15 +44,15 @@ class T1GaitCfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 2,
-            'parkour_flat': 0,
+            'parkour_stair': 0,
+            'parkour_flat': 1,
         }
 
     class noise(T1BaseCfg.noise):
-        add_noise = True
+        add_noise = False
 
     class domain_rand(T1BaseCfg.domain_rand):
-        switch = True
+        switch = False
 
         randomize_start_pos = False
         randomize_start_y = switch
@@ -83,16 +60,16 @@ class T1GaitCfg(T1BaseCfg):
         randomize_start_vel = switch
         randomize_start_pitch = switch
 
-        randomize_start_dof_pos = True
-        randomize_start_dof_vel = True
+        randomize_start_dof_pos = False
+        randomize_start_dof_vel = False
 
         randomize_friction = switch
         randomize_base_mass = switch
         randomize_link_mass = switch
         randomize_com = switch
 
-        push_robots = switch
-        action_delay = switch
+        push_robots = False
+        action_delay = False
         add_dof_lag = False
         add_imu_lag = False
 
@@ -102,7 +79,7 @@ class T1GaitCfg(T1BaseCfg):
         randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
         randomize_joint_friction = switch
-        randomize_joint_armature = False
+        randomize_joint_armature = True
         randomize_coulomb_friction = False
 
     class rewards:
@@ -117,33 +94,55 @@ class T1GaitCfg(T1BaseCfg):
         cycle_time = 0.7  # 0.64
 
         min_dist = 0.2
-        max_dist = 0.5
+        max_dist = 0.6
         max_contact_force = 300
 
         rew_norm_factor = 1.0
 
         class scales:
-            tracking_lin_vel = 1.0
-            tracking_ang_vel = 0.5
+            # tracking_lin_vel = 1.5
+            # tracking_ang_vel = 0.5
+            # orientation = -2.0
+            # energy = -2.5e-7
+            #
+            # dof_vel = -1e-4
+            # dof_acc = -2e-6
+            # dof_pos_limits = -10
+            # torques = -1e-7
+            # contact_forces = -3e-4
+            # collision = -10.
+            #
+            # action_rate = -6e-3
+            # # arm_dof_err = -0.3
+            # waist_dof_err = -0.1
+            # leg_yaw_roll = -0.1
+            # feet_away = 0.4
+            #
+            # base_height = -1.0
+            # feet_distance = 0.2
 
-            lin_vel_z = -2.0
-            ang_vel_xy = -0.05
-            orientation = -1.0
-            base_height = -10.0
-
-            torques = -0.00001
+            # tracking rewards
+            tracking_lin_vel = 1.5
+            tracking_goal_vel = 2.0
+            tracking_yaw = 0.5
+            orientation = -0.1
             dof_acc = -2.5e-7
-            dof_vel = -1e-3
-            action_rate = -0.01
-            dof_pos_limits = -5.0
-            alive = 0.15
-            hip_pos = -1.0
 
-            feet_slip = -0.2
-            feet_clearance = -20.0
-            feet_air_time = 1.0
-            feet_contact_number = 0.18
-            collision = -1.
+            lin_vel_z = -1.0 / 50
+            ang_vel_xy = -0.05 / 50
+            collision = -10.0 / 50
+            action_rate = -0.1 / 50
+            delta_torques = -1.0e-7 / 50
+            torques = -0.00001 / 50
+            dof_error = -0.15
+
+            # feet_stumble = -1.0 / 50
+            # feet_edge = -1.0 / 50
+
+            feet_distance = 0.2
+            contact_forces = -2e-3
+            # dof_pos_limits = -10
+            # dof_torque_limits = -0.1
 
 
 class T1GaitCfgPPO(T1BaseCfgPPO):
@@ -154,7 +153,6 @@ class T1GaitCfgPPO(T1BaseCfgPPO):
     class policy:
         # actor parameters
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
-        init_noise_std = 1.0
 
         # critic parameters
         critic_hidden_dims = [512, 256, 128]
@@ -172,8 +170,8 @@ class T1GaitCfgPPO(T1BaseCfgPPO):
         value_loss_coef = 1.0
         use_clipped_value_loss = True
         clip_param = 0.2
-        entropy_coef = 0.01
-        num_learning_epochs = 10
+        entropy_coef = 0.001
+        num_learning_epochs = 5
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
@@ -183,7 +181,8 @@ class T1GaitCfgPPO(T1BaseCfgPPO):
         max_grad_norm = 1.
 
         use_amp = True
-        continue_from_last_std = True
+        init_noise_std = 1.0
+        continue_from_last_std = False
 
     class runner(T1BaseCfgPPO.runner):
         max_iterations = 50000  # number of policy updates

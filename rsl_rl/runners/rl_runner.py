@@ -191,7 +191,7 @@ class RLRunner:
                       f"""{'ETA:':>{pad}} {mins:.0f} mins {secs:.1f} s\n""")
         print(log_string)
 
-    def play_act(self, obs, use_estimated_values=True):
+    def play_act(self, obs, **kwargs):
         return self.alg.actor_critic.act_inference(obs)
 
     def save(self, path, infos=None):

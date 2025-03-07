@@ -88,13 +88,13 @@ class T1BaseCfg(BaseConfig):
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [0.2, 1.0]
+            lin_vel_x = [0.6, 1.5]
             lin_vel_y = [-0.5, 0.5]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.6, 1.0]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.6, 1.5]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class noise:
@@ -138,7 +138,7 @@ class T1BaseCfg(BaseConfig):
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
         randomize_action_delay_each_step = False
-        action_delay_range = [(0, 0), (0, 10), (0, 20)]
+        action_delay_range = [(0, 0), (0, 3), (0, 7), (0, 12), (0, 20)]
         action_delay_update_steps = 3000 * 24
 
         add_dof_lag = False

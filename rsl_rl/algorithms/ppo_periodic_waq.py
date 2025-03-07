@@ -37,7 +37,7 @@ class Transition:
             setattr(self, key, None)
 
 
-class PPODreamWaQ(BaseAlgorithm):
+class PPOPeriodic(BaseAlgorithm):
     def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), **kwargs):
         # PPO parameters
         self.cfg = train_cfg.algorithm

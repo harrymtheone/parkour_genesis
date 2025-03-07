@@ -6,6 +6,8 @@ from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 class T1DreamWaqCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
+
+        enable_clock_input = True
         n_proprio = 50
         len_prop_his = 50
 

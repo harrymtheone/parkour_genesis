@@ -100,7 +100,7 @@ class Estimator(nn.Module):
         return self.hidden_states.detach()
 
     def reset(self, dones):
-        self.hidden_states[:, dones].zero_()
+        self.hidden_states[:, dones] = 0.
 
     @staticmethod
     def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:

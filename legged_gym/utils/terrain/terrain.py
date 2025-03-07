@@ -143,7 +143,7 @@ class Terrain:
         slope = difficulty * 0.4
         step_up_height = 0.02 + 0.08 * difficulty
         step_down_height = 0.02 + 0.08 * difficulty
-        step_height_goal = 0.03 + 0.1 * difficulty  # 跑酷楼梯的高度
+        step_height_goal = 0.04 + 0.06 * difficulty  # 跑酷楼梯的高度
         discrete_obstacles_height = 0.03 + difficulty * 0.15
         stepping_stones_size = 1.5 * (1.05 - difficulty)
         stone_distance = 0.05 if difficulty == 0 else 0.1
@@ -162,7 +162,7 @@ class Terrain:
             terrain.terrain_type = Terrain.terrain_type.rough_slope
             # self.terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
             # random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
-            add_fractal_roughness(terrain, levels=8, scale=0.8 * difficulty)
+            add_fractal_roughness(terrain, levels=8, scale=0.5 * difficulty)
             # self.add_roughness(terrain, difficulty)
 
         elif choice < self.proportions[3]:

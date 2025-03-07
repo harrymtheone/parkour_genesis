@@ -1,4 +1,6 @@
+import collections
 import os
+import statistics
 import time
 
 import torch
@@ -44,12 +46,14 @@ class RLDreamRunner:
         self.alg.train()  # switch to train mode (for dropout for example)
         obs, critic_obs = self.env.get_observations(), self.env.get_critic_observations()
 
+        # statistics
         infos = {}
-        cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
-        cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
-        mean_env_reward = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
-        mean_episode_len = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
-        mean_base_height = self.env.cfg.rewards.base_height_target + torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+        cur_reward_sum = torch.zeros(self.env.num_envs, device=self.device)
+        cur_episode_length = torch.zeros(self.env.num_envs, device=self.device)
+        last_env_reward = torch.zeros(self.env.num_envs, device=self.device)
+        mean_base_height = self.env.cfg.rewards.base_height_target + torch.zeros(self.env.num_envs, device=self.device)
+        episode_rew_sum = collections.deque(maxlen=100)
+        episode_length = collections.deque(maxlen=100)
 
         # AdaSmpl for each terrain type
         terrain_class, terrain_env_counts = torch.unique(self.env.env_class, return_counts=True)
@@ -81,21 +85,23 @@ class RLDreamRunner:
                         cur_episode_length[:] += 1
 
                         mean_base_height[:] = 0.99 * mean_base_height + 0.01 * self.env.base_height
-                        new_ids = (dones > 0).nonzero(as_tuple=False)
-                        mean_env_reward[new_ids] = 0.9 * mean_env_reward[new_ids] + 0.1 * cur_reward_sum[new_ids]
-                        mean_episode_len[new_ids] = 0.9 * mean_episode_len[new_ids] + 0.1 * cur_episode_length[new_ids]
+                        new_ids = torch.where(dones > 0)
+                        if len(new_ids[0]) > 0:
+                            last_env_reward[new_ids] = cur_reward_sum[new_ids]
+                            episode_rew_sum.extend(cur_reward_sum[new_ids].cpu().numpy().tolist())
+                            episode_length.extend(cur_episode_length[new_ids].cpu().numpy().tolist())
 
-                        # Do AdaSmpl for envs reset
-                        if len(new_ids) > 0 and self.cur_it > 5000:
-                            use_estimated_values[new_ids] = torch.rand(new_ids.shape, device=self.device) > p_smpl
+                            # Do AdaSmpl for envs reset
+                            if self.cur_it > 50000:
+                                use_estimated_values[new_ids] = torch.rand(len(new_ids[0]), device=self.device) > p_smpl
 
-                        cur_reward_sum[new_ids] = 0
-                        cur_episode_length[new_ids] = 0
+                            cur_reward_sum[new_ids] = 0.
+                            cur_episode_length[new_ids] = 0.
 
                 # update AdaSmpl coefficient
                 if self.cur_it - self.start_it > 20:  # ensure there are enough samples
                     for i, t in enumerate(terrain_class):
-                        rew_terrain = mean_env_reward[self.env.env_class == t]
+                        rew_terrain = last_env_reward[self.env.env_class == t]
                         coefficient_variation[i] = rew_terrain.std() / (rew_terrain.mean().abs() + 1e-5)
 
                     p_smpl = 0.9 * p_smpl + 0.1 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
@@ -155,10 +161,11 @@ class RLDreamRunner:
         # logging update information
         wandb_dict.update(locs['update_info'])
 
-        wandb_dict['Train/mean_reward'] = locs['mean_env_reward'].mean().item()  # use the latest 100 to compute
-        wandb_dict['Train/AdaSmpl'] = locs['p_smpl']
-        wandb_dict['Train/mean_episode_length'] = locs['mean_episode_len'].mean().item()
+        if len(locs['episode_rew_sum']) > 10:
+            wandb_dict['Train/mean_reward'] = statistics.mean(locs['episode_rew_sum'])  # use the latest 100 to compute
+            wandb_dict['Train/mean_episode_length'] = statistics.mean(locs['episode_length'])
         wandb_dict['Train/base_height'] = locs['mean_base_height'].mean().item()
+        wandb_dict['Train/AdaSmpl'] = locs['p_smpl']
 
         wandb.log(wandb_dict, step=self.cur_it)
 
@@ -182,9 +189,9 @@ class RLDreamRunner:
         )
         print(log_string)
 
-    def play_act(self, obs, use_estimated_values=True):
+    def play_act(self, obs, **kwargs):
         self.alg.actor.eval()
-        return self.alg.play_act(obs, use_estimated_values=use_estimated_values)
+        return self.alg.play_act(obs, **kwargs)
 
     def save(self, path, infos=None):
         state_dict = self.alg.save()

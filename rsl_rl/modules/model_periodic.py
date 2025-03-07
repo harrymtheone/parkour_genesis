@@ -51,83 +51,7 @@ class VAE(nn.Module):
         return eps * std + mu
 
 
-class Actor(nn.Module):
-    is_recurrent = False
-
-    def __init__(self, env_cfg, policy_cfg):
-        super().__init__()
-        self.activation = nn.ELU()
-
-        # construct actor network
-        channel_size = 16
-
-        self.obs_enc = nn.Sequential(
-            nn.Conv1d(in_channels=env_cfg.n_proprio, out_channels=2 * channel_size, kernel_size=8, stride=4),
-            self.activation,
-            nn.Conv1d(in_channels=2 * channel_size, out_channels=4 * channel_size, kernel_size=6, stride=1),
-            self.activation,
-            nn.Conv1d(in_channels=4 * channel_size, out_channels=8 * channel_size, kernel_size=6, stride=1),  # (8 * channel_size, 1)
-            self.activation,
-            nn.Flatten()
-        )
-        self.vae = VAE(env_cfg, policy_cfg)
-
-        # Action noise
-        self.actor_backbone = make_linear_layers(env_cfg.n_proprio + encoder_output_size,
-                                                 *policy_cfg.actor_hidden_dims,
-                                                 env_cfg.num_actions,
-                                                 activation_func=self.activation,
-                                                 output_activation=False)
-        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
-        self.distribution = None
-
-        # disable args validation for speedup
-        Normal.set_default_validate_args = False
-
-    def act(self, obs, eval_=False, **kwargs):
-        obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
-        est_mu = self.vae(obs_enc, mu_only=True)
-        actor_input = torch.cat((obs.proprio, self.activation(est_mu)), dim=1)
-        mean = self.actor_backbone(actor_input)
-
-        if eval_:
-            return mean
-
-        self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
-        return self.distribution.sample()
-
-    def train_act(self, obs, **kwargs):
-        obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
-        est_mu = self.vae(obs_enc, mu_only=True)
-        actor_input = torch.cat((obs.proprio, self.activation(est_mu)), dim=1)
-        mean = self.actor_backbone(actor_input)
-        self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
-
-    # def estimate(self, obs):
-    #     obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
-    #     return self.vae(obs_enc, mu_only=False)
-
-    @property
-    def action_mean(self):
-        return self.distribution.mean
-
-    @property
-    def action_std(self):
-        return self.distribution.stddev
-
-    @property
-    def entropy(self):
-        return self.distribution.entropy().sum(dim=-1)
-
-    def get_actions_log_prob(self, actions):
-        return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
-
-    def reset_std(self, std, device):
-        new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
-        self.log_std.data = new_log_std.data
-
-
-class ActorGRU(nn.Module):
+class ActorBlind(nn.Module):
     is_recurrent = True
 
     def __init__(self, env_cfg, policy_cfg):
@@ -205,7 +129,7 @@ class ActorGRU(nn.Module):
         return self.hidden_states.detach()
 
     def reset(self, dones):
-        self.hidden_states[:, dones] = 0
+        self.hidden_states[:, dones] = 0.
 
 
 class Critic(nn.Module):
@@ -225,8 +149,8 @@ class Critic(nn.Module):
         )
 
         self.critic = make_linear_layers(8 * channel_size + env_cfg.n_scan, *train_cfg.critic_hidden_dims, 1,
-                                         activation_func=nn.ELU(),
-                                         output_activation=False)
+                                         activation_func=nn.ELU())
+        self.critic.pop(-1)
 
     def evaluate(self, obs):
         if obs.priv_his.ndim == 4:

@@ -1,14 +1,15 @@
 import torch
 
-from legged_gym.envs.base.humanoid_env import HumanoidEnv
+from ..base.humanoid_env import HumanoidEnv
 from ..base.utils import ObsBase, HistoryBuffer
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his):
+    def __init__(self, proprio, prop_his, priv_actor):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
+        self.priv_actor = priv_actor.clone()
 
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
@@ -31,7 +32,7 @@ class CriticObs(ObsBase):
         return torch.cat((self.priv_his.flatten(1), self.scan.flatten(1)), dim=1)
 
 
-class PddDreamWaqEnvironment(HumanoidEnv):
+class T1PeriodicEnvironment(HumanoidEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -40,31 +41,59 @@ class PddDreamWaqEnvironment(HumanoidEnv):
         self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
         self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
+        self.phase_increment_ratio = self._zero_tensor(self.num_envs)
+
+    def _init_robot_props(self):
+        super()._init_robot_props()
+        self.yaw_roll_dof_indices = self.sim.create_indices(
+            self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
+
+    def _post_physics_pre_step(self):
+        self.episode_length_buf[:] += 1
+
+        if self.cfg.domain_rand.action_delay and (self.global_counter % self.cfg.domain_rand.action_delay_update_steps == 0):
+            if len(self.cfg.domain_rand.action_delay_range) > 0:
+                self.action_delay_buf.update_delay_range(self.cfg.domain_rand.action_delay_range.pop(0))
+
+        alpha = self.cfg.rewards.EMA_update_alpha
+        self.contact_forces_avg[self.contact_filt] = alpha * self.contact_forces_avg[self.contact_filt]
+        self.contact_forces_avg[self.contact_filt] += (1 - alpha) * self.sim.contact_forces[:, self.feet_indices][self.contact_filt][:, 2]
+
+        first_contact = (self.feet_air_time > 0.) * self.contact_filt
+        self.feet_air_time[self.contact_filt | self.is_zero_command.unsqueeze(1)] += self.dt
+        self.feet_air_time_avg[first_contact] = alpha * self.feet_air_time_avg[first_contact] + (1 - alpha) * self.feet_air_time[first_contact]
+
+        self.phase_length_buf[:] += self.dt * self.phase_increment_ratio
+        self._update_phase()
+
+        self._get_stance_mask()
+
     def _compute_ref_state(self):
         sin_pos, _ = self._get_clock_input()
         sin_pos_l = sin_pos.clone()
         sin_pos_r = sin_pos.clone()
 
-        self.ref_dof_pos[:] = 0.
+        ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
         scale_1 = self.cfg.rewards.target_joint_pos_scale
         scale_2 = 2 * scale_1
 
         # left swing
         sin_pos_l[sin_pos_l > 0] = 0
-        self.ref_dof_pos[:, 2] = sin_pos_l * scale_1
-        self.ref_dof_pos[:, 3] = -sin_pos_l * scale_2
-        self.ref_dof_pos[:, 4] = sin_pos_l * scale_1
+        ref_dof_pos[:, 1] = sin_pos_l * scale_1
+        ref_dof_pos[:, 4] = -sin_pos_l * scale_2
+        ref_dof_pos[:, 5] = sin_pos_l * scale_1
 
         # right swing
         sin_pos_r[sin_pos_r < 0] = 0
-        self.ref_dof_pos[:, 7] = -sin_pos_r * scale_1
-        self.ref_dof_pos[:, 8] = sin_pos_r * scale_2
-        self.ref_dof_pos[:, 9] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 7] = -sin_pos_r * scale_1
+        ref_dof_pos[:, 10] = sin_pos_r * scale_2
+        ref_dof_pos[:, 11] = -sin_pos_r * scale_1
 
-        # Add double support phase
-        self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
+        # # Add double support phase
+        # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
 
-        self.ref_dof_pos[:] += self.init_state_dof_pos
+        self.ref_dof_pos[:] = self.init_state_dof_pos
+        self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
 
     def _compute_observations(self):
         """
@@ -102,17 +131,17 @@ class PddDreamWaqEnvironment(HumanoidEnv):
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
             command_input,  # 5
-            (dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
-            dof_vel * self.obs_scales.dof_vel,  # 10D
-            self.last_action_output,  # 10D
+            (dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 12D
+            dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
+            self.last_action_output,  # 12D
         ), dim=-1)
 
         # explicit privileged information
         priv_obs = torch.cat((
             command_input,  # 5D
-            (self.sim.dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
-            self.sim.dof_vel * self.obs_scales.dof_vel,  # 10D
-            self.last_action_output,  # 10D
+            (self.sim.dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 12D
+            self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
+            self.last_action_output,  # 12D
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.base_ang_vel * self.obs_scales.ang_vel,  # 3
             self.base_euler * self.obs_scales.quat,  # 3
@@ -123,6 +152,8 @@ class PddDreamWaqEnvironment(HumanoidEnv):
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
+        priv_actor_obs = self.base_lin_vel * self.obs_scales.lin_vel
+
         # compute height map
         scan = torch.clip(self.sim.root_pos[:, 2].unsqueeze(1) - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
@@ -130,7 +161,7 @@ class PddDreamWaqEnvironment(HumanoidEnv):
         # compose actor observation
         reset_flag = self.episode_length_buf <= 1
         self.prop_his_buf.append(proprio, reset_flag)
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get())
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), priv_actor_obs)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation

@@ -27,6 +27,9 @@ def gen_info_panel(args, env):
     feet_height = env.feet_height[env.lookat_id].cpu().numpy()
 
     phase = env.phase[env.lookat_id] if hasattr(env, 'phase') else 0.
+    phase_increment_ratio = f'{env.phase_increment_ratio[env.lookat_id]: .2f}' if hasattr(env, 'phase_increment_ratio') else 'None'
+
+    friction_ratio = env.sim.friction_coeffs[env.lookat_id].item()
 
     if args.headless:
         perc_contact_forces = torch.mean(env.contact_forces_avg, dim=0).cpu().numpy()
@@ -55,14 +58,14 @@ def gen_info_panel(args, env):
     table21.add_column("")
     table21.add_column("Left")
     table21.add_column("Right")
+    table21.add_row("Feet height", f'{feet_height[0]: .2f}', f'{feet_height[1]: .2f}')
     table21.add_row("Contact forces", f'{perc_contact_forces[0]: .2f}', f'{perc_contact_forces[1]: .2f}')
-    table21.add_row("Feet height", f'{feet_height[0]: .4f}', f'{feet_height[1]: .4f}')
+    table21.add_row("Feet air time", f'{perc_feet_air_time[0]: .2f}', f'{perc_feet_air_time[1]: .2f}')
 
     table22 = Table()
     table22.add_column(f"phase: {phase: .2f}")
-    table22.add_column("Left")
-    table22.add_column("Right")
-    table22.add_row("Feet air time", f'{perc_feet_air_time[0]: .2f}', f'{perc_feet_air_time[1]: .2f}')
+    table22.add_column(f"phase ratio: {phase_increment_ratio}")
+    table22.add_row(f"friction: {friction_ratio: .2f}")
 
     grid = Table.grid()
     grid.add_row(table11, table12)

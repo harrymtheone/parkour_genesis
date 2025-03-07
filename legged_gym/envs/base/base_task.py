@@ -98,9 +98,10 @@ class BaseTask:
         self.forward_vec = torch.tensor([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
 
         # allocate buffers
+        self.actor_obs, self.critic_obs = None, None
         self.actions = self._zero_tensor(self.num_envs, self.num_dof)  # action clipped
         self.last_action_output = self._zero_tensor(self.num_envs, self.num_actions)  # network output
-        self.actor_obs, self.critic_obs = None, None
+        self.torques = self._zero_tensor(self.num_envs, self.num_dof)
         self.rew_buf = self._zero_tensor(self.num_envs)
         self.reset_buf = self._zero_tensor(self.num_envs, dtype=torch.bool)
         self.episode_length_buf = self._zero_tensor(self.num_envs, dtype=torch.long)
@@ -238,8 +239,8 @@ class BaseTask:
                     self.action_delay_buf.step()
                     self.actions[:] = self.action_delay_buf.get()
 
-                torques = self._compute_torques()
-                self.sim.control_dof_torque(torques)
+                self.torques[:] = self._compute_torques()
+                self.sim.control_dof_torque(self.torques)
                 self.sim.step_environment()
 
                 if self.cfg.domain_rand.add_dof_lag:
@@ -255,6 +256,9 @@ class BaseTask:
             target_dof_pos = self.actions * self.cfg.control.action_scale + self.init_state_dof_pos
             self.sim.control_dof_position(target_dof_pos)
             self.sim.step_environment()
+
+            # TODO: 111
+            raise NotImplementedError("Torque is not updated")
 
     def _compute_torques(self):
         # pd controller
@@ -333,7 +337,7 @@ class BaseTask:
     def _post_physics_mid_step(self):
         if self.cfg.play.control:
             # overwrite commands
-            self.commands.zero_()
+            self.commands[:] = 0.
             self.commands[self.lookat_id, :3] = torch.Tensor(self.joystick_handler.get_control_input())
         else:
             self._update_command()
@@ -350,8 +354,8 @@ class BaseTask:
             if self.global_counter % self.push_interval <= duration:
                 self._push_robots()
             else:
-                self.ext_force.zero_()
-                self.ext_torque.zero_()
+                self.ext_force[:] = 0.
+                self.ext_torque[:] = 0.
 
     def _post_physics_post_step(self):
         raise NotImplementedError

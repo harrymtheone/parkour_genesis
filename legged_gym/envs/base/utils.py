@@ -78,7 +78,7 @@ class HistoryBuffer:
             torch.cat([self.buf[:, 1:], data.unsqueeze(1)], dim=1),
         )
 
-        # self.buf[reset].zero_()
+        # self.buf[reset] = 0.
         # self.buf[:] = torch.cat([self.buf[:, 1:], data.unsqueeze(1)], dim=1)
 
     def get(self):
@@ -134,4 +134,4 @@ class DelayBuffer:
         return self.buf[:, 0].clone()
 
     def reset(self, dones):
-        self.buf[dones].zero_()
+        self.buf[dones] = 0.

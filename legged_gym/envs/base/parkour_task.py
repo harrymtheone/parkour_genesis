@@ -32,7 +32,6 @@ class ParkourTask(BaseTask):
             device=self.device)
 
         # initialize some data used later on
-        self.torques = self._zero_tensor(self.num_envs, self.num_actions)
         self.base_height = self._zero_tensor(self.num_envs)
 
         self.last_actions = torch.zeros_like(self.actions)
