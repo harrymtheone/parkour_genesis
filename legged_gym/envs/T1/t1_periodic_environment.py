@@ -69,25 +69,23 @@ class T1PeriodicEnvironment(HumanoidEnv):
         self._get_stance_mask()
 
     def _compute_ref_state(self):
-        sin_pos, _ = self._get_clock_input()
-        sin_pos_l = sin_pos.clone()
-        sin_pos_r = sin_pos.clone()
+        clock_l, clock_r = self._get_clock_input()
 
         ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
         scale_1 = self.cfg.rewards.target_joint_pos_scale
         scale_2 = 2 * scale_1
 
         # left swing
-        sin_pos_l[sin_pos_l > 0] = 0
-        ref_dof_pos[:, 1] = sin_pos_l * scale_1
-        ref_dof_pos[:, 4] = -sin_pos_l * scale_2
-        ref_dof_pos[:, 5] = sin_pos_l * scale_1
+        clock_l[clock_l > 0] = 0
+        ref_dof_pos[:, 1] = clock_l * scale_1
+        ref_dof_pos[:, 4] = -clock_l * scale_2
+        ref_dof_pos[:, 5] = clock_l * scale_1
 
         # right swing
-        sin_pos_r[sin_pos_r < 0] = 0
-        ref_dof_pos[:, 7] = -sin_pos_r * scale_1
-        ref_dof_pos[:, 10] = sin_pos_r * scale_2
-        ref_dof_pos[:, 11] = -sin_pos_r * scale_1
+        clock_r[clock_r > 0] = 0
+        ref_dof_pos[:, 7] = clock_r * scale_1
+        ref_dof_pos[:, 10] = -clock_r * scale_2
+        ref_dof_pos[:, 11] = clock_r * scale_1
 
         # # Add double support phase
         # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.

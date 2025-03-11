@@ -41,28 +41,26 @@ class PddDreamWaqEnvironment(HumanoidEnv):
         self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
     def _compute_ref_state(self):
-        sin_pos, _ = self._get_clock_input()
-        sin_pos_l = sin_pos.clone()
-        sin_pos_r = sin_pos.clone()
+        clock_l, clock_r = self._get_clock_input()
 
         self.ref_dof_pos[:] = 0.
         scale_1 = self.cfg.rewards.target_joint_pos_scale
         scale_2 = 2 * scale_1
 
         # left swing
-        sin_pos_l[sin_pos_l > 0] = 0
-        self.ref_dof_pos[:, 2] = sin_pos_l * scale_1
-        self.ref_dof_pos[:, 3] = -sin_pos_l * scale_2
-        self.ref_dof_pos[:, 4] = sin_pos_l * scale_1
+        clock_l[clock_l > 0] = 0
+        self.ref_dof_pos[:, 2] = clock_l * scale_1
+        self.ref_dof_pos[:, 3] = -clock_l * scale_2
+        self.ref_dof_pos[:, 4] = clock_l * scale_1
 
         # right swing
-        sin_pos_r[sin_pos_r < 0] = 0
-        self.ref_dof_pos[:, 7] = -sin_pos_r * scale_1
-        self.ref_dof_pos[:, 8] = sin_pos_r * scale_2
-        self.ref_dof_pos[:, 9] = -sin_pos_r * scale_1
+        clock_r[clock_r > 0] = 0
+        self.ref_dof_pos[:, 7] = clock_r * scale_1
+        self.ref_dof_pos[:, 8] = -clock_r * scale_2
+        self.ref_dof_pos[:, 9] = clock_r * scale_1
 
         # Add double support phase
-        self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
+        # self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
 
         self.ref_dof_pos[:] += self.init_state_dof_pos
 

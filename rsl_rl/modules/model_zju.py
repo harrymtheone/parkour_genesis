@@ -391,7 +391,7 @@ class Estimator(nn.Module):
 
 
 class Critic(nn.Module):
-    from legged_gym.envs.pdd.pdd_scan_environment import CriticObs
+    from legged_gym.envs.T1.t1_zju_environment import CriticObs
 
     def __init__(self, env_cfg, train_cfg):
         super().__init__()
@@ -408,21 +408,23 @@ class Critic(nn.Module):
         else:
             raise NotImplementedError
 
-        self.critic = make_linear_layers(128 * 5 + env_cfg.n_scan, *train_cfg.policy.critic_hidden_dims, 1,
-                                         activation_func=nn.ELU())
-        self.critic.pop(-1)
+        self.critic = make_linear_layers(128 * 5 + env_cfg.n_scan * 2, *train_cfg.policy.critic_hidden_dims, 1,
+                                         activation_func=nn.ELU(),
+                                         output_activation=False)
 
     def evaluate(self, obs: CriticObs, masks=None):
         if obs.priv_his.ndim == 3:
             priv_his = obs.priv_his.transpose(1, 2)
             scan = obs.scan.flatten(1)
+            base_edge_mask = obs.base_edge_mask.flatten(1)
         else:
             n_steps = obs.priv_his.size(0)
             priv_his = obs.priv_his.flatten(0, 1).transpose(1, 2)
             scan = obs.scan.flatten(0, 1).flatten(1)
+            base_edge_mask = obs.base_edge_mask.flatten(0, 1).flatten(1)
 
         his_enc = self.encoder(priv_his)
-        evaluation = self.critic(torch.cat([his_enc, scan], dim=1))
+        evaluation = self.critic(torch.cat([his_enc, scan, base_edge_mask], dim=1))
 
         if obs.priv_his.ndim == 3:
             return evaluation

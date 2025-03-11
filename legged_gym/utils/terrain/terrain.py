@@ -162,7 +162,7 @@ class Terrain:
             terrain.terrain_type = Terrain.terrain_type.rough_slope
             # self.terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
             # random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
-            add_fractal_roughness(terrain, levels=8, scale=0.5 * difficulty)
+            add_fractal_roughness(terrain, difficulty)
             # self.add_roughness(terrain, difficulty)
 
         elif choice < self.proportions[3]:
@@ -260,7 +260,9 @@ class Terrain:
             terrain.terrain_type = Terrain.terrain_type.parkour_flat
             parkour_flat_terrain(terrain)
             terrain.centered_origin = False
-            self.add_roughness(terrain, difficulty)
+            # self.add_roughness(terrain, difficulty)
+            # add_fractal_roughness(terrain, levels=6, scale=0.2)
+            add_fractal_roughness(terrain, difficulty)
 
         return terrain
 

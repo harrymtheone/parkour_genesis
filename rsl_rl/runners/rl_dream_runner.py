@@ -117,6 +117,8 @@ class RLDreamRunner:
             torch.cuda.synchronize()
             learn_time = time.time() - start
 
+            # self.env.update_phase_enabled(linear_change(1., 0., 2000, 0, self.cur_it))
+
             # if self.env.cfg.rewards.only_positive_rewards:
             #     # self.env.only_positive_rewards = (self.cur_it - self.start_it) < 1000
             #     # self.env.only_positive_rewards = self.cur_it < 10000

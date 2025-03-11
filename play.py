@@ -26,6 +26,7 @@ def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
 
     # override some parameters for testing
+    env_cfg.env.enable_clock_input = True
     env_cfg.play.control = False
     env_cfg.env.num_envs = 1
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
@@ -44,9 +45,9 @@ def play(args):
     env_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
 
     env_cfg.terrain.terrain_dict = {
-        'smooth_slope': 0,
+        'smooth_slope': 1,
         'rough_slope': 0,
-        'stairs_up': 1,
+        'stairs_up': 0,
         'stairs_down': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -65,6 +66,7 @@ def play(args):
     args.n_rendered_envs = env_cfg.env.num_envs
     env, _ = task_registry.make_env(args=args, env_cfg=env_cfg)
     obs = env.get_observations()
+    critic_obs = env.get_critic_observations()
 
     # load policy
     train_cfg.runner.resume = True
@@ -88,6 +90,7 @@ def play(args):
                 actions = rtn
 
             # env.draw_hmap(obs.scan)
+            # env.draw_body_edge(critic_obs.base_edge_mask)
             # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
 
             # for calibration of mirroring of dof
@@ -100,7 +103,7 @@ def play(args):
             # actions[env.lookat_id] = (env.ref_dof_pos - env.init_state_dof_pos)[env.lookat_id, env.dof_activated]
             # actions[env.lookat_id] /= env.cfg.control.action_scale
 
-            obs, _, rewards, dones, _ = env.step(actions)
+            obs, critic_obs, rewards, dones, _ = env.step(actions)
 
             live.update(gen_info_panel(args, env))
 

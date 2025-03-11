@@ -48,8 +48,9 @@ class PPO_ZJU(BaseAlgorithm):
         self.device = device
 
         # PPO component
-        if train_cfg.policy.use_recurrent_policy:
-            self.actor = EstimatorGRU(env_cfg, train_cfg.policy).to(self.device)
+        self.actor = EstimatorGRU(env_cfg, train_cfg.policy).to(self.device)
+        # if train_cfg.policy.use_recurrent_policy:
+        #     self.actor = EstimatorGRU(env_cfg, train_cfg.policy).to(self.device)
         # else:
         #     self.actor = Estimator(env_cfg, train_cfg).to(self.device)
         self.critic = Critic(env_cfg, train_cfg).to(self.device)
@@ -146,7 +147,7 @@ class PPO_ZJU(BaseAlgorithm):
             mean_entropy_loss += entropy_loss
 
             estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss = self._compute_estimation_loss(batch)
-            loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss + symmetry_loss
+            loss_est = estimation_loss + prediction_loss + vae_loss + 0 * recon_rough_loss + 0 * recon_refine_loss + symmetry_loss
 
             # estimation statistics
             mean_estimation_loss += estimation_loss.item()
@@ -267,9 +268,9 @@ class PPO_ZJU(BaseAlgorithm):
             obs_next_batch = batch['observations_next'][:batch_size]
             mask_batch = batch['masks'][:batch_size, :, 0]
             use_estimated_values_batch = batch['use_estimated_values'][:batch_size]
-            action_mean_original = self.actor.action_mean.detach()
+            action_mean_original = self.actor.action_mean.detach()[:batch_size]
 
-            recon_rough, recon_refine, est, est_latent, est_logvar, ot1 = self.actor.reconstruct(
+            recon_rough, recon_refine, est_latent, est, est_logvar, ot1 = self.actor.reconstruct(
                 obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch, use_estimated_values_batch)
 
             # privileged information estimation loss
@@ -293,7 +294,7 @@ class PPO_ZJU(BaseAlgorithm):
                 use_estimated_values=use_estimated_values_batch
             )
 
-            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original[:batch_size])
+            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
             symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
 
         return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss
@@ -307,10 +308,10 @@ class PPO_ZJU(BaseAlgorithm):
 
     def load(self, loaded_dict, load_optimizer=True):
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
-        self.critic.load_state_dict(loaded_dict['critic_state_dict'])
+        # self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
-        if load_optimizer:
-            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+        # if load_optimizer:
+        #     self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)

@@ -144,11 +144,11 @@ class T1PIECfg(T1BaseCfg):
             tracking_lin_vel = 1.2
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
-            low_speed = 0.2
-            track_vel_hard = 0.5
+            # low_speed = 0.2
+            # track_vel_hard = 0.5
 
             # base pos
-            default_joint_pos = 0.1
+            # default_joint_pos = 0.1
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2

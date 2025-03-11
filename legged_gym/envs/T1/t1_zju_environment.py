@@ -4,7 +4,7 @@ import torch
 
 from legged_gym.envs.base.humanoid_env import HumanoidEnv
 from ..base.utils import ObsBase, HistoryBuffer
-from ...utils.math import transform_by_yaw, torch_rand_float
+from ...utils.math import transform_by_yaw
 
 
 class ActorObs(ObsBase):
@@ -42,10 +42,11 @@ class ObsNext(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_his, scan):
+    def __init__(self, priv_his, scan, base_edge_mask):
         super().__init__()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
+        self.base_edge_mask = base_edge_mask.clone()
 
 
 class T1ZJUEnvironment(HumanoidEnv):
@@ -63,12 +64,15 @@ class T1ZJUEnvironment(HumanoidEnv):
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)
         self.feet_hmap_points = self._init_height_points(self.cfg.terrain.feet_pts_x, self.cfg.terrain.feet_pts_y)
 
-        self.base_lin_vel_xy_avg = self._zero_tensor(self.num_envs, 2)  # in base frame
+        self.phase_enabled = self._zero_tensor(self.num_envs, dtype=torch.bool)
+        self.phase_enabled[:] = self.cfg.env.enable_clock_input
 
-    def _post_physics_pre_step(self):
-        super()._post_physics_pre_step()
+    def update_phase_enabled(self, enabled_ratio):
+        num_enabled = int(self.num_envs * enabled_ratio)
+        self.phase_enabled[:num_enabled] = True
+        self.phase_enabled[num_enabled:] = False
 
-        self.base_lin_vel_xy_avg[:] = 0.99 * self.base_lin_vel_xy_avg + 0.01 * self.base_lin_vel[:, :2]
+        self.phase_enabled[self.env_class <= 2] = True
 
     def get_feet_hmap(self):
         feet_pos = self.sim.link_pos[:, self.feet_indices]
@@ -90,6 +94,31 @@ class T1ZJUEnvironment(HumanoidEnv):
 
         hmap = self._get_heights(points + self.cfg.terrain.border_size)
         return self.sim.root_pos[:, 2:3] - hmap  # to relative height
+
+    def _compute_ref_state(self):
+        clock_l, clock_r = self._get_clock_input()
+
+        ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
+        scale_1 = self.cfg.rewards.target_joint_pos_scale
+        scale_2 = 2 * scale_1
+
+        # left swing
+        clock_l[clock_l > 0] = 0
+        ref_dof_pos[:, 1] = clock_l * scale_1
+        ref_dof_pos[:, 4] = -clock_l * scale_2
+        ref_dof_pos[:, 5] = clock_l * scale_1
+
+        # right swing
+        clock_r[clock_r > 0] = 0
+        ref_dof_pos[:, 7] = clock_r * scale_1
+        ref_dof_pos[:, 10] = -clock_r * scale_2
+        ref_dof_pos[:, 11] = clock_r * scale_1
+
+        # # Add double support phase
+        # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
+
+        self.ref_dof_pos[:] = self.init_state_dof_pos
+        self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
 
     def _compute_observations(self):
         """
@@ -116,8 +145,10 @@ class T1ZJUEnvironment(HumanoidEnv):
         base_ang_vel = self._add_noise(base_ang_vel, self.cfg.noise.noise_scales.ang_vel)
         projected_gravity = self._add_noise(projected_gravity, self.cfg.noise.noise_scales.gravity)
 
+        self._compute_ref_state()
+
         clock = torch.stack(self._get_clock_input(), dim=1)
-        clock[:] = 0.
+        clock[~self.phase_enabled] = 0.
         command_input = torch.cat((clock, self.commands[:, :3] * self.commands_scale), dim=1)
 
         # proprio observation
@@ -131,6 +162,8 @@ class T1ZJUEnvironment(HumanoidEnv):
         ), dim=-1)
 
         # explicit privileged information
+        base_edge_mask = self.get_edge_mask().float()
+
         priv_obs = torch.cat((
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
@@ -168,7 +201,7 @@ class T1ZJUEnvironment(HumanoidEnv):
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan)
+        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):
@@ -200,43 +233,44 @@ class T1ZJUEnvironment(HumanoidEnv):
 
         super().render()
 
+    def _reward_joint_pos(self):
+        """
+        Calculates the reward based on the difference between the current joint positions and the target joint positions.
+        """
+        diff = self.sim.dof_pos - torch.where(
+            self.is_zero_command.unsqueeze(1),
+            self.init_state_dof_pos,
+            self.ref_dof_pos
+        )
+        diff = diff[:, self.dof_activated]
+
+        rew = torch.exp(-2 * torch.norm(diff, dim=1)) - 0.2 * torch.norm(diff, dim=1).clamp(0, 0.5)
+
+        rew[self.env_class >= 2] *= 0.1  # stair
+        rew[~self.phase_enabled] = 0.
+        return rew
+
+    def _reward_feet_contact_number(self):
+        """
+        Calculates a reward based on the number of feet contacts aligning with the gait phase.
+        Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
+        """
+        rew = torch.where(self.contact_filt == self._get_stance_mask(), 1, -0.3)
+
+        rew[self.env_class >= 2] *= 0.1  # stair
+        rew[~self.phase_enabled] = 0.
+        return torch.mean(rew, dim=1)
+
     def _reward_feet_clearance(self):
-        rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, -1, 1)
+        # rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, -1, 1)
+        # rew[self.contact_filt | self.is_zero_command.unsqueeze(1)] = 0.
+        # return rew.sum(dim=1)
 
-        rew[self.contact_filt] = 0.
-        return rew.sum(dim=1)
-
-    def _reward_tracking_lin_vel(self):
-        """
-        Tracks linear velocity commands along the xy axes.
-        Calculates a reward based on how closely the robot's linear velocity matches the commanded values.
-        """
-
-        base_lin_vel = torch.where(
-            self.env_class.unsqueeze(1) >= 4,  # env_is_parkour
-            self.base_lin_vel_xy_avg,
-            self.base_lin_vel[:, :2]
-        )
-
-        vel_error = torch.where(
-            self.is_zero_command,
-            torch.sum(torch.abs(self.commands[:, :2] - base_lin_vel), dim=1) * 2,
-            torch.sum(torch.square(self.commands[:, :2] - base_lin_vel), dim=1)
-        )
-
-        return torch.exp(-vel_error * self.cfg.rewards.tracking_sigma)
-
-    def _reward_waist_pos(self):
-        joint_diff = self.sim.dof_pos - self.init_state_dof_pos
-        left_yaw_roll = joint_diff[:, :2]
-        right_yaw_roll = joint_diff[:, 5:7]
-        yaw_roll = torch.norm(left_yaw_roll, dim=1) + torch.norm(right_yaw_roll, dim=1)
-        yaw_roll = torch.clamp(yaw_roll - 0.1, 0, 50)
-        return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1)
-
-    def _reward_default_joint_pos(self):
-        joint_diff = self.sim.dof_pos - self.init_state_dof_pos
-        return -joint_diff.square().sum(dim=1)
+        # encourage the robot to lift its legs when it moves
+        d_min = (self.feet_height - self.cfg.rewards.feet_height_target).clip(-0.04, 0.)
+        d_max = (self.feet_height - self.cfg.rewards.feet_height_target_max).clip(0, 0.04)
+        rew = (torch.exp(-torch.abs(d_min) * 50) + torch.exp(-torch.abs(d_max) * 50)) / 2 - 0.57
+        return rew.sum(dim=1) * ~self.is_zero_command
 
 
 @torch.jit.script

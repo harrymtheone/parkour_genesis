@@ -29,14 +29,13 @@ class IsaacGymWrapper(BaseWrapper):
         self._init_buffers()
 
         self.lookat_id = 0
+        self.cam_handles = []
         if not self.headless:
             self.viewer = self.gym.create_viewer(self.sim, gymapi.CameraProperties())
 
             self.enable_viewer_sync = True
             self.free_cam = False
             self.lookat_vec = torch.tensor([-0, 2, 1], device=self.device)
-
-            self.cam_handles = []
 
         self.init_done = True
 
@@ -47,7 +46,11 @@ class IsaacGymWrapper(BaseWrapper):
         """
         # graphics device for rendering, -1 for no rendering
         sim_device, sim_device_id = gymutil.parse_device_str(self.device.type)
-        graphics_device_id = -1 if self.headless else sim_device_id
+
+        if self.device.type == 'cuda':
+            graphics_device_id = -1 if self.headless else 0
+        else:
+            graphics_device_id = sim_device_id
 
         # initialize sim params
         sim_params = gymapi.SimParams()

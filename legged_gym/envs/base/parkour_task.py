@@ -194,6 +194,21 @@ class ParkourTask(BaseTask):
 
         return heights.view(self.num_envs, -1) * self.cfg.terrain.vertical_scale
 
+    def get_edge_mask(self):
+        # convert height points coordinate to world frame
+        points = transform_by_yaw(
+            self.scan_points,
+            self.base_euler[:, 2].repeat(1, self.scan_points.size(1))
+        ).unflatten(0, (self.num_envs, -1))
+        points = points + self.sim.root_pos[:, None, :] + self.cfg.terrain.border_size
+        points = (points / self.sim.terrain.cfg.horizontal_scale).long()
+
+        px = points[:, :, 0].view(-1)
+        py = points[:, :, 1].view(-1)
+        px = torch.clip(px, 0, self.sim.edge_mask.size(0) - 2)
+        py = torch.clip(py, 0, self.sim.edge_mask.size(1) - 2)
+        return self.sim.edge_mask[px, py].view(self.num_envs, *self.cfg.env.scan_shape)
+
     # ----------------------------------------- Post Physics -------------------------------------------
 
     def _refresh_variables(self):
@@ -426,6 +441,22 @@ class ParkourTask(BaseTask):
             self.sim.draw_points(height_points, color=color)
 
         self.pending_vis_task.append((func, hmap, color))
+
+    def draw_body_edge(self, edge_mask):
+        def func(edge_mask):
+            base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
+            yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
+            edge_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
+            edge_points[:, :2] += base_pos[None, :2]
+            edge_points[:, 2] = self.scan_hmap
+
+            edge_mask = edge_mask[self.lookat_id].flatten().cpu().numpy()
+            edge_pts = edge_points[edge_mask == 1]
+            non_edge_pts = edge_points[edge_mask == 0]
+            self.sim.draw_points(edge_pts, color=(1, 0, 0))
+            self.sim.draw_points(non_edge_pts, color=(0, 1, 0))
+
+        self.pending_vis_task.append((func, edge_mask))
 
     def _draw_goals(self):
         if self.env_goal_num[self.lookat_id] == 0:

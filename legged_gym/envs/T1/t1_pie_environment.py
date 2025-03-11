@@ -81,25 +81,23 @@ class T1PIEEnvironment(HumanoidEnv):
         return self.sim.root_pos[:, 2:3] - hmap  # to relative height
 
     def _compute_ref_state(self):
-        sin_pos, _ = self._get_clock_input()
-        sin_pos_l = sin_pos.clone()
-        sin_pos_r = sin_pos.clone()
+        clock_l, clock_r = self._get_clock_input()
 
         ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
         scale_1 = self.cfg.rewards.target_joint_pos_scale
         scale_2 = 2 * scale_1
 
         # left swing
-        sin_pos_l[sin_pos_l > 0] = 0
-        ref_dof_pos[:, 1] = sin_pos_l * scale_1
-        ref_dof_pos[:, 4] = -sin_pos_l * scale_2
-        ref_dof_pos[:, 5] = sin_pos_l * scale_1
+        clock_l[clock_l > 0] = 0
+        ref_dof_pos[:, 1] = clock_l * scale_1
+        ref_dof_pos[:, 4] = -clock_l * scale_2
+        ref_dof_pos[:, 5] = clock_l * scale_1
 
         # right swing
-        sin_pos_r[sin_pos_r < 0] = 0
-        ref_dof_pos[:, 7] = -sin_pos_r * scale_1
-        ref_dof_pos[:, 10] = sin_pos_r * scale_2
-        ref_dof_pos[:, 11] = -sin_pos_r * scale_1
+        clock_r[clock_r > 0] = 0
+        ref_dof_pos[:, 7] = clock_r * scale_1
+        ref_dof_pos[:, 10] = -clock_r * scale_2
+        ref_dof_pos[:, 11] = clock_r * scale_1
 
         # # Add double support phase
         # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
@@ -142,7 +140,7 @@ class T1PIEEnvironment(HumanoidEnv):
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
             command_input,  # 5
-            (dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 13
+            (dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 13
             dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 13
             self.last_action_output,  # 13
         ), dim=-1)
@@ -156,7 +154,7 @@ class T1PIEEnvironment(HumanoidEnv):
             self.base_euler * self.obs_scales.quat,  # 3
             command_input,  # 5D
             self.last_action_output,  # 12D
-            (self.sim.dof_pos[:, self.dof_activated] - self.init_state_dof_pos[:, self.dof_activated]) * self.obs_scales.dof_pos,  # 12D
+            (self.sim.dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 12D
             self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.ext_force[:, :2],  # 2
             self.ext_torque,  # 3

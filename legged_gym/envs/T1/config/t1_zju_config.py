@@ -7,7 +7,7 @@ class T1ZJUCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 2048  # 6144
 
-        enable_clock_input = False
+        enable_clock_input = True
         n_proprio = 50
         len_prop_his = 10
 
@@ -57,7 +57,7 @@ class T1ZJUCfg(T1BaseCfg):
 
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 0,
+            'rough_slope': 1,
             'stairs_up': 1,
             'stairs_down': 1,
             'discrete': 0,
@@ -87,7 +87,7 @@ class T1ZJUCfg(T1BaseCfg):
         randomize_start_dof_pos = True
         randomize_start_dof_vel = True
 
-        randomize_friction = switch
+        randomize_friction = False
         randomize_base_mass = switch
         randomize_link_mass = switch
         randomize_com = switch
@@ -108,7 +108,7 @@ class T1ZJUCfg(T1BaseCfg):
 
     class rewards:
         base_height_target = 0.64
-        feet_height_target = 0.05
+        feet_height_target = 0.04
         feet_height_target_max = 0.06
         use_guidance_terrain = True
         only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
@@ -127,29 +127,30 @@ class T1ZJUCfg(T1BaseCfg):
 
         class scales:
             # gait
-            # joint_pos = 2.
-            # feet_contact_number = 1.2
-            feet_clearance = 1.  # 0.2
+            joint_pos = 2.
+            feet_contact_number = 1.2
+            feet_clearance = 0.2  # 0.2
             feet_air_time = 1.
             feet_slip = -1.
-            feet_distance = 0.3
-            knee_distance = 0.3
+            feet_distance = 0.2
+            knee_distance = 0.2
             feet_rotation = 0.5
 
             # contact
             # feet_contact_forces = -0.01
-            # feet_stumble = -1.0
-            # feet_edge = -0.5
+            feet_stumble = -1.0
+            feet_edge = -1.0
 
             # vel tracking
-            tracking_lin_vel = 2.5
-            tracking_ang_vel = 1.0
+            # tracking_lin_vel = 1.2
+            tracking_goal_vel = 1.5
+            tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
 
             # base pos
-            default_joint_pos = 0.2
+            default_joint_pos = 0.5
             orientation = 1.
-            base_height = -1.
+            base_height = 0.2
             base_acc = 0.2
 
             # energy
@@ -158,7 +159,6 @@ class T1ZJUCfg(T1BaseCfg):
             dof_vel = -5e-4
             dof_acc = -1e-7
             collision = -1.
-            # stand_still = 2.0
 
 
 class T1ZJUCfgPPO(T1BaseCfgPPO):

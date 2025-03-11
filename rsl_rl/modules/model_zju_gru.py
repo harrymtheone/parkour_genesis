@@ -37,21 +37,16 @@ class ObsGRU(nn.Module):
         self.gru = nn.GRU(input_size=64, hidden_size=policy_cfg.obs_gru_hidden_size, num_layers=1)
         self.hidden_state = None
 
-    def forward(self, obs_his, hidden_state=None):
-        if hidden_state is None:
-            # inference forward
-            out = self.conv_layers(obs_his.transpose(1, 2))
-            out, self.hidden_state = self.gru(out.unsqueeze(0), self.hidden_state)
-            return out.squeeze(0)
-        else:
-            # update forward
-            out = gru_wrapper(self.conv_layers.forward, obs_his.transpose(2, 3))
-            return self.gru(out, hidden_state)
+    def inference_forward(self, obs_his):
+        # inference forward
+        out = self.conv_layers(obs_his.transpose(1, 2))
+        out, self.hidden_state = self.gru(out.unsqueeze(0), self.hidden_state)
+        return out.squeeze(0)
 
-    def detach_hidden_state(self):
-        if self.hidden_state is None:
-            return
-        self.hidden_state = self.hidden_state.detach()
+    def forward(self, obs_his, hidden_state):
+        # update forward
+        out = gru_wrapper(self.conv_layers.forward, obs_his.transpose(2, 3))
+        return self.gru(out, hidden_state)
 
     def get_hidden_state(self):
         if self.hidden_state is None:
@@ -175,36 +170,31 @@ class ReconGRU(nn.Module):
 
         self.recon_refine = UNet()
 
-    def forward(self, depth_his, prop_latent, hidden_state=None):
-        if hidden_state is None:
-            # inference forward
-            enc_depth = self.cnn_depth(depth_his)
+    def inference_forward(self, depth_his, prop_latent):
+        # inference forward
+        enc_depth = self.cnn_depth(depth_his)
 
-            # concatenate the two latent vectors
-            gru_input = torch.cat([enc_depth, prop_latent], dim=1)
-            enc_gru, self.hidden_state = self.gru(gru_input.unsqueeze(0), self.hidden_state)
+        # concatenate the two latent vectors
+        gru_input = torch.cat([enc_depth, prop_latent], dim=1)
+        enc_gru, self.hidden_state = self.gru(gru_input.unsqueeze(0), self.hidden_state)
 
-            # reconstruct
-            hmap_rough = self.recon_rough(enc_gru.squeeze(0))
-            hmap_refine = self.recon_refine(hmap_rough)
-            return hmap_rough, hmap_refine
-        else:
-            # update forward
-            enc_depth = gru_wrapper(self.cnn_depth.forward, depth_his)
+        # reconstruct
+        hmap_rough = self.recon_rough(enc_gru.squeeze(0))
+        hmap_refine = self.recon_refine(hmap_rough)
+        return hmap_rough, hmap_refine
 
-            # concatenate the two latent vectors
-            gru_input = torch.cat([enc_depth, prop_latent], dim=2)
-            enc_gru, hidden_state = self.gru(gru_input, hidden_state)
+    def forward(self, depth_his, prop_latent, hidden_state):
+        # update forward
+        enc_depth = gru_wrapper(self.cnn_depth.forward, depth_his)
 
-            # reconstruct
-            hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
-            hmap_refine = gru_wrapper(self.recon_refine.forward, hmap_rough)
-            return hmap_rough, hmap_refine, hidden_state
+        # concatenate the two latent vectors
+        gru_input = torch.cat([enc_depth, prop_latent], dim=2)
+        enc_gru, hidden_state = self.gru(gru_input, hidden_state)
 
-    def detach_hidden_state(self):
-        if self.hidden_state is None:
-            return
-        self.hidden_state = self.hidden_state.detach()
+        # reconstruct
+        hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
+        hmap_refine = gru_wrapper(self.recon_refine.forward, hmap_rough)
+        return hmap_rough, hmap_refine, hidden_state
 
     def get_hidden_state(self):
         if self.hidden_state is None:
@@ -290,14 +280,16 @@ class LocoTransformer(nn.Module):
 
         # decode the vector
         est_mu = self.mlp_mu(out)
+        est_latent = est_mu[..., :self.len_latent]
+        est = est_mu[..., self.len_latent:]
+
         est_logvar = self.mlp_logvar(out)
 
         # reparameterize and predict O_t+1
-        z = self.reparameterize(est_mu[:, :self.len_latent], est_logvar)
-        ot1 = self.predictor(torch.cat((z, est_mu[:, self.len_latent:]), dim=1))
+        z = self.reparameterize(est_latent, est_logvar)
+        ot1 = self.predictor(torch.cat([z, est.detach()], dim=1))
 
-        # decode the vector
-        return est_mu, est_logvar, ot1
+        return est_latent, est, est_logvar, ot1
 
     @staticmethod
     def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
@@ -318,11 +310,7 @@ class Actor(nn.Module):
                                         output_activation=False)
 
     def forward(self, obs, priv):
-        if obs.ndim == 2:
-            return self.actor(torch.cat([obs, priv], dim=1))
-
-        elif obs.ndim == 3:  # GRU
-            return gru_wrapper(self.actor.forward, torch.cat([obs, priv], dim=2))
+        return self.actor(torch.cat([obs, priv], dim=1))
 
 
 class EstimatorGRU(nn.Module):
@@ -331,15 +319,12 @@ class EstimatorGRU(nn.Module):
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        self.len_latent = policy_cfg.len_latent
-        self.est_dim = policy_cfg.len_base_vel + policy_cfg.len_latent_feet + policy_cfg.len_latent_body
-
         self.obs_gru = ObsGRU(env_cfg, policy_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
         self.transformer = LocoTransformer(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
-        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
+        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
         self.distribution = None
 
     def act(self,
@@ -349,11 +334,11 @@ class EstimatorGRU(nn.Module):
             ):  # <-- my mood be like
 
         # encode history proprio
-        latent_obs = self.obs_gru(obs.prop_his)
+        latent_obs = self.obs_gru.inference_forward(obs.prop_his)
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine = self.reconstructor(obs.depth, latent_obs)
+            recon_rough, recon_refine = self.reconstructor.inference_forward(obs.depth, latent_obs)
 
         # cross-model mixing using transformer
         if type(use_estimated_values) is torch.Tensor:
@@ -362,18 +347,19 @@ class EstimatorGRU(nn.Module):
                 recon_refine,
                 obs.scan.unsqueeze(1)
             )
-            est_mu, _, _ = self.transformer(recon_input, latent_obs)
+            est_latent, est, _, _ = self.transformer(recon_input, latent_obs)
             latent_input = torch.where(
                 use_estimated_values,
-                est_mu,
-                torch.cat([est_mu[:, :self.len_latent], obs.priv_actor], dim=1)
+                torch.cat([est_latent, est.detach()], dim=1),
+                torch.cat([est_latent, obs.priv_actor], dim=1)
             )
 
         elif use_estimated_values:
-            latent_input, _, _ = self.transformer(recon_refine, latent_obs)
+            est_latent, est, _, _ = self.transformer(recon_refine, latent_obs)
+            latent_input = torch.cat([est_latent, est.detach()], dim=1)
         else:
-            est_mu, _, _ = self.transformer(obs.scan.unsqueeze(1), latent_obs)
-            latent_input = torch.cat([est_mu[:, :self.len_latent], obs.priv_actor], dim=1)
+            est_latent, _, _, _ = self.transformer(obs.scan.unsqueeze(1), latent_obs)
+            latent_input = torch.cat([est_latent, obs.priv_actor], dim=1)
 
         # compute action
         mean = self.actor(obs.proprio, latent_input)
@@ -408,11 +394,11 @@ class EstimatorGRU(nn.Module):
             recon_refine,
             obs.scan.unsqueeze(2)
         )
-        est_mu, _, _ = gru_wrapper(self.transformer.forward, recon_input, latent_obs)  # TODO: probably detach the vel and hmap gradient???
+        est_latent, est, _, _ = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
         latent_input = torch.where(
             use_estimated_values,
-            est_mu,
-            torch.cat([est_mu[..., :self.len_latent], obs.priv_actor], dim=-1)
+            torch.cat([est_latent, est.detach()], dim=2),
+            torch.cat([est_latent, obs.priv_actor], dim=2)
         )
 
         # compute action
@@ -428,15 +414,13 @@ class EstimatorGRU(nn.Module):
 
         recon_input = torch.where(
             use_estimated_values.unsqueeze(-1).unsqueeze(-1),
-            recon_refine.detach(),  # TODO: You should detach the gradient here, otherwise reconstruction fails???
+            recon_refine.detach(),
             obs.scan.unsqueeze(2)
         )
 
-        est_mu, est_logvar, ot1 = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
-        est_latent = est_mu[..., :self.len_latent]
-        est = est_mu[..., self.len_latent:]
+        est_latent, est, est_logvar, ot1 = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
 
-        return recon_rough.squeeze(2), recon_refine.squeeze(2), est, est_latent, est_logvar, ot1
+        return recon_rough.squeeze(2), recon_refine.squeeze(2), est_latent, est, est_logvar, ot1
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
@@ -459,10 +443,6 @@ class EstimatorGRU(nn.Module):
 
     def get_hidden_state(self):
         return self.obs_gru.get_hidden_state(), self.reconstructor.get_hidden_state()
-
-    def detach_hidden_state(self):
-        self.obs_gru.detach_hidden_state()
-        self.reconstructor.detach_hidden_state()
 
     def reset(self, dones):
         self.obs_gru.reset(dones)
