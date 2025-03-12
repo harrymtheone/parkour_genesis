@@ -2,12 +2,12 @@ from .T1.t1_dreamwaq_environment import T1DreamWaqEnvironment
 from .T1.t1_periodic_environment import T1PeriodicEnvironment
 from .T1.t1_zju_environment import T1ZJUEnvironment
 from .T1.t1_pie_environment import T1PIEEnvironment
-from .T1.t1_gait_environment import T1GaitEnvironment
+from .T1.t1_priv_environment import T1PrivEnvironment
 from .T1.config.t1_dreamwaq_config import T1DreamWaqCfg, T1DreamWaqCfgPPO
 from .T1.config.t1_periodic_config import T1PeriodicPhase1Cfg, T1PeriodicCfgPPO
 from .T1.config.t1_zju_config import T1ZJUCfg, T1ZJUCfgPPO
 from .T1.config.t1_pie_config import T1PIECfg, T1PIECfgPPO, T1PIEStairCfg
-from .T1.config.t1_gait_config import T1GaitCfg, T1GaitCfgPPO
+from .T1.config.t1_priv_config import T1PrivCfg, T1PrivCfgPPO
 
 from .pdd.config.pdd_dreamwaq_config import PddDreamWaqCfg, PddDreamWaqCfgPPO, PddDreamWaqGRUCfgPPO
 from .pdd.config.pdd_scan_config import PddScanCfg, PddScanCfgPPO, PddScanStairCfg, PddScanStairCfgPPO
@@ -33,7 +33,7 @@ task_list = [
     ['t1_zju', T1ZJUEnvironment, T1ZJUCfg(), T1ZJUCfgPPO()],
     ['t1_pie', T1PIEEnvironment, T1PIECfg(), T1PIECfgPPO()],
     ['t1_pie_stair', T1PIEEnvironment, T1PIEStairCfg(), T1PIECfgPPO()],
-    ['t1_gait', T1GaitEnvironment, T1GaitCfg(), T1GaitCfgPPO()],
+    ['t1_priv', T1PrivEnvironment, T1PrivCfg(), T1PrivCfgPPO()],
 
     ['go1_zju', Go1ZJUEnvironment, Go1ZJUCfg(), Go1ZJUCfgPPO()]
 

@@ -123,9 +123,9 @@ class HumanoidEnv(ParkourTask):
             self.init_state_dof_pos,
             self.ref_dof_pos
         )
-        diff = diff[:, self.dof_activated]
+        diff = torch.norm(diff[:, self.dof_activated], dim=1)
 
-        rew = torch.exp(-2 * torch.norm(diff, dim=1)) - 0.2 * torch.norm(diff, dim=1).clamp(0, 0.5)
+        rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
         rew[self.env_class == 12] *= 0.1
         return rew
 
@@ -144,7 +144,7 @@ class HumanoidEnv(ParkourTask):
         # rew = torch.sum(rew * ~self._get_stance_mask(), dim=1, dtype=torch.float)
 
         rew = (self.feet_height / self.cfg.rewards.feet_height_target).clip(min=-1, max=1)
-        rew[self._get_stance_mask()] = 0.
+        rew[self._get_stance_mask()] = -torch.abs(rew[self._get_stance_mask()])
         return rew.sum(dim=1)
 
     def _reward_feet_air_time(self):
@@ -236,8 +236,8 @@ class HumanoidEnv(ParkourTask):
         Tracks linear velocity commands along the xy axes.
         Calculates a reward based on how closely the robot's linear velocity matches the commanded values.
         """
-        lin_vel_upper_bound = torch.where(self.commands[:, :2] < 0, 1e5, self.commands[:, :2] + self.cfg.commands.lin_vel_clip)
-        lin_vel_lower_bound = torch.where(self.commands[:, :2] > 0, -1e5, self.commands[:, :2] - self.cfg.commands.lin_vel_clip)
+        lin_vel_upper_bound = torch.where(self.commands[:, :2] < 0, 1e5, self.commands[:, :2] + self.cfg.commands.parkour_vel_tolerance)
+        lin_vel_lower_bound = torch.where(self.commands[:, :2] > 0, -1e5, self.commands[:, :2] - self.cfg.commands.parkour_vel_tolerance)
         clip_lin_vel = torch.clip(self.base_lin_vel[:, :2], lin_vel_lower_bound, lin_vel_upper_bound)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - clip_lin_vel), dim=1)
         return torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
@@ -331,9 +331,8 @@ class HumanoidEnv(ParkourTask):
         """
         assert self.yaw_roll_dof_indices is not None
         joint_diff = self.sim.dof_pos - self.init_state_dof_pos
-        yaw_roll = joint_diff[:, self.yaw_roll_dof_indices]
-        yaw_roll = torch.norm(yaw_roll, dim=1)
-        yaw_roll = torch.clamp(yaw_roll - 0.1, 0, 50)
+        yaw_roll = joint_diff[:, self.yaw_roll_dof_indices].abs()
+        yaw_roll = (yaw_roll - 0.1).clip(min=0, max=50).sum(dim=1)
         return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1)
 
         # rew = -joint_diff[:, self.dof_activated].square().sum(dim=1)

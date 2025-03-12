@@ -79,6 +79,7 @@ class T1BaseCfg(BaseConfig):
 
         lin_vel_clip = 0.1
         ang_vel_clip = 0.2
+        parkour_vel_tolerance = 0.3
 
         sw_switch = True
 

@@ -261,16 +261,17 @@ class T1ZJUEnvironment(HumanoidEnv):
         rew[~self.phase_enabled] = 0.
         return torch.mean(rew, dim=1)
 
-    def _reward_feet_clearance(self):
-        # rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, -1, 1)
-        # rew[self.contact_filt | self.is_zero_command.unsqueeze(1)] = 0.
-        # return rew.sum(dim=1)
-
-        # encourage the robot to lift its legs when it moves
-        d_min = (self.feet_height - self.cfg.rewards.feet_height_target).clip(-0.04, 0.)
-        d_max = (self.feet_height - self.cfg.rewards.feet_height_target_max).clip(0, 0.04)
-        rew = (torch.exp(-torch.abs(d_min) * 50) + torch.exp(-torch.abs(d_max) * 50)) / 2 - 0.57
-        return rew.sum(dim=1) * ~self.is_zero_command
+    # def _reward_feet_clearance(self):
+    #     # rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, -1, 1)
+    #     # rew[self.contact_filt | self.is_zero_command.unsqueeze(1)] = 0.
+    #     # return rew.sum(dim=1)
+    #
+    #     # encourage the robot to lift its legs when it moves
+    #     d_min = (self.feet_height - self.cfg.rewards.feet_height_target).clip(-0.04, 0.)
+    #     d_max = (self.feet_height - self.cfg.rewards.feet_height_target_max).clip(0, 0.04)
+    #     rew = (torch.exp(-torch.abs(d_min) * 50) + torch.exp(-torch.abs(d_max) * 50)) / 2 - 0.57
+    #     rew[self._get_stance_mask()] = 0.
+    #     return rew.sum(dim=1)
 
 
 @torch.jit.script

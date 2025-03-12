@@ -2,20 +2,10 @@ import torch
 import torch.nn as nn
 from torch.distributions import Normal
 
-from .utils import make_linear_layers
+from .utils import make_linear_layers, gru_wrapper
 
 gru_hidden_size = 128
 encoder_output_size = 3 + 64  # v_t, z_t
-
-
-def gru_wrapper(func, *args, **kwargs):
-    n_steps = args[0].size(0)
-    rtn = func(*[arg.flatten(0, 1) for arg in args], **kwargs)
-
-    if type(rtn) is tuple:
-        return [r.unflatten(0, (n_steps, -1)) for r in rtn]
-    else:
-        return rtn.unflatten(0, (n_steps, -1))
 
 
 class VAE(nn.Module):
@@ -215,11 +205,11 @@ class Critic(nn.Module):
         activation = nn.ELU()
 
         self.priv_enc = nn.Sequential(
-            nn.Conv1d(in_channels=env_cfg.num_critic_obs, out_channels=2 * channel_size, kernel_size=8, stride=4),
+            nn.Conv1d(in_channels=env_cfg.num_critic_obs, out_channels=2 * channel_size, kernel_size=6, stride=4),
             activation,
-            nn.Conv1d(in_channels=2 * channel_size, out_channels=4 * channel_size, kernel_size=6, stride=1),
+            nn.Conv1d(in_channels=2 * channel_size, out_channels=4 * channel_size, kernel_size=6, stride=2),
             activation,
-            nn.Conv1d(in_channels=4 * channel_size, out_channels=8 * channel_size, kernel_size=6, stride=1),
+            nn.Conv1d(in_channels=4 * channel_size, out_channels=8 * channel_size, kernel_size=4, stride=1),
             activation,
             nn.Flatten()
         )
@@ -229,17 +219,16 @@ class Critic(nn.Module):
                                          output_activation=False)
 
     def evaluate(self, obs):
-        if obs.priv_his.ndim == 4:
+        if obs.priv_his.ndim == 3:
+            priv_his = obs.priv_his.transpose(1, 2)
+            scan = obs.scan.flatten(1)
+            priv_latent = self.priv_enc(priv_his)
+            value = self.critic(torch.cat([priv_latent, scan], dim=1))
+            return value
+        else:
             n_steps = obs.priv_his.size(0)
             priv_his = obs.priv_his.flatten(0, 1).transpose(1, 2)
             scan = obs.scan.flatten(0, 1).flatten(1)
             priv_latent = self.priv_enc(priv_his)
             value = self.critic(torch.cat([priv_latent, scan], dim=1))
             return value.unflatten(0, (n_steps, -1))
-
-        else:
-            priv_his = obs.priv_his.transpose(1, 2)
-            scan = obs.scan.flatten(1)
-            priv_latent = self.priv_enc(priv_his)
-            value = self.critic(torch.cat([priv_latent, scan], dim=1))
-            return value

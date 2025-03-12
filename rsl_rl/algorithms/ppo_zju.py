@@ -147,7 +147,7 @@ class PPO_ZJU(BaseAlgorithm):
             mean_entropy_loss += entropy_loss
 
             estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss = self._compute_estimation_loss(batch)
-            loss_est = estimation_loss + prediction_loss + vae_loss + 0 * recon_rough_loss + 0 * recon_refine_loss + symmetry_loss
+            loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss + symmetry_loss
 
             # estimation statistics
             mean_estimation_loss += estimation_loss.item()
@@ -308,10 +308,10 @@ class PPO_ZJU(BaseAlgorithm):
 
     def load(self, loaded_dict, load_optimizer=True):
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
-        # self.critic.load_state_dict(loaded_dict['critic_state_dict'])
+        self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
-        # if load_optimizer:
-        #     self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+        if load_optimizer:
+            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)

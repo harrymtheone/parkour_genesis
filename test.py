@@ -1,27 +1,56 @@
-import matplotlib.pyplot as plt
+# import torch
+# import numpy as np
+# import matplotlib.pyplot as plt
+#
+#
+# class RewardFunction:
+#     def __init__(self, min_dist=0.04, max_dist=0.06):
+#         self.min_dist = min_dist
+#         self.max_dist = max_dist
+#
+#     def _reward_feet_away(self, foot_dist):
+#         fd = self.min_dist
+#         max_df = self.max_dist
+#         d_min = torch.clamp(foot_dist - fd, -0.04, 0.)
+#         d_max = torch.clamp(foot_dist - max_df, 0, 0.04)
+#         return (torch.exp(-torch.abs(d_min) * 50) + torch.exp(-torch.abs(d_max) * 50)) / 2 - 0.57
+#
+#
+# # Create a range of foot distances
+# foot_distances = torch.linspace(0.0, 0.2, 100)
+# reward_fn = RewardFunction()
+# rewards = reward_fn._reward_feet_away(foot_distances)
+#
+# # Plot the reward curve
+# plt.figure(figsize=(8, 5))
+# plt.plot(foot_distances.numpy(), rewards.numpy(), label='Reward')
+# plt.xlabel('Foot Distance')
+# plt.ylabel('Reward')
+# plt.title('Reward vs. Foot Distance')
+# plt.legend()
+# plt.grid()
+# plt.show()
+
+
 import numpy as np
-from scipy.stats import vonmises
+import matplotlib.pyplot as plt
 
-# Create an array of angles (in radians) from -π to π
-theta = np.linspace(0., 1., 1000)
+# Define reward function parameters
+tracking_sigma = 10  # Example value for self.cfg.rewards.tracking_sigma
+v_cmd_xy = 0.5  # Fixed commanded velocity (m/s)
 
-# Compute the PDF of the von Mises distribution
-swing1 = vonmises.cdf(2 * np.pi * theta, 50, loc=0.2 * 2 * np.pi)
-swing2 = vonmises.cdf(2 * np.pi * theta, 50, loc=0.6 * 2 * np.pi)
-swing = swing1 * (1 - swing2)
+# Generate actual velocity values
+v_xy = np.linspace(0, 1.5, 100)
 
-stance1 = vonmises.cdf(2 * np.pi * theta, 50, loc=0.6 * 2 * np.pi)
-stance2 = vonmises.cdf(2 * np.pi * theta, 50, loc=0.2 * 2 * np.pi)
-stance = stance1 * (1 - stance2)
+# Compute velocity error based on the minimum condition in the reward function
+vel_err = np.minimum(v_xy, v_cmd_xy + 0.1) - v_cmd_xy
 
-c = stance
+# Compute reward values
+reward = np.exp(-vel_err**2 * tracking_sigma)
 
-# Plot the von Mises distribution
-plt.figure(figsize=(8, 6))
-plt.plot(theta, c, color='blue')
-plt.title("Von Mises Distribution")
-plt.xlabel("Angle (radians)")
-plt.ylabel("Probability Density")
-plt.grid(True)
-plt.legend()
+# Plot the reward function
+plt.figure(figsize=(6, 4))
+plt.plot(v_xy, reward, label=r'$e^{-\sigma (\text{vel\_err})^2}$', color='b')
+plt.axvline(x=v_cmd_xy, linestyle="--", color="red", label="Commanded velocity")
+plt.axvline(x=v_cmd_xy + 0.1, linestyle="--", color="green", label="Upper threshold")
 plt.show()

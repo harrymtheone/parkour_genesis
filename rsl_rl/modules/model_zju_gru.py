@@ -3,17 +3,7 @@ from typing import Union
 import torch
 import torch.nn as nn
 
-from .utils import make_linear_layers
-
-
-def gru_wrapper(func, *args):
-    n_steps = args[0].size(0)
-    rtn = func(*[arg.flatten(0, 1) for arg in args])
-
-    if type(rtn) is tuple:
-        return [r.unflatten(0, (n_steps, -1)) for r in rtn]
-    else:
-        return rtn.unflatten(0, (n_steps, -1))
+from .utils import make_linear_layers, gru_wrapper
 
 
 class ObsGRU(nn.Module):
@@ -410,7 +400,7 @@ class EstimatorGRU(nn.Module):
     def reconstruct(self, obs, obs_enc_hidden, recon_hidden, use_estimated_values):
         # encode history proprio
         latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden)
-        recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs, recon_hidden)
+        recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs.detach(), recon_hidden)
 
         recon_input = torch.where(
             use_estimated_values.unsqueeze(-1).unsqueeze(-1),

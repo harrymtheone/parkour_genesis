@@ -38,6 +38,16 @@ def make_linear_layers(*shape, activation_func=None, output_activation=True):
     return layers
 
 
+def gru_wrapper(func, *args, **kwargs):
+    n_steps = args[0].size(0)
+    rtn = func(*[arg.flatten(0, 1) for arg in args], **kwargs)
+
+    if type(rtn) is tuple:
+        return [r.unflatten(0, (n_steps, -1)) for r in rtn]
+    else:
+        return rtn.unflatten(0, (n_steps, -1))
+
+
 def unpad_trajectories(traj, masks):
     """ Does the inverse operation of  split_and_pad_trajectories()
     """

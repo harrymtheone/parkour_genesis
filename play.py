@@ -33,7 +33,7 @@ def play(args):
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.curriculum = True
     env_cfg.terrain.max_difficulty = False
-    env_cfg.terrain.max_init_terrain_level = 0
+    env_cfg.terrain.max_init_terrain_level = 4
     # env_cfg.asset.disable_gravity = True
 
     # env_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
@@ -83,7 +83,7 @@ def play(args):
                 actions, recon_rough, recon_refine = rtn
 
                 # env.draw_hmap(recon_rough)
-                # env.draw_hmap(recon_refine)
+                env.draw_hmap(recon_refine)
                 # env.draw_feet_hmap(est_mu[:, -16-16:-16])  # feet height map estimation
                 # env.draw_body_hmap(est_mu[:, -16:])  # body height map estimation
             else:

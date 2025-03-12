@@ -1,17 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .utils import make_linear_layers
-
-
-def gru_wrapper(func, *args):
-    n_steps = args[0].size(0)
-    rtn = func(*[arg.flatten(0, 1) for arg in args])
-
-    if type(rtn) is tuple:
-        return [r.unflatten(0, (n_steps, -1)) for r in rtn]
-    else:
-        return rtn.unflatten(0, (n_steps, -1))
+from .utils import make_linear_layers, gru_wrapper
 
 
 class Estimator(nn.Module):
@@ -255,5 +245,3 @@ class Critic(nn.Module):
             return evaluation
         else:
             return evaluation.unflatten(0, (n_steps, -1))
-
-

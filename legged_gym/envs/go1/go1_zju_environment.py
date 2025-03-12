@@ -27,10 +27,11 @@ class ObsNext(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_his, scan):
+    def __init__(self, priv_his, scan, base_edge_mask):
         super().__init__()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
+        self.base_edge_mask = base_edge_mask.clone()
 
 
 class Go1ZJUEnvironment(QuadrupedEnv):
@@ -102,6 +103,8 @@ class Go1ZJUEnvironment(QuadrupedEnv):
         ), dim=-1)
 
         # explicit privileged information
+        base_edge_mask = self.get_edge_mask().float()
+
         priv_obs = torch.cat((
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 16
@@ -138,7 +141,7 @@ class Go1ZJUEnvironment(QuadrupedEnv):
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan)
+        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):
