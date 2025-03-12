@@ -5,7 +5,7 @@ from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 class T1PrivCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
-        num_envs = 4096  # 6144
+        num_envs = 2048  # 6144
 
         enable_clock_input = True
         n_proprio = 50
@@ -32,8 +32,8 @@ class T1PrivCfg(T1BaseCfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 0,
-            'stairs_down': 0,
+            'stairs_up': 1,
+            'stairs_down': 1,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -42,7 +42,7 @@ class T1PrivCfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 0,
+            'parkour_stair': 1,
             'parkour_flat': 0,
         }
 
@@ -66,7 +66,7 @@ class T1PrivCfg(T1BaseCfg):
         randomize_link_mass = switch
         randomize_com = switch
 
-        push_robots = switch
+        push_robots = False
         action_delay = switch
         add_dof_lag = False
         add_imu_lag = False
@@ -85,7 +85,8 @@ class T1PrivCfg(T1BaseCfg):
         feet_height_target = 0.04
         feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
@@ -111,7 +112,7 @@ class T1PrivCfg(T1BaseCfg):
             feet_rotation = 0.5
 
             # contact
-            # feet_contact_forces = -0.1
+            feet_contact_forces = -0.01
 
             # vel tracking
             tracking_lin_vel = 1.2
@@ -130,7 +131,6 @@ class T1PrivCfg(T1BaseCfg):
             dof_vel = -5e-4
             dof_acc = -1e-7
             collision = -1.
-            # stand_still = 2.0
 
 
 class T1PrivCfgPPO(T1BaseCfgPPO):

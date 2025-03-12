@@ -31,11 +31,7 @@ class IsaacGymWrapper(BaseWrapper):
         self.lookat_id = 0
         self.cam_handles = []
         if not self.headless:
-            self.viewer = self.gym.create_viewer(self.sim, gymapi.CameraProperties())
-
-            self.enable_viewer_sync = True
-            self.free_cam = False
-            self.lookat_vec = torch.tensor([-0, 2, 1], device=self.device)
+            self._create_viewer()
 
         self.init_done = True
 
@@ -413,23 +409,59 @@ class IsaacGymWrapper(BaseWrapper):
 
     # ------------------------------------------------ Graphics ------------------------------------------------
 
+    def _create_viewer(self):
+        self.viewer = self.gym.create_viewer(self.sim, gymapi.CameraProperties())
+
+        self.enable_viewer_sync = True
+        self.free_cam = False
+        self.lookat_vec = torch.tensor([-0, 2, 1], device=self.device)
+
+        # self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_ESCAPE, "QUIT")
+        # self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_SPACE, "pause")
+        # self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_V, "toggle_viewer_sync")
+        # self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_F, "free_cam")
+        # self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_LEFT_BRACKET, "prev_id")
+        # self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_RIGHT_BRACKET, "next_id")
+
     def create_camera_sensor(self, env_i: int, cam_props, cam_trans):
         camera_handle = self.gym.create_camera_sensor(self._envs[env_i], cam_props)
         root_handle = self.gym.get_actor_root_rigid_body_handle(self._envs[env_i], self._actor_handles[env_i])
         self.gym.attach_camera_to_body(camera_handle, self._envs[env_i], root_handle, cam_trans, gymapi.FOLLOW_TRANSFORM)
         self.cam_handles.append(camera_handle)
 
-    def render_camera(self, depth_tensor):
-        # ---------------------------  render by IsaacGym  ---------------------------
-        self.gym.step_graphics(self.sim)
-        self.gym.render_all_camera_sensors(self.sim)
-        self.gym.start_access_image_tensors(self.sim)
+    def _handle_key_event(self, event):
+        for evt in event:
+            if evt.action == "QUIT" and evt.value > 0:
+                sys.exit()
 
-        for env_i in range(self.num_envs):
-            depth_tensor[env_i] = -gymtorch.wrap_tensor(
-                self.gym.get_camera_image_gpu_tensor(
-                    self.sim, self._envs[env_i], self.cam_handles[env_i], gymapi.IMAGE_DEPTH))
-        self.gym.end_access_image_tensors(self.sim)
+            elif evt.action == "toggle_viewer_sync" and evt.value > 0:
+                self.enable_viewer_sync = not self.enable_viewer_sync
+
+            elif evt.action == "free_cam" and evt.value > 0:
+                self.free_cam = not self.free_cam
+                if self.free_cam:
+                    self.lookat(self.lookat_id)
+
+            elif evt.action == "pause" and evt.value > 0:
+                pause = True
+                while pause:
+                    time.sleep(0.1)
+                    self.gym.draw_viewer(self.viewer, self.sim, True)
+
+                    for evt in self.gym.query_viewer_action_events(self.viewer):
+                        if evt.action == "pause" and evt.value > 0:
+                            pause = False
+
+                    if self.gym.query_viewer_has_closed(self.viewer):
+                        sys.exit()
+
+            elif not self.free_cam:
+                if evt.action == "prev_id" and evt.value > 0:
+                    self.lookat_id = (self.lookat_id - 1) % self.num_envs
+                    self.lookat(self.lookat_id)
+                elif evt.action == "next_id" and evt.value > 0:
+                    self.lookat_id = (self.lookat_id + 1) % self.num_envs
+                    self.lookat(self.lookat_id)
 
     def render(self):
         # check for window closed
@@ -438,6 +470,9 @@ class IsaacGymWrapper(BaseWrapper):
 
         if not self.free_cam:
             self.lookat(self.lookat_id)
+
+        # check for keyboard events
+        self._handle_key_event(self.gym.query_viewer_action_events(self.viewer))
 
         # fetch results
         if self.device != 'cpu':
@@ -473,3 +508,14 @@ class IsaacGymWrapper(BaseWrapper):
         for pt in points:
             sphere_pose = gymapi.Transform(gymapi.Vec3(pt[0], pt[1], pt[2] + 0.02), r=None)
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self._envs[self.lookat_id], sphere_pose)
+
+    def render_camera(self, depth_tensor):
+        self.gym.step_graphics(self.sim)
+        self.gym.render_all_camera_sensors(self.sim)
+        self.gym.start_access_image_tensors(self.sim)
+
+        for env_i in range(self.num_envs):
+            depth_tensor[env_i] = -gymtorch.wrap_tensor(
+                self.gym.get_camera_image_gpu_tensor(
+                    self.sim, self._envs[env_i], self.cam_handles[env_i], gymapi.IMAGE_DEPTH))
+        self.gym.end_access_image_tensors(self.sim)

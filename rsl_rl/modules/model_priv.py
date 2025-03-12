@@ -22,7 +22,7 @@ class ActorGRU(nn.Module):
         self.edge_mask_enc = make_linear_layers(env_cfg.n_scan, 256, 64,
                                                 activation_func=activation)
 
-        self.actor_backbone = make_linear_layers(env_cfg.num_critic_obs + gru_hidden_size + 2 * 64,
+        self.actor_backbone = make_linear_layers(env_cfg.num_critic_obs + gru_hidden_size + 64 + 64,
                                                  *policy_cfg.actor_hidden_dims,
                                                  env_cfg.num_actions,
                                                  activation_func=activation,
@@ -53,11 +53,10 @@ class ActorGRU(nn.Module):
         obs_enc, _ = self.gru(obs.priv, hidden_states)
         scan_enc = gru_wrapper(self.scan_enc, obs.scan.flatten(2))
         edge_enc = gru_wrapper(self.edge_mask_enc, obs.edge_mask.flatten(2))
-
         actor_input = torch.cat([obs.priv, obs_enc, scan_enc, edge_enc], dim=2)
         mean = gru_wrapper(self.actor_backbone.forward, actor_input)
 
-        self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
+        self.distribution = Normal(mean, torch.exp(self.log_std))
 
     @property
     def action_mean(self):

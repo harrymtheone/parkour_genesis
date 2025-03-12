@@ -134,8 +134,9 @@ class HumanoidEnv(ParkourTask):
         Calculates a reward based on the number of feet contacts aligning with the gait phase.
         Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
         """
-        reward = torch.where(self.contact_filt == self._get_stance_mask(), 1, -0.3)
-        return torch.mean(reward, dim=1)
+        rew = torch.where(self.contact_filt == self._get_stance_mask(), 1, -0.3)
+        rew[self.env_class == 12] *= 0.1
+        return torch.mean(rew, dim=1)
 
     def _reward_feet_clearance(self):
         # encourage the robot to lift its legs when it moves

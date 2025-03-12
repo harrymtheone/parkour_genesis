@@ -40,12 +40,12 @@ def play(args):
     # env_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # env_cfg.depth.angle_range = [-1, 1]
     # env_cfg.domain_rand.action_delay_range = [(5, 5)]
-    env_cfg.domain_rand.push_robots = True
-    env_cfg.domain_rand.push_interval_s = 6
-    env_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
+    env_cfg.domain_rand.push_robots = False
+    # env_cfg.domain_rand.push_interval_s = 6
+    # env_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
 
     env_cfg.terrain.terrain_dict = {
-        'smooth_slope': 1,
+        'smooth_slope': 0,
         'rough_slope': 0,
         'stairs_up': 0,
         'stairs_down': 0,

@@ -3,7 +3,7 @@ from typing import Union
 import torch
 import torch.nn as nn
 
-from .utils import make_linear_layers, unpad_trajectories
+from .utils import make_linear_layers
 
 
 class ObsEnc(nn.Module):

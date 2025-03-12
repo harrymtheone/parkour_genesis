@@ -38,6 +38,7 @@ def make_linear_layers(*shape, activation_func=None, output_activation=True):
     return layers
 
 
+@torch.compiler.disable  # Prevent compilation
 def gru_wrapper(func, *args, **kwargs):
     n_steps = args[0].size(0)
     rtn = func(*[arg.flatten(0, 1) for arg in args], **kwargs)
@@ -46,12 +47,3 @@ def gru_wrapper(func, *args, **kwargs):
         return [r.unflatten(0, (n_steps, -1)) for r in rtn]
     else:
         return rtn.unflatten(0, (n_steps, -1))
-
-
-def unpad_trajectories(traj, masks):
-    """ Does the inverse operation of  split_and_pad_trajectories()
-    """
-    # Need to transpose before and after the masking to have proper reshaping
-    if torch.all(masks):
-        return traj
-    return traj.transpose(1, 0)[masks.transpose(1, 0)].view(-1, len(traj), *traj.shape[2:]).transpose(1, 0)

@@ -5,7 +5,7 @@ from .go1_base_config import Go1BaseCfg, Go1BaseCfgPPO
 
 class Go1ZJUCfg(Go1BaseCfg):
     class env(Go1BaseCfg.env):
-        num_envs = 4096  # 6144
+        num_envs = 2048  # 6144
         n_proprio = 3 + 3 + 3 + 12 + 12 + 12
         len_prop_his = 10
 
@@ -88,7 +88,7 @@ class Go1ZJUCfg(Go1BaseCfg):
         randomize_link_mass = switch
         randomize_com = switch
 
-        push_robots = switch
+        push_robots = False
         action_delay = switch
         add_dof_lag = False
         add_imu_lag = False
@@ -106,6 +106,7 @@ class Go1ZJUCfg(Go1BaseCfg):
         base_height_target = 0.3
         feet_height_target = 0.05
         only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        # only_positive_rewards_until_epoch = 500  # after the epoch, turn off only_positive_reward
         use_guidance_terrain = True
         tracking_sigma = 0.2  # 0.2 tracking reward = exp(-error^2/sigma)
         soft_dof_pos_limit = 0.9
@@ -123,7 +124,7 @@ class Go1ZJUCfg(Go1BaseCfg):
             orientation = -0.2
             torques = -1e-5
             action_rate = -0.01
-            action_smoothness = -0.01
+            # action_smoothness = -0.01
             dof_acc = -2.5e-7
             dof_error = -0.04
             hip_pos = -0.5
