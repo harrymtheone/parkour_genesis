@@ -105,6 +105,9 @@ class GenesisWrapper(BaseWrapper):
             raise ValueError("Terrain description type not specified!")
 
         if terrain_desc_type in ['heightfield', 'trimesh']:
+            # TODO: maybe remove this line in future?
+            self.cfg.terrain.horizontal_scale_downsample = 0.1
+
             self.terrain = Terrain(self.cfg.terrain, terrain_utils)
         else:
             self.terrain = None
@@ -124,6 +127,7 @@ class GenesisWrapper(BaseWrapper):
                 file=self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR),
                 merge_fixed_links=self.cfg.asset.collapse_fixed_joints,
                 links_to_keep=self.cfg.asset.links_to_keep,
+                prioritize_urdf_material=True,
                 pos=(0., 0., 1.0)
             ),
             visualize_contact=self.debug
@@ -135,12 +139,12 @@ class GenesisWrapper(BaseWrapper):
     def _create_heightfield(self):
         """ Adds a heightfield terrain to the simulation, sets parameters based on the cfg.
         """
-        horizontal_scale = self.cfg.terrain.horizontal_scale
+        horizontal_scale = self.cfg.terrain.horizontal_scale_downsample
         self._scene.add_entity(gs.morphs.Terrain(
-            pos=(-self.terrain.border * horizontal_scale, -self.terrain.border * horizontal_scale, 0.0),
+            pos=(-self.cfg.terrain.border_size, -self.cfg.terrain.border_size, 0.0),
             horizontal_scale=horizontal_scale,
             vertical_scale=self.cfg.terrain.vertical_scale,
-            height_field=self.terrain.height_field_raw,
+            height_field=self.terrain.height_field_raw_downsample,
         ))
 
         # self._scene.add_entity(gs.morphs.Terrain(
@@ -152,12 +156,15 @@ class GenesisWrapper(BaseWrapper):
         # ))
         self.height_samples = torch.tensor(self.terrain.height_field_raw, dtype=torch.float, device=self.device)
         self.height_guidance = torch.tensor(self.terrain.height_field_guidance, dtype=torch.float, device=self.device)
-        self.edge_mask = torch.tensor(self.terrain.edge_mask, dtype=torch.float, device=self.device)
+        self.edge_mask = torch.tensor(self.terrain.edge_mask, dtype=torch.bool, device=self.device)
 
     def _create_trimesh(self):
         """ Adds a triangle mesh terrain to the simulation, sets parameters based on the cfg.
             Very slow when horizontal_scale is small
         """
+        # raise NotImplementedError("Terrain creation by trimesh is not supported by Genesis currently!")
+        print(("Terrain creation by trimesh is not supported by Genesis currently! Switching to heightfield!"))
+        return self._create_heightfield()
 
         # save the trimesh to file to be loaded by genesis
         import open3d
@@ -180,7 +187,7 @@ class GenesisWrapper(BaseWrapper):
         ))
         self.height_samples = torch.tensor(self.terrain.height_field_raw, dtype=torch.float, device=self.device)
         self.height_guidance = torch.tensor(self.terrain.height_field_guidance, dtype=torch.float, device=self.device)
-        self.edge_mask = torch.tensor(self.terrain.edge_mask, dtype=torch.float, device=self.device)
+        self.edge_mask = torch.tensor(self.terrain.edge_mask, dtype=torch.bool, device=self.device)
 
     def _process_robot_props(self):
         self.rigid_solver = self._robot.solver
@@ -202,7 +209,7 @@ class GenesisWrapper(BaseWrapper):
         self._base_idx = torch.tensor([self._robot.get_link(self.cfg.asset.base_link_name).idx_local], dtype=torch.long, device=self.device)
         self._base_idx_scene_level = torch.tensor([self._robot.get_link(self.cfg.asset.base_link_name).idx], dtype=torch.long, device=self.device)
         self._body_indices = self.create_indices(self._body_names, True)  # contains base link!
-        self._dof_indices = self.create_indices(self._dof_names, False)
+        self._dof_indices = torch.tensor([self._robot.get_joint(n).dof_idx_local for n in self._dof_names], dtype=torch.long, device=self.device)
 
         # read dof properties
         self.dof_pos_limits = torch.stack(self._robot.get_dofs_limit(self._dof_indices), dim=1)
@@ -230,7 +237,13 @@ class GenesisWrapper(BaseWrapper):
             if is_link:
                 indices[i] = self._robot.get_link(n).idx_local
             else:
-                indices[i] = self._robot.get_joint(n).dof_idx_local
+                for dof_i, dof_n in enumerate(self._dof_names):
+                    if n == dof_n:
+                        indices[i] = dof_i
+                        break
+
+                if n != dof_n:
+                    raise ValueError(f"dof name \"{n}\" not found in self._dof_names")
 
         return indices
 

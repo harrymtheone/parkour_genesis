@@ -101,13 +101,13 @@ def gap_terrain(terrain: SubTerrain, gap_size, outer_platform_size=1.):
     terrain.height_field_raw[center_x - x2: center_x + x2, center_y - y2: center_y + y2] = -200
     terrain.height_field_raw[center_x - x1: center_x + x1, center_y - y1: center_y + y1] = 0
 
-    # goals = np.zeros((1, 2))
-    # goals[0, 0] = center_x + x2 + 50
-    # goals[0, 1] = center_y
-    # terrain.goals = goals * terrain.horizontal_scale
+    goals = np.zeros((2, 2))
+    goals[0] = [terrain.width // 2, terrain.length // 2]
+    goals[1] = [x2 + 1.0 / terrain.horizontal_scale, terrain.length // 2]
+    terrain.goals = goals * terrain.horizontal_scale
 
 
-def pit_terrain(terrain: SubTerrain, depth, num_goal=8, bottom_size=1.):
+def pit_terrain(terrain: SubTerrain, depth, bottom_size=1.):
     depth = int(depth / terrain.vertical_scale)
     bottom_size = int(bottom_size / terrain.horizontal_scale / 2)
     x1 = terrain.width // 2 - bottom_size
@@ -116,7 +116,7 @@ def pit_terrain(terrain: SubTerrain, depth, num_goal=8, bottom_size=1.):
     y2 = terrain.length // 2 + bottom_size
     terrain.height_field_raw[x1:x2, y1:y2] = -depth
 
-    # goals = np.zeros((num_goal, 2))
+    # goals = np.zeros((2, 2))
     # goals[0] = [x2 - 1.0 / terrain.horizontal_scale, y2 - 1.0 / terrain.horizontal_scale]
     # goals[1] = [x2 + 1.0 / terrain.horizontal_scale, y2 - 1.0 / terrain.horizontal_scale]
     # goals[2] = [x2 + 1.0 / terrain.horizontal_scale, y1 + 1.0 / terrain.horizontal_scale]
@@ -131,6 +131,11 @@ def pit_terrain(terrain: SubTerrain, depth, num_goal=8, bottom_size=1.):
     #     goals[:7] = np.flip(goals[:7], axis=0)
     #
     # terrain.goals = goals * terrain.horizontal_scale
+
+    goals = np.zeros((2, 2))
+    goals[0] = [terrain.width // 2, terrain.length // 2]
+    goals[1] = [x2 + 1.0 / terrain.horizontal_scale, terrain.length // 2]
+    terrain.goals = goals * terrain.horizontal_scale
 
 
 def parkour_terrain(terrain: SubTerrain,

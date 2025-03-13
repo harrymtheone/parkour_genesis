@@ -288,6 +288,16 @@ class LocoTransformer(nn.Module):
         return eps * std + mu
 
 
+class PrivMixer(nn.Module):
+    # A replacement of Transformer, using purely Linear layers
+
+    def __init__(self, env_cfg, policy_cfg):
+        super().__init__()
+
+    def forward(self, scan, latent_obs):
+        pass
+
+
 class Actor(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
@@ -312,6 +322,7 @@ class EstimatorGRU(nn.Module):
         self.obs_gru = ObsGRU(env_cfg, policy_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
         self.transformer = LocoTransformer(env_cfg, policy_cfg)
+        # self.transformer = PrivMixer(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))

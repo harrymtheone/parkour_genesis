@@ -115,6 +115,8 @@ class PPO_ZJU(BaseAlgorithm):
         self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
     def update(self, **kwargs):
+        update_est = False
+
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
@@ -154,17 +156,18 @@ class PPO_ZJU(BaseAlgorithm):
             mean_entropy_loss += entropy_loss
 
             # ########################## estimation loss ##########################
-            estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss = self._compute_estimation_loss(batch)
-            loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss + symmetry_loss
+            loss_est = 0
+            if update_est:
+                estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss = self._compute_estimation_loss(batch)
+                loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss + symmetry_loss
 
-            # estimation statistics
-            mean_estimation_loss += estimation_loss.item()
-            mean_prediction_loss += prediction_loss.item()
-            mean_vae_loss += vae_loss.item()
-            mean_recon_rough_loss += recon_rough_loss.item()
-            mean_recon_refine_loss += recon_refine_loss.item()
-            # mean_symmetry_loss += symmetry_loss.item()
-            mean_symmetry_loss += symmetry_loss  # TODO: symmetry
+                # estimation statistics
+                mean_estimation_loss += estimation_loss.item()
+                mean_prediction_loss += prediction_loss.item()
+                mean_vae_loss += vae_loss.item()
+                mean_recon_rough_loss += recon_rough_loss.item()
+                mean_recon_refine_loss += recon_refine_loss.item()
+                mean_symmetry_loss += symmetry_loss if type(symmetry_loss) is float else symmetry_loss.item()
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -289,17 +292,17 @@ class PPO_ZJU(BaseAlgorithm):
             recon_rough_loss = self.mse_loss(recon_rough[mask_batch], scan)
             recon_refine_loss = self.l1_loss(recon_refine[mask_batch], scan)
 
-            # # Symmetry loss  TODO: symmetry
-            # obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
-            # self.actor.train_act(
-            #     obs_mirrored_batch,
-            #     hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
-            #     use_estimated_values=use_estimated_values_batch
-            # )
-            #
-            # mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-            # symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
-
+        #     # Symmetry loss
+        #     obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
+        #     self.actor.train_act(
+        #         obs_mirrored_batch,
+        #         hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
+        #         use_estimated_values=use_estimated_values_batch
+        #     )
+        #
+        #     mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
+        #     symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+        #
         # return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss
         return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, 0.
 

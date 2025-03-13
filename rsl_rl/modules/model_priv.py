@@ -113,8 +113,7 @@ class Critic(nn.Module):
             priv_latent = self.priv_enc(obs.priv_his.transpose(1, 2))
             scan_enc = self.scan_enc(obs.scan.flatten(1))
             edge_enc = self.edge_mask_enc(obs.edge_mask.flatten(1))
-            value = self.critic(torch.cat([priv_latent, scan_enc, edge_enc], dim=1))
-            return value
+            return self.critic(torch.cat([priv_latent, scan_enc, edge_enc], dim=1))
         else:
             priv_latent = gru_wrapper(self.priv_enc, obs.priv_his.transpose(2, 3))
             scan_enc = gru_wrapper(self.scan_enc, obs.scan.flatten(2))

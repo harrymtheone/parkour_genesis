@@ -113,11 +113,16 @@ class T1PrivCfg(T1BaseCfg):
 
             # contact
             feet_contact_forces = -0.01
+            feet_stumble = -1.0
+            feet_edge = -1.0
 
             # vel tracking
             tracking_lin_vel = 1.2
+            tracking_goal_vel = 1.5
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
+            low_speed = 0.2
+            track_vel_hard = 0.5
 
             # base pos
             default_joint_pos = 0.5

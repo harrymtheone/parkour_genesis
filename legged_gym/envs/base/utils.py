@@ -2,9 +2,11 @@ import torch
 
 
 class ObsBase:
+    @torch.compiler.disable
     def items(self):
         return self.__dict__.items()
 
+    @torch.compiler.disable
     def __getitem__(self, item):
         sliced_v = []
         for v in self.__dict__.values():
@@ -12,11 +14,13 @@ class ObsBase:
                 sliced_v.append(v[item])
         return type(self)(*sliced_v)
 
+    @torch.compiler.disable
     def clip(self, thresh):
         for v in self.__dict__.values():
             if v is not None:
                 torch.clip(v, -thresh, thresh, out=v)
 
+    @torch.compiler.disable
     def flatten(self, start, stop):
         sliced_v = []
         for v in self.__dict__.values():
@@ -24,6 +28,7 @@ class ObsBase:
                 sliced_v.append(v.flatten(start, stop))
         return type(self)(*sliced_v)
 
+    @torch.compiler.disable
     def unflatten(self, dim, shape):
         sliced_v = []
         for v in self.__dict__.values():
@@ -48,6 +53,7 @@ class ObsBase:
     #     return type(self)(*[v.flatten(1) for v in self.__dict__.values()])
     #
     #
+    @torch.compiler.disable
     def clone(self):
         return type(self)(*self.__dict__.values())
     #

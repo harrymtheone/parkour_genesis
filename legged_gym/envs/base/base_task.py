@@ -206,8 +206,10 @@ class BaseTask:
         # create indices
         self.penalised_contact_indices = self.sim.create_indices(
             self.sim.get_full_names(self.cfg.asset.penalize_contacts_on, True), True)
-        self.termination_contact_indices = self.sim.create_indices(
-            self.sim.get_full_names(self.cfg.asset.terminate_after_contacts_on, True), True)
+
+        if len(self.cfg.asset.terminate_after_contacts_on) > 0:
+            self.termination_contact_indices = self.sim.create_indices(
+                self.sim.get_full_names(self.cfg.asset.terminate_after_contacts_on, True), True)
 
     # ------------------------------------------------- Simulation Step -------------------------------------------------
 
@@ -342,10 +344,6 @@ class BaseTask:
         else:
             self._update_command()
 
-        # constraint command ranges
-        self.commands[:, :2] *= torch.norm(self.commands[:, :2], dim=1, keepdim=True) > self.cfg.commands.lin_vel_clip
-        self.commands[:, 2] *= torch.abs(self.commands[:, 2]) > self.cfg.commands.ang_vel_clip
-
         # push robot
         if self.cfg.domain_rand.push_robots:
             duration_i = int(self.global_counter / self.cfg.domain_rand.push_duration_update_steps)
@@ -369,15 +367,15 @@ class BaseTask:
     def _check_termination(self):
         """ Check if environments need to be reset
         """
-        self.reset_buf[:] = torch.any(torch.norm(self.sim.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
-        roll_cutoff = torch.abs(self.base_euler[:, 0]) > 0.6
-        pitch_cutoff = torch.abs(self.base_euler[:, 1]) > 0.6
-        height_cutoff = self.sim.root_pos[:, 2] < -10
+        if len(self.cfg.asset.terminate_after_contacts_on) > 0:
+            self.reset_buf[:] = torch.any(torch.norm(self.sim.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
+        else:
+            self.reset_buf[:] = False
+
         self.time_out_cutoff[:] = self.episode_length_buf > self.max_episode_length  # no terminal reward for time-outs
+        height_cutoff = self.sim.root_pos[:, 2] < -10
 
         self.reset_buf[:] |= self.time_out_cutoff
-        self.reset_buf[:] |= roll_cutoff
-        self.reset_buf[:] |= pitch_cutoff
         self.reset_buf[:] |= height_cutoff
 
     def _resample_commands(self, env_ids: torch.Tensor):
@@ -604,6 +602,13 @@ class BaseTask:
                                                                       device=self.device)
 
     # ---------------------------------------------- Reward ----------------------------------------------
+
+    @staticmethod
+    def linear_change(start, end, span, start_it, cur_it):
+        cur_value = start + (end - start) * (cur_it - start_it) / span
+        cur_value = max(cur_value, min(start, end))
+        cur_value = min(cur_value, max(start, end))
+        return cur_value
 
     def update_reward_curriculum(self, epoch):
         if self.cfg.rewards.only_positive_rewards:

@@ -20,6 +20,7 @@ class ActorObs(ObsBase):
         # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
 
+    @torch.compiler.disable
     def mirror(self):
         return type(self)(*[
             mirror_proprio_by_x(self.proprio),
@@ -42,11 +43,11 @@ class ObsNext(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_his, scan, base_edge_mask):
+    def __init__(self, priv_his, scan, edge_mask):
         super().__init__()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
-        self.base_edge_mask = base_edge_mask.clone()
+        self.edge_mask = edge_mask.clone()
 
 
 class T1ZJUEnvironment(HumanoidEnv):
@@ -67,12 +68,13 @@ class T1ZJUEnvironment(HumanoidEnv):
         self.phase_enabled = self._zero_tensor(self.num_envs, dtype=torch.bool)
         self.phase_enabled[:] = self.cfg.env.enable_clock_input
 
-    def update_phase_enabled(self, enabled_ratio):
-        num_enabled = int(self.num_envs * enabled_ratio)
-        self.phase_enabled[:num_enabled] = True
-        self.phase_enabled[num_enabled:] = False
+    def update_reward_curriculum(self, epoch):
+        super().update_reward_curriculum(epoch)
 
-        self.phase_enabled[self.env_class <= 2] = True
+        # enabled_ratio = self.linear_change(1., 0., 3000, 3000, epoch)
+        # num_enabled = int(self.num_envs * enabled_ratio)
+        # self.phase_enabled[:num_enabled] = True
+        # self.phase_enabled[num_enabled:] = False
 
     def get_feet_hmap(self):
         feet_pos = self.sim.link_pos[:, self.feet_indices]
@@ -261,20 +263,16 @@ class T1ZJUEnvironment(HumanoidEnv):
         rew[~self.phase_enabled] = 0.
         return torch.mean(rew, dim=1)
 
-    # def _reward_feet_clearance(self):
-    #     # rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, -1, 1)
-    #     # rew[self.contact_filt | self.is_zero_command.unsqueeze(1)] = 0.
-    #     # return rew.sum(dim=1)
-    #
-    #     # encourage the robot to lift its legs when it moves
-    #     d_min = (self.feet_height - self.cfg.rewards.feet_height_target).clip(-0.04, 0.)
-    #     d_max = (self.feet_height - self.cfg.rewards.feet_height_target_max).clip(0, 0.04)
-    #     rew = (torch.exp(-torch.abs(d_min) * 50) + torch.exp(-torch.abs(d_max) * 50)) / 2 - 0.57
-    #     rew[self._get_stance_mask()] = 0.
-    #     return rew.sum(dim=1)
+    def _reward_feet_clearance(self):
+        # encourage the robot to lift its legs when it moves
+        rew_no_phase = (self.feet_height / self.cfg.rewards.feet_height_target).clip(min=-1, max=1)
+        rew_phase = torch.where(self._get_stance_mask(), -torch.abs(rew_no_phase), rew_no_phase)
+
+        rew = torch.where(self.phase_enabled.unsqueeze(1), rew_phase, rew_no_phase)
+        return rew.sum(dim=1)
 
 
-@torch.jit.script
+@torch.compile
 def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):
     # [-switch(hip), switch(thigh), switch(calf)]
     left_idx = torch.tensor([1, 2, 3, 4, 5, 6], dtype=torch.long, device=prop.device) + start_idx
@@ -288,18 +286,22 @@ def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):
     prop[:, invert_idx] *= -1.
 
 
-@torch.jit.script
+@torch.compile
 def mirror_proprio_by_x(prop: torch.Tensor) -> torch.Tensor:
     prop = prop.clone()
 
-    # base angular velocity
-    prop[:, 0:3] = prop[:, 0:3] * torch.tensor([[-1, 1, -1]], device=prop.device)  # [-roll, pitch, -yaw]
+    # base angular velocity, [0:3], [-roll, pitch, -yaw]
+    prop[:, 0] *= -1.
+    prop[:, 2] *= -1.
 
-    # projected gravity
-    prop[:, 3:6] = prop[:, 3:6] * torch.tensor([[1, -1, 1]], device=prop.device)  # [x, -y, z]
+    # projected gravity, [3:6], [x, -y, z]
+    prop[:, 4] *= -1.
 
-    # commands
-    prop[:, 6:9] = prop[:, 6:9] * torch.tensor([[1, -1, -1]], device=prop.device)  # [x, -y, -yaw]
+    # commands [6:11], [clock_l <--> clock_r, x, -y, -yaw]
+    clock_l = prop[:, 6].clone()
+    prop[:, 6] = prop[:, 7]
+    prop[:, 7] = clock_l
+    prop[:, 9:11] *= -1.
 
     # dof pos
     mirror_dof_prop_by_x(prop, 11)
@@ -313,19 +315,19 @@ def mirror_proprio_by_x(prop: torch.Tensor) -> torch.Tensor:
     return prop
 
 
-@torch.jit.script
+@torch.compile
 def mirror_priv_by_x(priv: torch.Tensor) -> torch.Tensor:
     priv = priv.clone()
 
-    # base velocity
-    priv[:, 0:3] = priv[:, 0:3] * torch.tensor([[1, -1, 1]], device=priv.device)  # [x, -y, z]
+    # base velocity, [0:3], [x, -y, z]
+    priv[:, 0:3] = priv[:, 0:3] * torch.tensor([[1, -1, 1]], device=priv.device)  #
 
-    # feet height map
+    # feet height map, [3:19], flip
     feet_hmap = priv[:, 3:19].unflatten(1, (4, 2, 2))
     feet_hmap = torch.flip(feet_hmap, dims=[1, 3])
     priv[:, 3:19] = feet_hmap.flatten(1)
 
-    # feet height map
+    # body height map, [19:35], flip
     body_hmap = priv[:, 19:35].unflatten(1, (4, 4))
     body_hmap = torch.flip(body_hmap, dims=[2])
     priv[:, 19:35] = body_hmap.flatten(1)

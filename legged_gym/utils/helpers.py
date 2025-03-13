@@ -56,9 +56,12 @@ def get_load_path(root, checkpoint, model_name_starts_with="model"):
 
         if 'latest.pt' in os.listdir(root):
             model_name = 'latest.pt'
-        else:
+        elif len(models) > 0:
             models.sort(key=lambda m: '{0:0>15}'.format(m))
             model_name = models[-1]
+        else:
+            raise ValueError(f"No checkpoint found at \"{root}\"")
+
     else:
         model_name = "model_{}.pt".format(checkpoint)
 

@@ -17,7 +17,7 @@ from .pdd.pdd_scan_environment import PddScanEnvironment
 from .pdd.pdd_zju_environment import PddZJUEnvironment
 
 from .go1.go1_zju_environment import Go1ZJUEnvironment
-from .go1.config.go1_zju_config import Go1ZJUCfg, Go1ZJUCfgPPO
+from .go1.config.go1_zju_config import Go1_ZJU_Cfg, Go1_ZJU_CfgPPO, Go1_ZJU_Pit_Cfg, Go1_ZJU_VAE_Pit_CfgPPO
 
 task_list = [
     ['pdd_scan', PddScanEnvironment, PddScanCfg(), PddScanCfgPPO()],
@@ -35,6 +35,7 @@ task_list = [
     ['t1_pie_stair', T1PIEEnvironment, T1PIEStairCfg(), T1PIECfgPPO()],
     ['t1_priv', T1PrivEnvironment, T1PrivCfg(), T1PrivCfgPPO()],
 
-    ['go1_zju', Go1ZJUEnvironment, Go1ZJUCfg(), Go1ZJUCfgPPO()]
+    ['go1_zju', Go1ZJUEnvironment, Go1_ZJU_Cfg(), Go1_ZJU_CfgPPO()],
+    ['go1_zju_pit', Go1ZJUEnvironment, Go1_ZJU_Pit_Cfg(), Go1_ZJU_VAE_Pit_CfgPPO()],
 
 ]

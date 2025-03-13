@@ -3,7 +3,7 @@ import numpy as np
 from .go1_base_config import Go1BaseCfg, Go1BaseCfgPPO
 
 
-class Go1ZJUCfg(Go1BaseCfg):
+class Go1_ZJU_Cfg(Go1BaseCfg):
     class env(Go1BaseCfg.env):
         num_envs = 2048  # 6144
         n_proprio = 3 + 3 + 3 + 12 + 12 + 12
@@ -71,8 +71,11 @@ class Go1ZJUCfg(Go1BaseCfg):
             'parkour_flat': 1,
         }
 
+    class noise(Go1BaseCfg.noise):
+        add_noise = False
+
     class domain_rand(Go1BaseCfg.domain_rand):
-        switch = True
+        switch = False
 
         randomize_start_pos = switch
         randomize_start_y = switch
@@ -99,7 +102,7 @@ class Go1ZJUCfg(Go1BaseCfg):
         randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
         randomize_joint_friction = False
-        randomize_joint_armature = switch
+        randomize_joint_armature = True
         randomize_coulomb_friction = False
 
     class rewards:
@@ -133,7 +136,7 @@ class Go1ZJUCfg(Go1BaseCfg):
             base_height = -1.0
 
 
-class Go1ZJUCfgPPO(Go1BaseCfgPPO):
+class Go1_ZJU_CfgPPO(Go1BaseCfgPPO):
     seed = -1
     runner_name = 'rl_dream'
     algorithm_name = 'ppo_zju'
@@ -162,7 +165,7 @@ class Go1ZJUCfgPPO(Go1BaseCfgPPO):
         value_loss_coef = 1.0
         use_clipped_value_loss = True
         clip_param = 0.2
-        entropy_coef = 0.01
+        entropy_coef = 0.005
         num_learning_epochs = 5
         num_mini_batches = 4
         learning_rate = 2.e-4  # 5.e-4
@@ -177,7 +180,78 @@ class Go1ZJUCfgPPO(Go1BaseCfgPPO):
 
     class runner(Go1BaseCfgPPO.runner):
         num_steps_per_env = 24  # per iteration
-        max_iterations = 50000  # number of policy updates
+        max_iterations = 10000  # number of policy updates
 
         # logging
         save_interval = 100  # check for potential saves every this many iterations
+
+
+class Go1_ZJU_Pit_Cfg(Go1_ZJU_Cfg):
+    class terrain(Go1_ZJU_Cfg.terrain):
+        terrain_dict = {
+            'smooth_slope': 0,
+            'rough_slope': 1,
+            'stairs_up': 1,
+            'stairs_down': 1,
+            'discrete': 0,
+            'stepping_stone': 0,
+            'gap': 0,
+            'pit': 0,
+            'parkour': 0,
+            'parkour_gap': 1,
+            'parkour_box': 1,
+            'parkour_step': 1,
+            'parkour_stair': 1,
+            'parkour_flat': 0,
+        }
+        num_cols = 21  # number of terrain cols (types)
+
+    class rewards(Go1_ZJU_Cfg.rewards):
+        class scales(Go1_ZJU_Cfg.rewards.scales):
+            # tracking_yaw = 1.0
+            # action_rate = -0.3
+            orientation = -1.0
+            base_stumble = -1.0
+            feet_clearance = -0.01
+            feet_stumble = -5.0  # -1.0
+            feet_edge = -0.3  # -0.3
+            # base_height = -3.0
+
+    class noise(Go1_ZJU_Cfg.noise):
+        add_noise = True
+
+    class domain_rand(Go1_ZJU_Cfg.domain_rand):
+        switch = True
+
+        randomize_start_pos = switch
+        randomize_start_y = switch
+        randomize_start_yaw = switch
+        randomize_start_vel = switch
+        randomize_start_pitch = switch
+
+        randomize_start_dof_pos = True
+        randomize_start_dof_vel = True
+
+        randomize_friction = switch
+        randomize_base_mass = switch
+        randomize_link_mass = switch
+        randomize_com = switch
+
+        push_robots = False
+        action_delay = switch
+        add_dof_lag = False
+        add_imu_lag = False
+
+        randomize_torque = switch
+        randomize_gains = switch
+        randomize_motor_offset = switch
+        randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
+        randomize_joint_damping = False
+        randomize_joint_friction = False
+        randomize_joint_armature = True
+        randomize_coulomb_friction = False
+
+
+class Go1_ZJU_VAE_Pit_CfgPPO(Go1_ZJU_CfgPPO):
+    class runner(Go1_ZJU_CfgPPO.runner):
+        max_iterations = 50000

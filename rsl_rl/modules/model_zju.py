@@ -3,7 +3,7 @@ from typing import Union
 import torch
 import torch.nn as nn
 
-from .utils import make_linear_layers
+from .utils import make_linear_layers, gru_wrapper
 
 
 class ObsEnc(nn.Module):
@@ -391,42 +391,35 @@ class Estimator(nn.Module):
 
 
 class Critic(nn.Module):
-    from legged_gym.envs.T1.t1_zju_environment import CriticObs
-
     def __init__(self, env_cfg, train_cfg):
         super().__init__()
-        if env_cfg.len_critic_his == 50:
-            self.encoder = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.num_critic_obs, out_channels=64, kernel_size=8, stride=4, padding=1),
-                nn.ELU(),
-                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=5),
-                nn.ELU(),
-                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=4),
-                nn.ELU(),
-                nn.Flatten()
-            )
-        else:
-            raise NotImplementedError
+        activation = nn.ELU()
 
-        self.critic = make_linear_layers(128 * 5 + env_cfg.n_scan * 2, *train_cfg.policy.critic_hidden_dims, 1,
+        self.priv_enc = nn.Sequential(
+            nn.Conv1d(in_channels=env_cfg.num_critic_obs, out_channels=64, kernel_size=6, stride=4),
+            activation,
+            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
+            activation,
+            nn.Conv1d(in_channels=128, out_channels=128, kernel_size=4, stride=1),
+            activation,
+            nn.Flatten()
+        )
+        self.scan_enc = make_linear_layers(env_cfg.n_scan, 256, 64,
+                                           activation_func=activation)
+        self.edge_mask_enc = make_linear_layers(env_cfg.n_scan, 256, 64,
+                                                activation_func=activation)
+        self.critic = make_linear_layers(128 + 64 + 64, *train_cfg.policy.critic_hidden_dims, 1,
                                          activation_func=nn.ELU(),
                                          output_activation=False)
 
-    def evaluate(self, obs: CriticObs, masks=None):
+    def evaluate(self, obs):
         if obs.priv_his.ndim == 3:
-            priv_his = obs.priv_his.transpose(1, 2)
-            scan = obs.scan.flatten(1)
-            base_edge_mask = obs.base_edge_mask.flatten(1)
+            priv_latent = self.priv_enc(obs.priv_his.transpose(1, 2))
+            scan_enc = self.scan_enc(obs.scan.flatten(1))
+            edge_enc = self.edge_mask_enc(obs.edge_mask.flatten(1))
+            return self.critic(torch.cat([priv_latent, scan_enc, edge_enc], dim=1))
         else:
-            n_steps = obs.priv_his.size(0)
-            priv_his = obs.priv_his.flatten(0, 1).transpose(1, 2)
-            scan = obs.scan.flatten(0, 1).flatten(1)
-            base_edge_mask = obs.base_edge_mask.flatten(0, 1).flatten(1)
-
-        his_enc = self.encoder(priv_his)
-        evaluation = self.critic(torch.cat([his_enc, scan, base_edge_mask], dim=1))
-
-        if obs.priv_his.ndim == 3:
-            return evaluation
-        else:
-            return evaluation.unflatten(0, (n_steps, -1))
+            priv_latent = gru_wrapper(self.priv_enc, obs.priv_his.transpose(2, 3))
+            scan_enc = gru_wrapper(self.scan_enc, obs.scan.flatten(2))
+            edge_enc = gru_wrapper(self.edge_mask_enc, obs.edge_mask.flatten(2))
+            return gru_wrapper(self.critic, torch.cat([priv_latent, scan_enc, edge_enc], dim=2))

@@ -66,6 +66,13 @@ class HumanoidEnv(ParkourTask):
         self.feet_height[:] = feet_pos[:, :, 2] + self.cfg.normalization.feet_height_correction - proj_ground_height
         self.feet_euler_xyz[:] = quat_to_xyz(self.sim.link_quat[:, self.feet_indices])
 
+    def _check_termination(self):
+        super()._check_termination()
+        roll_cutoff = torch.abs(self.base_euler[:, 0]) > 0.6
+        pitch_cutoff = torch.abs(self.base_euler[:, 1]) > 0.6
+        self.reset_buf[:] |= roll_cutoff
+        self.reset_buf[:] |= pitch_cutoff
+
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
 
@@ -200,21 +207,6 @@ class HumanoidEnv(ParkourTask):
         contact_forces = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1)
         return torch.sum((contact_forces - self.cfg.rewards.max_contact_force).clip(min=0), dim=1)
 
-    # def _reward_tracking_lin_vel(self):
-    #     """
-    #     Tracks linear velocity commands along the xy axes.
-    #     Calculates a reward based on how closely the robot's linear velocity matches the commanded values.
-    #     """
-    #     # stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
-    #     lin_vel_error = torch.sum(torch.square(
-    #         self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
-    #     # lin_vel_error[stand_command] = torch.sum(torch.abs(
-    #     #     self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)[stand_command]
-    #     r = torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
-    #     # r[stand_command] = r.clone()[stand_command] * 0.6
-    #     # r[stand_command] = 1.0
-    #     return r
-
     def _reward_tracking_lin_vel(self):
         """
         Tracks linear velocity commands along the xy axes.
@@ -241,7 +233,10 @@ class HumanoidEnv(ParkourTask):
         lin_vel_lower_bound = torch.where(self.commands[:, :2] > 0, -1e5, self.commands[:, :2] - self.cfg.commands.parkour_vel_tolerance)
         clip_lin_vel = torch.clip(self.base_lin_vel[:, :2], lin_vel_lower_bound, lin_vel_upper_bound)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - clip_lin_vel), dim=1)
-        return torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
+
+        rew = torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
+        rew[self.env_class < 4] = 0.
+        return rew
 
     def _reward_tracking_ang_vel(self):
         """
@@ -430,24 +425,3 @@ class HumanoidEnv(ParkourTask):
     def _reward_feet_edge(self):
         rew = torch.sum(self.feet_at_edge.float(), dim=-1)
         return rew
-
-    def _draw_feet_at_edge(self):
-        if hasattr(self, 'feet_at_edge'):
-            feet_pos = self.sim.link_pos[self.lookat_id, self.feet_indices, :3]
-            force = self.sim.contact_forces[self.lookat_id, self.feet_indices]
-            stumble = torch.norm(force[:, :2], dim=1) > 4 * torch.abs(force[:, 2])
-
-            feet_good_pos = []
-            feet_at_edge_pos = []
-            feet_stumble_pos = []
-            for i in range(len(self.feet_indices)):
-                if stumble[i]:
-                    feet_stumble_pos.append(feet_pos[i])
-                elif self.feet_at_edge[self.lookat_id, i]:
-                    feet_at_edge_pos.append(feet_pos[i])
-                else:
-                    feet_good_pos.append(feet_pos[i])
-
-            self.sim.draw_points(feet_good_pos, radius=0.05, color=(0, 1, 0), sphere_lines=8)
-            self.sim.draw_points(feet_at_edge_pos, radius=0.05, color=(1, 0, 0), sphere_lines=8)
-            self.sim.draw_points(feet_stumble_pos, radius=0.05, color=(1, 1, 0), sphere_lines=8)

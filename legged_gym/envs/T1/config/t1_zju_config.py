@@ -58,8 +58,8 @@ class T1ZJUCfg(T1BaseCfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 1,
-            'stairs_down': 1,
+            'stairs_up': 0,
+            'stairs_down': 0,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -68,7 +68,7 @@ class T1ZJUCfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,
+            'parkour_stair': 2,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 
@@ -92,8 +92,8 @@ class T1ZJUCfg(T1BaseCfg):
         randomize_link_mass = switch
         randomize_com = switch
 
-        push_robots = switch
-        action_delay = switch
+        push_robots = False
+        action_delay = False
         add_dof_lag = False
         add_imu_lag = False
 
@@ -142,10 +142,11 @@ class T1ZJUCfg(T1BaseCfg):
             feet_edge = -1.0
 
             # vel tracking
-            # tracking_lin_vel = 1.2
+            tracking_lin_vel = 1.2
             tracking_goal_vel = 1.5
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
+            low_speed = 0.2
 
             # base pos
             default_joint_pos = 0.5

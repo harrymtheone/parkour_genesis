@@ -145,6 +145,13 @@ class Go1ZJUEnvironment(QuadrupedEnv):
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):
+        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+            self._draw_goals()
+            # self._draw_height_field(draw_guidance=True)
+            # self._draw_edge()
+            # self._draw_camera()
+            self._draw_feet_at_edge()
+
         if self.cfg.sensors.activated:
             depth_img = self.sensors.get('depth_0')
             depth_img = depth_img[self.lookat_id, 0].cpu().numpy()
@@ -154,5 +161,14 @@ class Go1ZJUEnvironment(QuadrupedEnv):
 
             cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
             cv2.waitKey(1)
+
+            # # draw points cloud
+            # cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
+            # cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
+            # pts = cloud[cloud_valid]
+            #
+            # if len(pts) > 0:
+            #     indices = torch.randperm(len(pts))[:200]
+            #     self.sim.draw_points(pts[indices])
 
         super().render()

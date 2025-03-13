@@ -62,7 +62,7 @@ class TaskRegistry:
         elif args.task is not None:
             print(f"'train_cfg' provided -> Ignoring 'name={args.task}'")
 
-        model_dir = os.path.join(log_root, args.proj_name, args.exptid)
+        model_dir = os.path.join(log_root, args.proj_name, train_cfg.algorithm_name, args.exptid)
 
         try:
             os.makedirs(model_dir)
@@ -77,7 +77,7 @@ class TaskRegistry:
             raise ValueError(f'Runner not recognized! With train_cfg.runner_name={train_cfg.runner_name}')
 
         if args.resumeid:
-            resume_dir = os.path.join(log_root, args.proj_name, args.resumeid)
+            resume_dir = os.path.join(log_root, args.proj_name, train_cfg.algorithm_name, args.resumeid)
         elif (args.resumeid is None) and train_cfg.runner.resume:
             resume_dir = model_dir
         else:

@@ -231,8 +231,8 @@ class Go1BaseCfg(BaseConfig):
         thigh_dof_name = "thigh"
         calf_dof_name = "calf"
         foot_name = "foot"
-        penalize_contacts_on = ["thigh", "calf"]
-        terminate_after_contacts_on = ["base"]
+        penalize_contacts_on = ["base", "thigh", "calf"]
+        terminate_after_contacts_on = []
         disable_gravity = False
         collapse_fixed_joints = True  # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
         links_to_keep = ['']

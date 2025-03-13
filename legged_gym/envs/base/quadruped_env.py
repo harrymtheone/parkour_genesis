@@ -54,6 +54,13 @@ class QuadrupedEnv(ParkourTask):
         proj_ground_height = self._get_heights(feet_pos + self.cfg.terrain.border_size, use_guidance=self.cfg.rewards.use_guidance_terrain)
         self.feet_height[:] = feet_pos[:, :, 2] + self.cfg.normalization.feet_height_correction - proj_ground_height
 
+    def _check_termination(self):
+        super()._check_termination()
+        roll_cutoff = torch.abs(self.base_euler[:, 0]) > 1.57
+        pitch_cutoff = torch.abs(self.base_euler[:, 1]) > 1.57
+        self.reset_buf[:] |= roll_cutoff
+        self.reset_buf[:] |= pitch_cutoff
+
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
 
