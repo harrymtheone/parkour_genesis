@@ -19,7 +19,7 @@ class T1ZJUCfg(T1BaseCfg):
         len_critic_his = 50
 
         num_actions = 13
-        episode_length_s = 30  # episode length in seconds
+        episode_length_s = 40  # episode length in seconds
 
     class sensors:
         activated = True
@@ -50,14 +50,14 @@ class T1ZJUCfg(T1BaseCfg):
         feet_pts_x = np.linspace(-0.1, 0.1, 2)
         feet_pts_y = np.linspace(-0.1, 0.1, 2)
 
-        num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
-        num_cols = 20  # number of terrain cols (types)
+        num_rows = 20  # number of terrain rows (levels)   spreaded is beneficial !
+        num_cols = 12  # number of terrain cols (types)
 
         curriculum = True
 
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 1,
+            'rough_slope': 0,
             'stairs_up': 0,
             'stairs_down': 0,
             'discrete': 0,
@@ -65,10 +65,10 @@ class T1ZJUCfg(T1BaseCfg):
             'gap': 0,
             'pit': 0,
             'parkour': 0,
-            'parkour_gap': 0,
-            'parkour_box': 0,
-            'parkour_step': 0,
-            'parkour_stair': 2,  # First train a policy without stair for 2000 epochs
+            'parkour_gap': 1,
+            'parkour_box': 1,
+            'parkour_step': 1,
+            'parkour_stair': 0,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 
@@ -144,7 +144,7 @@ class T1ZJUCfg(T1BaseCfg):
             # vel tracking
             tracking_lin_vel = 1.2
             tracking_goal_vel = 1.5
-            tracking_ang_vel = 1.1
+            tracking_ang_vel = 2.0
             vel_mismatch_exp = 0.5
             low_speed = 0.2
 
