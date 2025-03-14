@@ -26,13 +26,13 @@ def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
 
     # override some parameters for testing
-    env_cfg.env.enable_clock_input = True
+    env_cfg.env.enable_clock_input = False
     env_cfg.play.control = False
-    env_cfg.env.num_envs = 1
+    env_cfg.env.num_envs = 16
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.curriculum = True
-    env_cfg.terrain.max_difficulty = False
+    # env_cfg.terrain.max_difficulty = True
     env_cfg.terrain.max_init_terrain_level = 4
     # env_cfg.asset.disable_gravity = True
 

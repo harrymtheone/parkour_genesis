@@ -306,7 +306,6 @@ class HumanoidEnv(ParkourTask):
         Penalizes deviations from specified linear and angular velocity targets.
         """
         # Tracking of linear velocity commands (xy axes)
-        # stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
         lin_vel_error = torch.norm(self.commands[:, :2] - self.base_lin_vel[:, :2], dim=1)
         lin_vel_error_exp = torch.exp(-lin_vel_error * 10)
 
@@ -316,8 +315,6 @@ class HumanoidEnv(ParkourTask):
 
         linear_error = 0.2 * (lin_vel_error + ang_vel_error)
         r = (lin_vel_error_exp + ang_vel_error_exp) / 2. - linear_error
-        # r[stand_command] = r.clone()[stand_command] * 0.7
-        # r[stand_command] = 1.0
         return r
 
     def _reward_default_joint_pos(self):

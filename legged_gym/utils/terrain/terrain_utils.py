@@ -435,6 +435,37 @@ def parkour_stair_terrain(terrain: SubTerrain,
     goals[1] = [dis_x + round(1 / terrain.horizontal_scale), mid_y]
     terrain.goals = goals * terrain.horizontal_scale
 
+    # num_steps = 40
+    # terrain.height_field_guidance = terrain.height_field_raw.copy()
+    # mid_y = terrain.length // 2  # length is actually y width
+    #
+    # step_height = round(step_height / terrain.vertical_scale)
+    # step_width = round(step_width / terrain.horizontal_scale)
+    #
+    # platform_len = round(platform_len / terrain.horizontal_scale)
+    #
+    # dis_x = platform_len
+    # stair_height = last_stair_height = 0
+    #
+    # for i in range(num_steps):
+    #     stair_height += step_height
+    #     terrain.height_field_raw[dis_x:dis_x + step_width] = stair_height
+    #
+    #     terrain.height_field_guidance[dis_x:dis_x + step_width] = stair_height
+    #     guidance_height = np.tile(np.linspace(last_stair_height, stair_height, step_width // 2), (terrain.length, 1)).T
+    #
+    #     if i < num_steps:
+    #         terrain.height_field_guidance[dis_x - step_width // 2: dis_x] = guidance_height
+    #     elif i > num_steps:
+    #         terrain.height_field_guidance[dis_x: dis_x + step_width // 2] = guidance_height
+    #
+    #     dis_x += step_width
+    #     last_stair_height = stair_height
+    #
+    # goals = np.zeros((1, 2))
+    # goals[0] = [dis_x + round(1 / terrain.horizontal_scale), mid_y]
+    # terrain.goals = goals * terrain.horizontal_scale
+
 
 def parkour_flat_terrain(terrain: SubTerrain,
                          platform_len=2.,

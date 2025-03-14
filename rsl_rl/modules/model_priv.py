@@ -44,10 +44,11 @@ class ActorGRU(nn.Module):
         mean = self.actor_backbone(actor_input)
 
         if eval_:
-            return mean
+            # return mean
+            return mean, actor_input.detach()
 
         self.distribution = Normal(mean, torch.exp(self.log_std))
-        return self.distribution.sample()
+        return self.distribution.sample(), actor_input.detach()
 
     def train_act(self, obs, hidden_states, **kwargs):
         obs_enc, _ = self.gru(obs.priv, hidden_states)

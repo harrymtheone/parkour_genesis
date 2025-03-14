@@ -46,14 +46,20 @@ class Terrain:
 
         self.curriculum(max_difficulty=cfg.max_difficulty)
 
-        downsample_factor = self.cfg.horizontal_scale / self.cfg.horizontal_scale_downsample
-        self.height_field_raw_downsample = scipy.ndimage.zoom(self.height_field_raw, (downsample_factor, downsample_factor), order=0)
-        print(f'Downsample height_field_raw from {self.height_field_raw.shape} to {self.height_field_raw_downsample.shape}')
+        if self.cfg.horizontal_scale < self.cfg.horizontal_scale_downsample:
+            downsample_factor = self.cfg.horizontal_scale / self.cfg.horizontal_scale_downsample
+            self.height_field_raw_downsample = scipy.ndimage.zoom(self.height_field_raw, (downsample_factor, downsample_factor), order=0)
+            print(f'Downsample height_field_raw from {self.height_field_raw.shape} to {self.height_field_raw_downsample.shape}')
 
-        self.vertices, self.triangles = convert_heightfield_to_trimesh(self.height_field_raw_downsample,
-                                                                       self.cfg.horizontal_scale_downsample,
-                                                                       self.cfg.vertical_scale,
-                                                                       self.cfg.slope_treshold)
+            self.vertices, self.triangles = convert_heightfield_to_trimesh(self.height_field_raw_downsample,
+                                                                           self.cfg.horizontal_scale_downsample,
+                                                                           self.cfg.vertical_scale,
+                                                                           self.cfg.slope_treshold)
+        else:
+            self.vertices, self.triangles = convert_heightfield_to_trimesh(self.height_field_raw,
+                                                                           self.cfg.horizontal_scale,
+                                                                           self.cfg.vertical_scale,
+                                                                           self.cfg.slope_treshold)
 
         self.edge_mask = edge_detection(self.height_field_raw,
                                         self.cfg.horizontal_scale,

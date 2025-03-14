@@ -2,7 +2,6 @@ import numpy as np
 import torch
 from rich.table import Table
 
-
 real_vx_avg = real_vy_avg = real_yaw_avg = 0.
 
 
@@ -22,6 +21,7 @@ def gen_info_panel(args, env):
     phase_increment_ratio = f'{env.phase_increment_ratio[env.lookat_id]: .2f}' if hasattr(env, 'phase_increment_ratio') else 'None'
 
     friction_ratio = env.sim.friction_coeffs[env.lookat_id].item()
+    cmd_vx_correction = env.vel_correction[env.lookat_id, 0].cpu().numpy() if hasattr(env, 'vel_correction') else -100
 
     if args.headless:
         perc_contact_forces = torch.mean(env.contact_forces_avg, dim=0).cpu().numpy()
@@ -57,7 +57,7 @@ def gen_info_panel(args, env):
     table22 = Table()
     table22.add_column(f"phase: {phase: .2f}")
     table22.add_column(f"phase ratio: {phase_increment_ratio}")
-    table22.add_row(f"friction: {friction_ratio: .2f}")
+    table22.add_row(f"friction: {friction_ratio: .2f}", f"{cmd_vx_correction: .2f}")
 
     grid = Table.grid()
     grid.add_row(table11, table12)

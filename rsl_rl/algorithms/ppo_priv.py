@@ -63,7 +63,7 @@ class PPO_Priv(BaseAlgorithm):
         if self.actor.is_recurrent:
             self.transition.hidden_states = self.actor.get_hidden_states()
 
-        actions = self.actor.act(obs, use_estimated_values=use_estimated_values).detach()
+        actions, actor_input = self.actor.act(obs, use_estimated_values=use_estimated_values)
 
         if self.actor.is_recurrent and self.transition.hidden_states is None:
             # only for the first step where hidden_state is None
@@ -76,7 +76,7 @@ class PPO_Priv(BaseAlgorithm):
         self.transition.action_mean = self.actor.action_mean.detach()
         self.transition.action_sigma = self.actor.action_std.detach()
         self.transition.use_estimated_values = use_estimated_values
-        return actions
+        return actions, actor_input
 
     def process_env_step(self, rewards, dones, infos, *args):
         self.transition.rewards = rewards.clone().unsqueeze(1)
