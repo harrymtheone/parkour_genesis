@@ -114,9 +114,7 @@ class PPO_ZJU(BaseAlgorithm):
         last_values = self.critic.evaluate(last_critic_obs).detach()
         self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
-    def update(self, **kwargs):
-        update_est = False
-
+    def update(self, cur_it=0, **kwargs):
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
@@ -157,6 +155,8 @@ class PPO_ZJU(BaseAlgorithm):
 
             # ########################## estimation loss ##########################
             loss_est = 0
+            update_est = (cur_it > 5000) and cur_it % 5 == 0
+            # update_est = True
             if update_est:
                 estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss = self._compute_estimation_loss(batch)
                 loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss + symmetry_loss

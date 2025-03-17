@@ -115,7 +115,7 @@ class T1PrivVelEnvironment(HumanoidEnv):
         rew_predictor = torch.zeros_like(self.rew_buf)
         rew_predictor[:] += self._reward_vel_correction() * 1. * self.dt
         rew_predictor[:] += self._reward_feet_edge() * self.reward_scales['feet_edge'] * self.dt
-        rew_predictor[:] += self._reward_feet_stumble() * self.reward_scales['feet_stumble'] * self.dt
+        # rew_predictor[:] += self._reward_feet_stumble() * self.reward_scales['feet_stumble'] * self.dt
         self.extras['rew_vel_predictor'] = rew_predictor
 
         self.episode_sums['rew_vel_predictor'][:] += self._reward_vel_correction() * 0.1 * self.dt

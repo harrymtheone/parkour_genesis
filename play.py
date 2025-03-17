@@ -32,7 +32,7 @@ def play(args):
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.curriculum = True
-    # env_cfg.terrain.max_difficulty = True
+    env_cfg.terrain.max_difficulty = True
     env_cfg.terrain.max_init_terrain_level = 4
     # env_cfg.asset.disable_gravity = True
 
@@ -76,11 +76,14 @@ def play(args):
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, use_estimated_values=False, eval_=True)
+            rtn = runner.play_act(obs, use_estimated_values=True, eval_=True)
             # rtn = runner.play_act(obs, use_estimated_values=random.random() > 0.6)
 
             if type(rtn) is tuple:
-                actions, recon_rough, recon_refine = rtn
+                if len(rtn) == 2:
+                    actions, _ = rtn
+                elif len(rtn) == 3:
+                    actions, recon_rough, recon_refine = rtn
 
                 # env.draw_hmap(recon_rough)
                 env.draw_hmap(recon_refine)

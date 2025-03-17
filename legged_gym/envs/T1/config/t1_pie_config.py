@@ -5,7 +5,7 @@ from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 class T1PIECfg(T1BaseCfg):
     class env(T1BaseCfg.env):
-        num_envs = 2048  # 6144
+        num_envs = 4096  # 6144
 
         n_proprio = 50
         len_prop_his = 10
@@ -230,37 +230,36 @@ class T1PIEStairCfg(T1PIECfg):
     class rewards(T1PIECfg.rewards):
         class scales(T1PIECfg.rewards.scales):
             # gait
-            joint_pos = 1.
+            joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 1.  # 0.2
+            feet_clearance = 0.2  # 0.2
             feet_air_time = 1.
-            feet_slip = -1.  # -1.
-            feet_distance = 0.2
-            knee_distance = 0.2
-            feet_rotation = 0.5
+            feet_slip = -1.
+            feet_distance = 0.5
+            knee_distance = 0.5
+            feet_rotation = 1.0
 
             # contact
-            feet_contact_forces = -0.01  # -0.1
-            feet_stumble = -3.0
+            feet_contact_forces = -0.01
+            feet_stumble = -1.0
             feet_edge = -1.0
 
             # vel tracking
-            tracking_lin_vel = 2.5
-            tracking_ang_vel = 1.5
+            tracking_lin_vel = 1.2
+            tracking_goal_vel = 1.5
+            tracking_ang_vel = 2.0
             vel_mismatch_exp = 0.5
             low_speed = 0.2
-            track_vel_hard = 0.5
 
             # base pos
-            default_joint_pos = 0.1
+            default_joint_pos = 0.5
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
 
             # energy
-            action_smoothness = -0.003
+            action_smoothness = -3e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
             collision = -1.
-            # stand_still = 2.0

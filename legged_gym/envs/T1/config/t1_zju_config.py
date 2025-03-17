@@ -5,7 +5,7 @@ from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 class T1ZJUCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
-        num_envs = 2048  # 6144
+        num_envs = 4096  # 6144
 
         enable_clock_input = True
         n_proprio = 50
@@ -53,22 +53,22 @@ class T1ZJUCfg(T1BaseCfg):
         num_rows = 20  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 12  # number of terrain cols (types)
 
-        curriculum = True
+        curriculum = False
 
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 0,
-            'stairs_up': 0,
-            'stairs_down': 0,
+            'rough_slope': 1,
+            'stairs_up': 1,
+            'stairs_down': 1,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
             'pit': 0,
             'parkour': 0,
-            'parkour_gap': 1,
-            'parkour_box': 1,
-            'parkour_step': 1,
-            'parkour_stair': 0,  # First train a policy without stair for 2000 epochs
+            'parkour_gap': 0,
+            'parkour_box': 0,
+            'parkour_step': 0,
+            'parkour_stair': 1,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 
@@ -93,7 +93,7 @@ class T1ZJUCfg(T1BaseCfg):
         randomize_com = switch
 
         push_robots = False
-        action_delay = False
+        action_delay = True
         add_dof_lag = False
         add_imu_lag = False
 
@@ -192,7 +192,7 @@ class T1ZJUCfgPPO(T1BaseCfgPPO):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 5
+        num_learning_epochs = 10
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed

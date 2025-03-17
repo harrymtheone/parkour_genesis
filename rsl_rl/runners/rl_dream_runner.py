@@ -92,7 +92,7 @@ class RLDreamRunner:
                             episode_length.extend(cur_episode_length[new_ids].cpu().numpy().tolist())
 
                             # Do AdaSmpl for envs reset
-                            if self.cur_it > 50000:
+                            if self.cur_it > 10000:
                                 use_estimated_values[new_ids] = torch.rand(len(new_ids[0]), device=self.device) > p_smpl
 
                             cur_reward_sum[new_ids] = 0.
@@ -104,7 +104,7 @@ class RLDreamRunner:
                         rew_terrain = last_env_reward[self.env.env_class == t]
                         coefficient_variation[i] = rew_terrain.std() / (rew_terrain.mean().abs() + 1e-5)
 
-                    p_smpl = 0.9 * p_smpl + 0.1 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
+                    p_smpl = 0.999 * p_smpl + 0.001 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
 
                 # Learning step
                 self.alg.compute_returns(critic_obs)
@@ -113,7 +113,7 @@ class RLDreamRunner:
             collection_time = time.time() - start
             start = time.time()
 
-            update_info = self.alg.update()
+            update_info = self.alg.update(cur_it=self.cur_it)
             torch.cuda.synchronize()
             learn_time = time.time() - start
 

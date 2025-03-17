@@ -1,4 +1,4 @@
-from rsl_rl.modules.model_pie import Estimator, Actor
+from rsl_rl.modules.model_pie import EstimatorGRU, Actor
 
 try:
     import isaacgym, torch
@@ -15,7 +15,7 @@ from legged_gym.utils.task_registry import TaskRegistry
 class Policy(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        self.estimator = Estimator(env_cfg, policy_cfg)
+        self.estimator = EstimatorGRU(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))

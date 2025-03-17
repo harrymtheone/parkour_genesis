@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.model_pie import Policy
-from rsl_rl.modules.model_zju import Critic
+from rsl_rl.modules.utils import UniversalCritic
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from .alg_base import BaseAlgorithm
 
@@ -47,7 +47,7 @@ class PPO_PIE(BaseAlgorithm):
 
         # PPO component
         self.actor = Policy(env_cfg, train_cfg.policy).to(self.device)
-        self.critic = Critic(env_cfg, train_cfg).to(self.device)
+        self.critic = UniversalCritic(env_cfg, train_cfg).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
@@ -262,7 +262,8 @@ class PPO_PIE(BaseAlgorithm):
             obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
             self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states_batch)
 
-            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original[:batch_size])
+            action_mean_original = action_mean_original[:batch_size]
+            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
             symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
 
         return kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, symmetry_loss

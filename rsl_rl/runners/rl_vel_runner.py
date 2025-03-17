@@ -75,12 +75,12 @@ class RLVelRunner:
             with torch.inference_mode():
                 for _ in range(self.num_steps_per_env):
                     actions, actor_input = self.alg.act(obs, critic_obs, use_estimated_values=use_estimated_values.unsqueeze(1))
-
                     pred_obs = self.predictor_obs_cls(actor_input)
                     vel_correction = self.alg_vel.act(pred_obs, critic_obs, use_estimated_values=use_estimated_values.unsqueeze(1))
 
                     obs, critic_obs, rewards, dones, infos = self.env.step((actions, vel_correction))  # obs has changed to next_obs !! if done obs has been reset
-                    # self.alg.process_env_step(rewards, dones, infos, obs)
+
+                    self.alg.process_env_step(rewards, dones, infos)
                     self.alg_vel.process_env_step(infos['rew_vel_predictor'], dones, infos)
 
                     if self.log_dir is not None:
@@ -116,17 +116,15 @@ class RLVelRunner:
                     p_smpl = 0.9 * p_smpl + 0.1 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
 
                 # Learning step
-                # self.alg.compute_returns(critic_obs)
+                self.alg.compute_returns(critic_obs)
                 self.alg_vel.compute_returns(critic_obs)
 
             torch.cuda.synchronize()
             collection_time = time.time() - start
             start = time.time()
 
-            # update_info = self.alg.update()
-            update_info = self.alg_vel.update()
-            # if self.cur_it % 5 == 0:
-            #     self.alg_vel.update()
+            update_info = self.alg.update()
+            update_info.update(self.alg_vel.update())
 
             torch.cuda.synchronize()
             learn_time = time.time() - start

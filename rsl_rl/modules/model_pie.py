@@ -4,7 +4,7 @@ import torch.nn as nn
 from .utils import make_linear_layers, gru_wrapper
 
 
-class Estimator(nn.Module):
+class EstimatorGRU(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         activation = nn.ELU()
@@ -36,6 +36,41 @@ class Estimator(nn.Module):
         self.gru = nn.GRU(input_size=256, hidden_size=hidden_size, num_layers=1)
         self.hidden_states = None
 
+    def inference_forward(self, prop_his, depth_his):
+        # inference forward
+        prop_latent = self.prop_his_enc(prop_his.transpose(1, 2))
+        depth_latent = self.depth_enc(depth_his)
+
+        gru_input = torch.cat((prop_latent, depth_latent), dim=1)
+        # TODO: transformer here?
+        gru_out, self.hidden_states = self.gru(gru_input.unsqueeze(0), self.hidden_states)
+        return gru_out.squeeze(0)
+
+    def forward(self, prop_his, depth_his, hidden_states):
+        # update forward
+        prop_latent = gru_wrapper(self.prop_his_enc.forward, prop_his.transpose(2, 3))
+
+        depth_latent = gru_wrapper(self.depth_enc.forward, depth_his)
+
+        gru_input = torch.cat((prop_latent, depth_latent), dim=2)
+        gru_out, _ = self.gru(gru_input, hidden_states)
+        return gru_out
+
+    def get_hidden_states(self):
+        if self.hidden_states is None:
+            return None
+        return self.hidden_states.detach()
+
+    def reset(self, dones):
+        self.hidden_states[:, dones] = 0.
+
+
+class EstimatorVAE(nn.Module):
+    def __init__(self, env_cfg, policy_cfg):
+        super().__init__()
+        activation = nn.ELU()
+        hidden_size = policy_cfg.estimator_gru_hidden_size
+
         self.mlp_mu = make_linear_layers(hidden_size, hidden_size, hidden_size,
                                          activation_func=activation, output_activation=False)
 
@@ -50,47 +85,15 @@ class Estimator(nn.Module):
         self.hmap_recon = make_linear_layers(self.len_hmap_latent, 256, env_cfg.n_scan,
                                              activation_func=activation, output_activation=False)
 
-    def forward(self, prop_his, depth_his, hidden_states=None, get_recon=False):
-        if hidden_states is None:
-            # inference forward
-            prop_latent = self.prop_his_enc(prop_his.transpose(1, 2))
-            depth_latent = self.depth_enc(depth_his)
+    def forward(self, gru_out):
+        return self.mlp_mu(gru_out)
 
-            gru_input = torch.cat((prop_latent, depth_latent), dim=1)
-            gru_out, self.hidden_states = self.gru(gru_input.unsqueeze(0), self.hidden_states)
-
-            if not get_recon:
-                return self.mlp_mu(gru_out.squeeze(0))
-
-            vae_mu = self.mlp_mu(gru_out.squeeze(0))
-            vae_logvar = self.mlp_logvar(gru_out.squeeze(0))
-            ot1 = self.ot1_predictor(self.reparameterize(vae_mu, vae_logvar))
-            hmap = self.hmap_recon(vae_mu[..., -self.len_hmap_latent:])
-            return vae_mu, vae_logvar, vae_mu[..., :self.len_estimation], ot1, hmap
-
-        else:
-            # update forward
-            prop_latent = gru_wrapper(self.prop_his_enc.forward, prop_his.transpose(2, 3))
-            depth_latent = gru_wrapper(self.depth_enc.forward, depth_his)
-
-            gru_input = torch.cat((prop_latent, depth_latent), dim=2)
-            gru_out, hidden_states = self.gru(gru_input, hidden_states)
-
-            vae_mu = gru_wrapper(self.mlp_mu.forward, gru_out)
-            vae_logvar = gru_wrapper(self.mlp_logvar.forward, gru_out)
-            ot1 = self.ot1_predictor(self.reparameterize(vae_mu, vae_logvar))
-
-            hmap = self.hmap_recon(vae_mu[..., -self.len_hmap_latent:])
-
-            return vae_mu, vae_logvar, vae_mu[..., :self.len_estimation], ot1, hmap, hidden_states
-
-    def get_hidden_states(self):
-        if self.hidden_states is None:
-            return None
-        return self.hidden_states.detach()
-
-    def reset(self, dones):
-        self.hidden_states[:, dones] = 0.
+    def estimate(self, gru_out):
+        vae_mu = self.mlp_mu(gru_out)
+        vae_logvar = self.mlp_logvar(gru_out)
+        ot1 = self.ot1_predictor(self.reparameterize(vae_mu, vae_logvar))
+        hmap = self.hmap_recon(vae_mu[..., -self.len_hmap_latent:])
+        return vae_mu, vae_logvar, vae_mu[..., :self.len_estimation], ot1, hmap
 
     @staticmethod
     def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
@@ -106,12 +109,8 @@ class Actor(nn.Module):
                                         *policy_cfg.actor_hidden_dims, env_cfg.num_actions,
                                         activation_func=nn.ELU(), output_activation=False)
 
-    def forward(self, obs, priv):
-        if obs.ndim == 2:
-            return self.actor(torch.cat([obs, priv], dim=1))
-
-        elif obs.ndim == 3:  # GRU
-            return gru_wrapper(self.actor.forward, torch.cat([obs, priv], dim=2))
+    def forward(self, proprio, priv):
+        return self.actor(torch.cat([proprio, priv], dim=1))
 
 
 class Policy(nn.Module):
@@ -120,7 +119,8 @@ class Policy(nn.Module):
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        self.estimator = Estimator(env_cfg, policy_cfg)
+        self.estimator = EstimatorGRU(env_cfg, policy_cfg)
+        self.vae = EstimatorVAE(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
@@ -131,16 +131,18 @@ class Policy(nn.Module):
             eval_=False,
             ):  # <-- my mood be like
         # encode history proprio
-        if eval_:
-            vae_mu, vae_logvar, est, ot1, hmap = self.estimator(obs.prop_his, obs.depth, get_recon=True)
-            mean = self.actor(obs.proprio, vae_mu)
-            hmap = hmap.unflatten(1, (32, 16))
-            return mean, hmap, hmap
-
-        vae_mu = self.estimator(obs.prop_his, obs.depth)
+        gru_out = self.estimator.inference_forward(obs.prop_his, obs.depth)
+        vae_mu = self.vae(gru_out)
 
         # compute action
         mean = self.actor(obs.proprio, vae_mu)
+
+        if eval_:
+            # vae_mu, vae_logvar, est, ot1, hmap = self.estimator(obs.prop_his, obs.depth)
+            # mean = self.actor(obs.proprio, vae_mu)
+            # hmap = hmap.unflatten(1, (32, 16))
+            # return mean, hmap, hmap
+            return mean
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
@@ -151,10 +153,11 @@ class Policy(nn.Module):
             obs: ActorObs,
             hidden_states,
     ):  # <-- my mood be like
-        vae_mu, vae_logvar, est, ot1, recon, _ = self.estimator(obs.prop_his, obs.depth, hidden_states)
+        gru_out = self.estimator(obs.prop_his, obs.depth, hidden_states)
+        vae_mu, vae_logvar, est, ot1, recon = self.vae.estimate(gru_out)
 
         # compute action
-        mean = self.actor(obs.proprio, vae_mu)
+        mean = gru_wrapper(self.actor, obs.proprio, vae_mu)
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
@@ -184,64 +187,3 @@ class Policy(nn.Module):
 
     def reset(self, dones):
         self.estimator.reset(dones)
-
-
-class Critic(nn.Module):
-    from legged_gym.envs.pdd.pdd_scan_environment import CriticObs
-
-    def __init__(self, env_cfg, train_cfg):
-        super().__init__()
-        if env_cfg.num_critic_obs == 77:  # pdd
-            self.encoder = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4),
-                nn.ELU(),
-                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
-                nn.ELU(),
-                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=3, stride=1),
-                nn.ELU(),
-                nn.Flatten()
-            )
-
-        elif env_cfg.num_critic_obs == 83:  # pdd
-            self.encoder = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4, padding=1),
-                nn.ELU(),
-                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
-                nn.ELU(),
-                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=4, stride=1),
-                nn.ELU(),
-                nn.Flatten()
-            )
-        elif env_cfg.num_critic_obs == 91:  # Go1
-            self.encoder = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.len_critic_his, out_channels=64, kernel_size=9, stride=4, padding=1),
-                nn.ELU(),
-                nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
-                nn.ELU(),
-                nn.Conv1d(in_channels=128, out_channels=128, kernel_size=5, stride=1),
-                nn.ELU(),
-                nn.Flatten()
-            )
-        else:
-            raise NotImplementedError
-
-        self.critic = make_linear_layers(128 * 5 + env_cfg.n_scan, *train_cfg.policy.critic_hidden_dims, 1,
-                                         activation_func=nn.ELU())
-        self.critic.pop(-1)
-
-    def evaluate(self, obs: CriticObs, masks=None):
-        if obs.priv_his.ndim == 3:
-            priv_his = obs.priv_his
-            scan = obs.scan.flatten(1)
-        else:
-            n_steps = obs.priv_his.size(0)
-            priv_his = obs.priv_his.flatten(0, 1)
-            scan = obs.scan.flatten(0, 1).flatten(1)
-
-        his_enc = self.encoder(priv_his)
-        evaluation = self.critic(torch.cat([his_enc, scan], dim=1))
-
-        if obs.priv_his.ndim == 3:
-            return evaluation
-        else:
-            return evaluation.unflatten(0, (n_steps, -1))
