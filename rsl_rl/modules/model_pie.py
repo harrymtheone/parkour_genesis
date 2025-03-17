@@ -20,15 +20,13 @@ class EstimatorGRU(nn.Module):
         )
 
         self.depth_enc = nn.Sequential(
-            nn.Conv2d(in_channels=env_cfg.len_depth_his, out_channels=16, kernel_size=3, stride=2, padding=1),
-            activation,
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1),
-            activation,
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1),
-            activation,
+            nn.Conv2d(in_channels=env_cfg.len_depth_his, out_channels=16, kernel_size=5, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=16, out_channels=64, kernel_size=5, stride=4, padding=2),
+            nn.ReLU(inplace=True),
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((1, 1)),
-            activation,
             nn.Flatten()
         )
 
