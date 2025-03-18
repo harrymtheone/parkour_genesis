@@ -49,7 +49,7 @@ class T1BaseCfg(BaseConfig):
         vertical_scale = 0.005  # [m]
         border_size = 5  # [m]
         roughness_height = [0.0, 0.03]
-        simplify_grid = True
+        simplify_grid = False
         downsampled_scale = 0.075
 
         curriculum = True

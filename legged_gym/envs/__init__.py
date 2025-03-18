@@ -7,7 +7,7 @@ from .T1.t1_priv_vel_environment import T1PrivVelEnvironment
 from .T1.config.t1_dreamwaq_config import T1DreamWaqCfg, T1DreamWaqCfgPPO
 from .T1.config.t1_periodic_config import T1PeriodicPhase1Cfg, T1PeriodicCfgPPO
 from .T1.config.t1_zju_config import T1ZJUCfg, T1ZJUCfgPPO
-from .T1.config.t1_pie_config import T1PIECfg, T1PIECfgPPO, T1PIEStairCfg
+from .T1.config.t1_pie_config import T1PIECfg, T1PIECfgPPO
 from .T1.config.t1_priv_config import T1PrivCfg, T1PrivCfgPPO
 from .T1.config.t1_priv_vel_pred_config import T1PrivVelCfg, T1PrivVelCfgPPO
 
@@ -34,7 +34,6 @@ task_list = [
     ['t1_periodic', T1PeriodicEnvironment, T1PeriodicPhase1Cfg(), T1DreamWaqCfgPPO()],
     ['t1_zju', T1ZJUEnvironment, T1ZJUCfg(), T1ZJUCfgPPO()],
     ['t1_pie', T1PIEEnvironment, T1PIECfg(), T1PIECfgPPO()],
-    ['t1_pie_stair', T1PIEEnvironment, T1PIEStairCfg(), T1PIECfgPPO()],
     ['t1_priv', T1PrivEnvironment, T1PrivCfg(), T1PrivCfgPPO()],
     ['t1_priv_vel', T1PrivVelEnvironment, T1PrivVelCfg(), T1PrivVelCfgPPO()],
 

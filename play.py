@@ -26,13 +26,12 @@ def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
 
     # override some parameters for testing
-    env_cfg.env.enable_clock_input = False
     env_cfg.play.control = False
-    env_cfg.env.num_envs = 16
+    env_cfg.env.num_envs = 1
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.curriculum = True
-    env_cfg.terrain.max_difficulty = True
+    # env_cfg.terrain.max_difficulty = True
     env_cfg.terrain.max_init_terrain_level = 4
     # env_cfg.asset.disable_gravity = True
 
@@ -46,7 +45,7 @@ def play(args):
 
     env_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
-        'rough_slope': 0,
+        'rough_slope': 1,
         'stairs_up': 0,
         'stairs_down': 0,
         'discrete': 0,
@@ -57,7 +56,7 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
+        'parkour_stair': 0,
         'parkour_flat': 0,
     }
     env_cfg.terrain.num_cols = sum(env_cfg.terrain.terrain_dict.values())
@@ -84,9 +83,11 @@ def play(args):
                     actions, _ = rtn
                 elif len(rtn) == 3:
                     actions, recon_rough, recon_refine = rtn
+                    hmap_rough, edge_rough = recon_rough[:, 0], recon_rough[:, 1]
+                    hmap_refine, edge_refine = recon_refine[:, 0], recon_refine[:, 1]
 
-                # env.draw_hmap(recon_rough)
-                env.draw_hmap(recon_refine)
+                # env.draw_hmap(hmap_rough)
+                env.draw_hmap(hmap_refine)
                 # env.draw_feet_hmap(est_mu[:, -16-16:-16])  # feet height map estimation
                 # env.draw_body_hmap(est_mu[:, -16:])  # body height map estimation
             else:

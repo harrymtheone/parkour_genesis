@@ -421,4 +421,6 @@ class HumanoidEnv(ParkourTask):
 
     def _reward_feet_edge(self):
         rew = torch.sum(self.feet_at_edge.float(), dim=-1)
+
+        rew[self.env_class < 2] = 0.
         return rew

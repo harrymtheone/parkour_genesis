@@ -48,12 +48,12 @@ class ObsGRU(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self):
+    def __init__(self, input_channel):
         super().__init__()
 
         # Encoder
         self.encoder_conv1 = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, padding=1),
+            nn.Conv2d(input_channel, 16, kernel_size=3, padding=1),
             nn.ReLU(),
         )
 
@@ -96,7 +96,7 @@ class UNet(nn.Module):
         )
 
         # Final output layer
-        self.output_conv = nn.Conv2d(16, 1, kernel_size=1)  # Output a single channel (depth image)
+        self.output_conv = nn.Conv2d(16, input_channel, kernel_size=1)  # Output a single channel (depth image)
 
     def forward(self, x):
         # Encoder
@@ -130,15 +130,13 @@ class ReconGRU(nn.Module):
         activation = nn.LeakyReLU()
 
         self.cnn_depth = nn.Sequential(
-            nn.Conv2d(in_channels=env_cfg.len_depth_his, out_channels=16, kernel_size=3, stride=2, padding=1),
-            activation,
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1),
-            activation,
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1),
-            activation,
+            nn.Conv2d(in_channels=env_cfg.len_depth_his, out_channels=16, kernel_size=5, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=16, out_channels=64, kernel_size=5, stride=4, padding=2),
+            nn.ReLU(inplace=True),
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((1, 1)),
-            activation,
             nn.Flatten()
         )
 
@@ -155,10 +153,10 @@ class ReconGRU(nn.Module):
             nn.Conv2d(8, 4, kernel_size=3, padding=1),
             activation,
             nn.Upsample(scale_factor=2),
-            nn.Conv2d(4, 1, kernel_size=3, padding=1),
+            nn.Conv2d(4, 2, kernel_size=3, padding=1),
         )
 
-        self.recon_refine = UNet()
+        self.recon_refine = UNet(input_channel=2)
 
     def inference_forward(self, depth_his, prop_latent):
         # inference forward
@@ -209,7 +207,7 @@ class LocoTransformer(nn.Module):
         vae_output_dim = policy_cfg.len_latent + policy_cfg.len_base_vel + policy_cfg.len_latent_feet + policy_cfg.len_latent_body
 
         # patch embedding
-        self.cnn_scan = nn.Conv2d(in_channels=1, out_channels=transformer_embed_dim, kernel_size=4, stride=4)
+        self.cnn_scan = nn.Conv2d(in_channels=2, out_channels=transformer_embed_dim, kernel_size=4, stride=4)
         self.layer_norm = nn.LayerNorm(transformer_embed_dim)
 
         # observation embedding
@@ -346,7 +344,7 @@ class EstimatorGRU(nn.Module):
             recon_input = torch.where(
                 use_estimated_values.unsqueeze(-1).unsqueeze(-1),
                 recon_refine,
-                obs.scan.unsqueeze(1)
+                obs.scan
             )
             est_latent, est, _, _ = self.transformer(recon_input, latent_obs)
             latent_input = torch.where(
@@ -359,7 +357,7 @@ class EstimatorGRU(nn.Module):
             est_latent, est, _, _ = self.transformer(recon_refine, latent_obs)
             latent_input = torch.cat([est_latent, est.detach()], dim=1)
         else:
-            est_latent, _, _, _ = self.transformer(obs.scan.unsqueeze(1), latent_obs)
+            est_latent, _, _, _ = self.transformer(obs.scan, latent_obs)
             latent_input = torch.cat([est_latent, obs.priv_actor], dim=1)
 
         # compute action
@@ -393,7 +391,7 @@ class EstimatorGRU(nn.Module):
         recon_input = torch.where(
             use_estimated_values.unsqueeze(-1).unsqueeze(-1),
             recon_refine,
-            obs.scan.unsqueeze(2)
+            obs.scan
         )
         est_latent, est, _, _ = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
         latent_input = torch.where(
@@ -416,7 +414,7 @@ class EstimatorGRU(nn.Module):
         recon_input = torch.where(
             use_estimated_values.unsqueeze(-1).unsqueeze(-1),
             recon_refine.detach(),
-            obs.scan.unsqueeze(2)
+            obs.scan
         )
 
         est_latent, est, est_logvar, ot1 = gru_wrapper(self.transformer.forward, recon_input, latent_obs)

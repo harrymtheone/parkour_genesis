@@ -6,6 +6,13 @@ from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase, HistoryBuffer
 
 
+def linear_change(start, end, span, start_it, cur_it):
+    cur_value = start + (end - start) * (cur_it - start_it) / span
+    cur_value = max(cur_value, min(start, end))
+    cur_value = min(cur_value, max(start, end))
+    return cur_value
+
+
 class ActorObs(ObsBase):
     def __init__(self, proprio, prop_his, depth, priv_actor, scan, edge_mask):
         super().__init__()
@@ -51,11 +58,22 @@ class CriticObs(ObsBase):
 
 
 class T1PIEEnvironment(T1BaseEnv):
+    def _init_robot_props(self):
+        super()._init_robot_props()
+        self.yaw_roll_dof_indices = self.sim.create_indices(
+            self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
+
     def _init_buffers(self):
         super()._init_buffers()
         env_cfg = self.cfg.env
         self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
         self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
+
+    def update_reward_curriculum(self, epoch):
+        super().update_reward_curriculum(epoch)
+
+        self.reward_scales['feet_stumble'] = linear_change(0., -1.0, 5000, 10000, epoch)
+        self.reward_scales['feet_edge'] = linear_change(0., -1.0, 5000, 10000, epoch)
 
     def _compute_observations(self):
         """

@@ -91,8 +91,8 @@ class T1PIECfg(T1BaseCfg):
         randomize_link_mass = switch
         randomize_com = switch
 
-        push_robots = switch
-        action_delay = switch
+        push_robots = False
+        action_delay = False
         add_dof_lag = False
         add_imu_lag = False
 
@@ -102,7 +102,7 @@ class T1PIECfg(T1BaseCfg):
         randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
         randomize_joint_friction = False
-        randomize_joint_armature = switch
+        randomize_joint_armature = True
         randomize_coulomb_friction = False
 
     class rewards:
@@ -110,7 +110,8 @@ class T1PIECfg(T1BaseCfg):
         feet_height_target = 0.05
         feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
@@ -125,30 +126,28 @@ class T1PIECfg(T1BaseCfg):
         rew_norm_factor = 1.0
 
         class scales:
-            # gait
             joint_pos = 2.
             feet_contact_number = 1.2
             feet_clearance = 0.2  # 0.2
             feet_air_time = 1.
-            feet_slip = -1.  # -1.
+            feet_slip = -1.
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
 
             # contact
-            feet_contact_forces = -0.01  # -0.1
-            feet_stumble = -3.0
-            feet_edge = -3.0
+            feet_contact_forces = -0.01
+            # feet_stumble = 0.  # -1.0
+            # feet_edge = 0.  # -1.0
 
             # vel tracking
             tracking_lin_vel = 1.2
+            tracking_goal_vel = 1.5
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
-            # low_speed = 0.2
-            # track_vel_hard = 0.5
 
             # base pos
-            # default_joint_pos = 0.1
+            # default_joint_pos = 0.5
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
@@ -159,7 +158,6 @@ class T1PIECfg(T1BaseCfg):
             dof_vel = -5e-4
             dof_acc = -1e-7
             collision = -1.
-            # stand_still = 2.0
 
 
 class T1PIECfgPPO(T1BaseCfgPPO):
@@ -189,7 +187,7 @@ class T1PIECfgPPO(T1BaseCfgPPO):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 5
+        num_learning_epochs = 10
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
@@ -206,60 +204,3 @@ class T1PIECfgPPO(T1BaseCfgPPO):
 
         # logging
         save_interval = 100  # check for potential saves every this many iterations
-
-
-class T1PIEStairCfg(T1PIECfg):
-    class terrain(T1PIECfg.terrain):
-        terrain_dict = {
-            'smooth_slope': 1,
-            'rough_slope': 0,
-            'stairs_up': 0,
-            'stairs_down': 0,
-            'discrete': 0,
-            'stepping_stone': 0,
-            'gap': 0,
-            'pit': 0,
-            'parkour': 0,
-            'parkour_gap': 0,
-            'parkour_box': 0,
-            'parkour_step': 0,
-            'parkour_stair': 4,
-            'parkour_flat': 1,
-        }
-
-    class rewards(T1PIECfg.rewards):
-        class scales(T1PIECfg.rewards.scales):
-            # gait
-            joint_pos = 2.
-            feet_contact_number = 1.2
-            feet_clearance = 0.2  # 0.2
-            feet_air_time = 1.
-            feet_slip = -1.
-            feet_distance = 0.5
-            knee_distance = 0.5
-            feet_rotation = 1.0
-
-            # contact
-            feet_contact_forces = -0.01
-            feet_stumble = -1.0
-            feet_edge = -1.0
-
-            # vel tracking
-            tracking_lin_vel = 1.2
-            tracking_goal_vel = 1.5
-            tracking_ang_vel = 2.0
-            vel_mismatch_exp = 0.5
-            low_speed = 0.2
-
-            # base pos
-            default_joint_pos = 0.5
-            orientation = 1.
-            base_height = 0.2
-            base_acc = 0.2
-
-            # energy
-            action_smoothness = -3e-3
-            torques = -1e-5
-            dof_vel = -5e-4
-            dof_acc = -1e-7
-            collision = -1.

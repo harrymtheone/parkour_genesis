@@ -9,7 +9,7 @@ class SubTerrain:
         self.length = length
         self.vertical_scale = vertical_scale
         self.horizontal_scale = horizontal_scale
-        self.height_field_raw = np.zeros((self.width, self.length), dtype=np.int16)
+        self.height_field_raw = np.zeros((self.width, self.length), dtype=float)
         self.height_field_guidance = None
 
         self.row = None

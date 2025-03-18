@@ -132,7 +132,8 @@ class T1ZJUEnvironment(T1BaseEnv):
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
 
         # compose actor observation
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan)
+        scan_edge = torch.stack([scan, self.get_edge_mask().float()], dim=1)
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan_edge)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer

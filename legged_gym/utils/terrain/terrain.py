@@ -5,7 +5,7 @@ import pyfqmr
 import scipy
 
 from .terrain_utils import *
-from .utils import convert_heightfield_to_trimesh, add_fractal_roughness, edge_detection
+from .utils import convert_heightfield_to_trimesh, add_fractal_roughness, edge_detection, generate_fractal_noise_2d
 
 
 class Terrain:
@@ -131,6 +131,18 @@ class Terrain:
                                step=0.005,
                                downsampled_scale=self.cfg.downsampled_scale)
 
+    def add_fractal_roughness(self, terrain, difficulty=1):
+        heightfield_noise = generate_fractal_noise_2d(
+            xSize=int(terrain.width * self.cfg.horizontal_scale),
+            ySize=int(terrain.length * self.cfg.horizontal_scale),
+            xSamples=terrain.width,
+            ySamples=terrain.length,
+            zScale=0.08 + 0.07 * difficulty,  # 0.08, 0.15
+            frequency=10,
+        ) / self.cfg.vertical_scale
+
+        terrain.height_field_raw[:] += heightfield_noise
+
     def make_terrain(self, choice, difficulty):
         if choice < self.proportions[7]:
             # legged_gym terrain
@@ -168,7 +180,7 @@ class Terrain:
             terrain.terrain_type = Terrain.terrain_type.rough_slope
             # self.terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
             # random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
-            add_fractal_roughness(terrain, difficulty)
+            self.add_fractal_roughness(terrain, difficulty)
             # self.add_roughness(terrain, difficulty)
 
         elif choice < self.proportions[3]:
@@ -266,7 +278,7 @@ class Terrain:
             terrain.terrain_type = Terrain.terrain_type.parkour_flat
             parkour_flat_terrain(terrain)
             terrain.centered_origin = False
-            # self.add_roughness(terrain, difficulty)
+            self.add_roughness(terrain, difficulty)
             # add_fractal_roughness(terrain, levels=6, scale=0.2)
             add_fractal_roughness(terrain, difficulty)
 
@@ -391,7 +403,7 @@ class Terrain:
                 pad_len = col_len_max - col.shape[0]
                 chunk_col_list[i] = np.pad(col, ((0, pad_len), (0, 0)), 'constant', constant_values=0)
 
-            return np.concatenate(chunk_col_list, axis=1, dtype=np.int16)
+            return np.concatenate(chunk_col_list, axis=1)
 
         start_y = self.border
         for col in range(self.cfg.num_cols):

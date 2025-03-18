@@ -21,21 +21,10 @@ class T1PrivEnvironment(HumanoidEnv):
         env_cfg = self.cfg.env
         self.priv_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
-        self.phase_enabled = self._zero_tensor(self.num_envs, dtype=torch.bool)
-        self.phase_enabled[:] = self.cfg.env.enable_clock_input
-
     def _init_robot_props(self):
         super()._init_robot_props()
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
-
-    def update_reward_curriculum(self, epoch):
-        super().update_reward_curriculum(epoch)
-
-        enabled_ratio = self.linear_change(1., 0., 3000, 3000, epoch)
-        num_enabled = int(self.num_envs * enabled_ratio)
-        self.phase_enabled[:num_enabled] = True
-        self.phase_enabled[num_enabled:] = False
 
     def _compute_ref_state(self):
         clock_l, clock_r = self._get_clock_input()

@@ -7,7 +7,6 @@ class T1PrivCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 2048  # 6144
 
-        enable_clock_input = True
         n_proprio = 50
         len_prop_his = 50
 
@@ -127,7 +126,7 @@ class T1PrivCfg(T1BaseCfg):
             # base pos
             default_joint_pos = 0.5
             orientation = 1.
-            base_height = -0.2
+            base_height = 0.2
             base_acc = 0.2
 
             # energy
