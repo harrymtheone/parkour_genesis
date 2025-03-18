@@ -104,6 +104,7 @@ class RLDreamRunner:
                         rew_terrain = last_env_reward[self.env.env_class == t]
                         coefficient_variation[i] = rew_terrain.std() / (rew_terrain.mean().abs() + 1e-5)
 
+                    # probability to use ground truth value
                     p_smpl = 0.999 * p_smpl + 0.001 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
 
                 # Learning step

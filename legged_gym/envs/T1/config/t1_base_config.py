@@ -62,6 +62,12 @@ class T1BaseCfg(BaseConfig):
 
         base_pts_x = np.linspace(-0.2, 0.2, 8)
         base_pts_y = np.linspace(-0.2, 0.2, 8)
+        scan_pts_x = np.linspace(-0.5, 1.1, 32)
+        scan_pts_y = np.linspace(-0.4, 0.4, 16)
+        body_pts_x = np.linspace(-0.2, 0.2, 4)
+        body_pts_y = np.linspace(-0.2, 0.2, 4)
+        feet_pts_x = np.linspace(-0.1, 0.1, 2)
+        feet_pts_y = np.linspace(-0.1, 0.1, 2)
 
         height_update_interval = 5  # 1 * dt
 

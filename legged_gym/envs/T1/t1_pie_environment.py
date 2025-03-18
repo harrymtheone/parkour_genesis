@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
-from ..base.utils import ObsBase, HistoryBuffer
+from ..base.utils import ObsBase
 
 
 def linear_change(start, end, span, start_it, cur_it):
@@ -14,28 +14,25 @@ def linear_change(start, end, span, start_it, cur_it):
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, depth, priv_actor, scan, edge_mask):
+    def __init__(self, proprio, prop_his, depth, priv_actor):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
         self.depth = depth.clone()
         self.priv_actor = priv_actor.clone()
-        self.scan = scan.clone()
-        self.edge_mask = edge_mask.clone()
 
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
 
     def mirror(self):
-        return type(self)(*[
+        return type(self)(
             mirror_proprio_by_x(self.proprio),
             mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
             torch.flip(self.depth, dims=[3]),
-            self.priv_actor,
             torch.flip(self.scan, dims=[2]),
             torch.flip(self.edge_mask, dims=[2]),
-        ])
+        )
 
     @staticmethod
     def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
@@ -50,8 +47,9 @@ class ObsNext(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_his, scan, edge_mask):
+    def __init__(self, priv, priv_his, scan, edge_mask):
         super().__init__()
+        self.priv = priv.clone()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
         self.edge_mask = edge_mask.clone()
@@ -62,12 +60,6 @@ class T1PIEEnvironment(T1BaseEnv):
         super()._init_robot_props()
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
-
-    def _init_buffers(self):
-        super()._init_buffers()
-        env_cfg = self.cfg.env
-        self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
-        self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
     def update_reward_curriculum(self, epoch):
         super().update_reward_curriculum(epoch)
@@ -133,7 +125,7 @@ class T1PIEEnvironment(T1BaseEnv):
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
-        priv_actor_obs = torch.cat((
+        priv_actor = torch.cat((
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
             self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
@@ -142,11 +134,10 @@ class T1PIEEnvironment(T1BaseEnv):
         # compute height map
         scan = torch.clip(self.sim.root_pos[:, 2].unsqueeze(1) - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
-
         edge_mask = self.get_edge_mask().float()
 
         # compose actor observation
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan, edge_mask)
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer
@@ -155,7 +146,7 @@ class T1PIEEnvironment(T1BaseEnv):
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, edge_mask)
+        self.critic_obs = CriticObs(priv_obs, self.critic_his_buf.get(), scan, edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):

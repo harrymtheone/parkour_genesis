@@ -55,12 +55,6 @@ class T1ZJUEnvironment(T1BaseEnv):
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
-    def _init_buffers(self):
-        super()._init_buffers()
-        env_cfg = self.cfg.env
-        self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
-        self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
-
     def _compute_observations(self):
         """
         Computes observations

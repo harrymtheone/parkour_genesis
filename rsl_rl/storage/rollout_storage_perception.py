@@ -118,7 +118,7 @@ class RolloutStoragePerception:
                 # other data
                 self.storage[n] = DataBuf(self.num_envs, self.num_transitions_per_env, v.shape[1:], v.dtype, self.device)
             else:
-                raise NotImplementedError('Storage for this type of data is not implemented yet')
+                raise NotImplementedError(f'Data of type {type(v)} is not implemented yet. Data name {n}')
 
         self.init_done = True
 

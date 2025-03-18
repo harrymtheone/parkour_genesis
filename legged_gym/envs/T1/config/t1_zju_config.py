@@ -42,13 +42,6 @@ class T1ZJUCfg(T1BaseCfg):
             dis_noise_gaussian = 0.01  # in meters
 
     class terrain(T1BaseCfg.terrain):
-        scan_pts_x = np.linspace(-0.5, 1.1, 32)
-        scan_pts_y = np.linspace(-0.4, 0.4, 16)
-        body_pts_x = np.linspace(-0.2, 0.2, 4)
-        body_pts_y = np.linspace(-0.2, 0.2, 4)
-        feet_pts_x = np.linspace(-0.1, 0.1, 2)
-        feet_pts_y = np.linspace(-0.1, 0.1, 2)
-
         num_rows = 20  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 12  # number of terrain cols (types)
 

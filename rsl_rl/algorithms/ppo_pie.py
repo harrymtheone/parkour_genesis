@@ -45,7 +45,7 @@ class PPO_PIE(BaseAlgorithm):
         self.learning_rate = self.cfg.learning_rate
         self.device = device
 
-        # PPO component
+        # PPO components
         self.actor = Policy(env_cfg, train_cfg.policy).to(self.device)
         self.critic = UniversalCritic(env_cfg, train_cfg).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
@@ -156,7 +156,7 @@ class PPO_PIE(BaseAlgorithm):
             mean_kl += loss_tuple[0]
             mean_value_loss += loss_tuple[1]
             mean_surrogate_loss += loss_tuple[2]
-            mean_entropy_loss += loss_tuple[3]
+            mean_entropy_loss += -loss_tuple[3]
             # estimation statistics
             mean_estimation_loss += loss_tuple[4]
             mean_prediction_loss += loss_tuple[5]
@@ -240,7 +240,7 @@ class PPO_PIE(BaseAlgorithm):
             else:
                 value_loss = (evaluation - returns_batch)[mask_batch].pow(2).mean() * self.cfg.value_loss_coef
 
-            entropy_loss = self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
+            entropy_loss = -self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
             # ################################  Estimation Update ################################
             batch_size = 4

@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import kl_divergence, Normal
 
-from rsl_rl.modules.model_priv import ActorGRU
+from rsl_rl.modules.model_pie_priv import Policy
 from rsl_rl.modules.utils import UniversalCritic
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from .alg_base import BaseAlgorithm
@@ -19,7 +19,8 @@ class Transition:
         self.observations = None
         self.critic_observations = None
         if is_recurrent:
-            self.hidden_states = None
+            self.priv_hidden_states = None
+            self.est_hidden_states = None
         self.actions = None
         self.rewards = None
         self.dones = None
@@ -37,7 +38,7 @@ class Transition:
             setattr(self, key, None)
 
 
-class PPO_Priv(BaseAlgorithm):
+class PPO_PIE_Priv(BaseAlgorithm):
     def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), **kwargs):
         # PPO parameters
         self.cfg = train_cfg.algorithm
@@ -45,7 +46,7 @@ class PPO_Priv(BaseAlgorithm):
         self.device = device
 
         # PPO components
-        self.actor = ActorGRU(env_cfg, train_cfg.policy).to(self.device)
+        self.actor = Policy(env_cfg, train_cfg.policy).to(self.device)
         self.critic = UniversalCritic(env_cfg, train_cfg).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
@@ -62,13 +63,15 @@ class PPO_Priv(BaseAlgorithm):
         self.transition.observations = obs
         self.transition.critic_observations = obs_critic
         if self.actor.is_recurrent:
-            self.transition.hidden_states = self.actor.get_hidden_states()
+            self.transition.priv_hidden_states, self.transition.est_hidden_states = self.actor.get_hidden_states()
 
-        actions = self.actor.act(obs, use_estimated_values=use_estimated_values)
+        actions = self.actor.act(obs, obs_critic, use_estimated_values=use_estimated_values)
 
-        if self.actor.is_recurrent and self.transition.hidden_states is None:
+        if self.actor.is_recurrent and self.transition.priv_hidden_states is None:
             # only for the first step where hidden_state is None
-            self.transition.hidden_states = 0 * self.actor.get_hidden_states()
+            hidden_states = self.actor.get_hidden_states()
+            self.transition.priv_hidden_states = 0 * hidden_states[0]
+            self.transition.est_hidden_states = 0 * hidden_states[1]
 
         # store
         self.transition.actions = actions
@@ -151,7 +154,8 @@ class PPO_Priv(BaseAlgorithm):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
             critic_obs_batch = batch['critic_observations']
-            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
+            priv_hidden_states_batch = batch['priv_hidden_states'] if self.actor.is_recurrent else None
+            est_hidden_states_batch = batch['est_hidden_states'] if self.actor.is_recurrent else None
             mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
             actions_batch = batch['actions']
             target_values_batch = batch['values']
@@ -162,7 +166,12 @@ class PPO_Priv(BaseAlgorithm):
             old_actions_log_prob_batch = batch['actions_log_prob']
             use_estimated_values_batch = batch['use_estimated_values']
 
-            self.actor.train_act(obs_batch, hidden_states=hidden_states_batch, use_estimated_values=use_estimated_values_batch)
+            self.actor.train_act(
+                obs_batch,
+                critic_obs_batch,
+                hidden_states=(priv_hidden_states_batch, est_hidden_states_batch),
+                use_estimated_values=use_estimated_values_batch
+            )
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:

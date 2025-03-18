@@ -3,13 +3,12 @@ from .T1.t1_periodic_environment import T1PeriodicEnvironment
 from .T1.t1_zju_environment import T1ZJUEnvironment
 from .T1.t1_pie_environment import T1PIEEnvironment
 from .T1.t1_priv_environment import T1PrivEnvironment
-from .T1.t1_priv_vel_environment import T1PrivVelEnvironment
 from .T1.config.t1_dreamwaq_config import T1DreamWaqCfg, T1DreamWaqCfgPPO
 from .T1.config.t1_periodic_config import T1PeriodicPhase1Cfg, T1PeriodicCfgPPO
 from .T1.config.t1_zju_config import T1ZJUCfg, T1ZJUCfgPPO
 from .T1.config.t1_pie_config import T1PIECfg, T1PIECfgPPO
 from .T1.config.t1_priv_config import T1PrivCfg, T1PrivCfgPPO
-from .T1.config.t1_priv_vel_pred_config import T1PrivVelCfg, T1PrivVelCfgPPO
+from .T1.config.t1_pie_priv_config import T1PIEPrivCfg, T1PIEPrivCfgPPO
 
 from .pdd.config.pdd_dreamwaq_config import PddDreamWaqCfg, PddDreamWaqCfgPPO, PddDreamWaqGRUCfgPPO
 from .pdd.config.pdd_scan_config import PddScanCfg, PddScanCfgPPO, PddScanStairCfg, PddScanStairCfgPPO
@@ -34,8 +33,8 @@ task_list = [
     ['t1_periodic', T1PeriodicEnvironment, T1PeriodicPhase1Cfg(), T1DreamWaqCfgPPO()],
     ['t1_zju', T1ZJUEnvironment, T1ZJUCfg(), T1ZJUCfgPPO()],
     ['t1_pie', T1PIEEnvironment, T1PIECfg(), T1PIECfgPPO()],
+    ['t1_pie_priv', T1PIEEnvironment, T1PIEPrivCfg(), T1PIEPrivCfgPPO()],
     ['t1_priv', T1PrivEnvironment, T1PrivCfg(), T1PrivCfgPPO()],
-    ['t1_priv_vel', T1PrivVelEnvironment, T1PrivVelCfg(), T1PrivVelCfgPPO()],
 
     ['go1_zju', Go1ZJUEnvironment, Go1_ZJU_Cfg(), Go1_ZJU_CfgPPO()],
     ['go1_zju_pit', Go1ZJUEnvironment, Go1_ZJU_Pit_Cfg(), Go1_ZJU_VAE_Pit_CfgPPO()],

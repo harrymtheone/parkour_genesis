@@ -30,14 +30,12 @@
 
 from .rl_runner import RLRunner
 from .rl_deep_runner import RLDeepRunner
-from .rl_vel_runner import RLVelRunner
 
 from .rl_dream_runner import RLDreamRunner
 
 runner_list = {
     'rl_scan': RLRunner,
     'rl_deep': RLDeepRunner,
-    'rl_vel': RLVelRunner,
 
     'rl_dream': RLDreamRunner,
 }
