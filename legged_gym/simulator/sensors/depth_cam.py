@@ -9,9 +9,10 @@ from .sensor_base import SensorBase, SensorBuffer
 
 
 class DepthCam(SensorBase):
-    def __init__(self, cfg_dict, device, mesh_id):
-        super().__init__(cfg_dict, device, mesh_id)
+    def __init__(self, cfg_dict, device, mesh_id, sim):
+        super().__init__(cfg_dict, device, mesh_id, sim)
 
+        self.data_format = cfg_dict['data_format']
         self.far_clip = cfg_dict['far_clip']
         self.near_clip = cfg_dict['near_clip']
         self.dis_noise_global = cfg_dict['dis_noise_global']
@@ -20,10 +21,11 @@ class DepthCam(SensorBase):
         self.depth_raw = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']))
         self._depth_raw_wp = wp.from_torch(self.depth_raw, dtype=wp.float32)
 
-        # self.cloud = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']), 3)
-        # self._cloud_wp = wp.from_torch(self.cloud, dtype=wp.vec3f)
-        # self.cloud_valid = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']), dtype=torch.bool)
-        # self._cloud_valid_wp = wp.from_torch(self.cloud_valid, dtype=wp.bool)
+        if self.data_format == 'cloud':
+            self.cloud = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']), 3)
+            self._cloud_wp = wp.from_torch(self.cloud, dtype=wp.vec3f)
+            self.cloud_valid = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']), dtype=torch.bool)
+            self._cloud_valid_wp = wp.from_torch(self.cloud_valid, dtype=wp.bool)
 
         self.resize_transform = torchvision.transforms.Resize(
             (self.cfg_dict['resized'][1], self.cfg_dict['resized'][0]),
@@ -111,40 +113,44 @@ class DepthCam(SensorBase):
         self.c_u, self.c_v = int(u_0), int(v_0)
 
     def launch_kernel(self):
-        wp.launch(
-            kernel=depth_only_kernel,
-            dim=(self.num_envs, *self.cfg_dict['resolution']),
-            inputs=[
-                self.mesh_id,
-                self.sensor_pos,
-                self.sensor_quat,
-                self.K_inv,
-                self.c_u,
-                self.c_v,
-                self.far_clip,
-                self._depth_raw_wp,
-            ],
-            device=wp.device_from_torch(self.device)
-        )
-        # wp.launch(
-        #     kernel=depth_point_cloud_kernel,
-        #     dim=(self.num_envs, *self.cfg_dict['resolution']),
-        #     inputs=[
-        #         self.mesh_id,
-        #         self.sensor_pos_design,
-        #         self.sensor_quat_design,
-        #         self.sensor_pos,
-        #         self.sensor_quat,
-        #         self.K_inv,
-        #         self.c_u,
-        #         self.c_v,
-        #         self.far_clip,
-        #         self._depth_raw_wp,
-        #         self._cloud_wp,
-        #         self._cloud_valid_wp
-        #     ],
-        #     device=wp.device_from_torch(self.device)
-        # )
+        if self.data_format == 'depth':
+            wp.launch(
+                kernel=depth_only_kernel,
+                dim=(self.num_envs, *self.cfg_dict['resolution']),
+                inputs=[
+                    self.mesh_id,
+                    self.sensor_pos,
+                    self.sensor_quat,
+                    self.K_inv,
+                    self.c_u,
+                    self.c_v,
+                    self.far_clip,
+                    self._depth_raw_wp,
+                ],
+                device=wp.device_from_torch(self.device)
+            )
+        elif self.data_format == 'cloud':
+            wp.launch(
+                kernel=depth_point_cloud_kernel,
+                dim=(self.num_envs, *self.cfg_dict['resolution']),
+                inputs=[
+                    self.mesh_id,
+                    self.sensor_pos_design,
+                    self.sensor_quat_design,
+                    self.sensor_pos,
+                    self.sensor_quat,
+                    self.K_inv,
+                    self.c_u,
+                    self.c_v,
+                    self.far_clip,
+                    self._depth_raw_wp,
+                    self._cloud_wp,
+                    self._cloud_valid_wp
+                ],
+                device=wp.device_from_torch(self.device)
+            )
+        else:
+            raise NotImplementedError
 
     # def _process_voxel_grid(self):
     #     def process(voxel: torch.Tensor, noise_level):

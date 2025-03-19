@@ -423,9 +423,9 @@ class IsaacGymWrapper(BaseWrapper):
         # self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_LEFT_BRACKET, "prev_id")
         # self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_RIGHT_BRACKET, "next_id")
 
-    def create_camera_sensor(self, env_i: int, cam_props, cam_trans):
+    def create_camera_sensor(self, env_i: int, name_link_attached_to, cam_props, cam_trans):
         camera_handle = self.gym.create_camera_sensor(self._envs[env_i], cam_props)
-        root_handle = self.gym.get_actor_root_rigid_body_handle(self._envs[env_i], self._actor_handles[env_i])
+        root_handle = self.gym.find_actor_rigid_body_handle(self._envs[env_i], self._actor_handles[env_i], name_link_attached_to)
         self.gym.attach_camera_to_body(camera_handle, self._envs[env_i], root_handle, cam_trans, gymapi.FOLLOW_TRANSFORM)
         self.cam_handles.append(camera_handle)
 

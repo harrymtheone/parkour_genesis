@@ -302,7 +302,7 @@ class BaseTask:
 
         self._post_physics_mid_step()
         if self.cfg.sensors.activated:
-            self.sensors.update(self.global_counter, self.sim.root_pos, self.sim.root_quat, self.episode_length_buf <= 1)
+            self.sensors.update(self.global_counter, self.sim.link_pos, self.sim.link_quat, self.episode_length_buf <= 1)
         self._compute_observations()
         self._post_physics_post_step()
 

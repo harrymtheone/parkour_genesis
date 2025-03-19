@@ -6,13 +6,14 @@ from legged_gym.utils.math import xyz_to_quat, torch_rand_float
 from .sensor_base import SensorBuffer
 
 
-class IsaacGymDepthCam:
+class DepthCamIsaacGym:
     def __init__(self, cfg_dict, device, simulator):
         self.cfg_dict = cfg_dict
         self.device = device
         self.simulator = simulator
         self.num_envs = cfg_dict['num_envs']
 
+        self.name_link_attached_to = cfg_dict['link_attached_to']
         self.far_clip = cfg_dict['far_clip']
         self.near_clip = cfg_dict['near_clip']
         self.dis_noise_global = cfg_dict['dis_noise_global']
@@ -38,7 +39,10 @@ class IsaacGymDepthCam:
 
         self._initialize_sensors()
 
-    def get(self, get_raw=False, **kwargs):
+    def get(self, get_pos=False, get_raw=False, **kwargs):
+        if get_pos:
+            return self.sensor_pos.numpy()
+
         if get_raw:
             return self.depth_raw.clone()
         else:
@@ -100,5 +104,5 @@ class IsaacGymDepthCam:
             cam_trans.p = gymapi.Vec3(*self.sensor_offset_pos[env_i])
             cam_trans.r = gymapi.Quat(*self.sensor_offset_quat[env_i])
 
-            self.simulator.create_camera_sensor(env_i, camera_props, cam_trans)
+            self.simulator.create_camera_sensor(env_i, self.name_link_attached_to, camera_props, cam_trans)
 

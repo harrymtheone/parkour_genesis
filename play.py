@@ -1,3 +1,5 @@
+import random
+
 try:
     import isaacgym, torch
 except ImportError:
@@ -45,7 +47,7 @@ def play(args):
 
     env_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
-        'rough_slope': 1,
+        'rough_slope': 0,
         'stairs_up': 0,
         'stairs_down': 0,
         'discrete': 0,
@@ -64,7 +66,7 @@ def play(args):
     # prepare environment
     args.n_rendered_envs = env_cfg.env.num_envs
     env, _ = task_registry.make_env(args=args, env_cfg=env_cfg)
-    obs, critic_obs = env.get_observations(), env.get_critic_observations()
+    obs, obs_critic = env.get_observations(), env.get_critic_observations()
 
     # load policy
     train_cfg.runner.resume = True
@@ -74,8 +76,8 @@ def play(args):
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, use_estimated_values=True, eval_=True, critic_obs=critic_obs)
-            # rtn = runner.play_act(obs, use_estimated_values=random.random() > 0.6)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, )
+            # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.6, eval_=True)
 
             if type(rtn) is tuple:
                 if len(rtn) == 2:
@@ -86,7 +88,7 @@ def play(args):
                     hmap_refine, edge_refine = recon_refine[:, 0], recon_refine[:, 1]
 
                 # env.draw_hmap(hmap_rough)
-                # env.draw_hmap(hmap_refine)
+                env.draw_hmap(hmap_refine)
                 # env.draw_feet_hmap(est_mu[:, -16-16:-16])  # feet height map estimation
                 # env.draw_body_hmap(est_mu[:, -16:])  # body height map estimation
             else:
@@ -106,7 +108,7 @@ def play(args):
             # actions[env.lookat_id] = (env.ref_dof_pos - env.init_state_dof_pos)[env.lookat_id, env.dof_activated]
             # actions[env.lookat_id] /= env.cfg.control.action_scale
 
-            obs, critic_obs, rewards, dones, _ = env.step(actions)
+            obs, obs_critic, rewards, dones, _ = env.step(actions)
 
             live.update(gen_info_panel(args, env))
 

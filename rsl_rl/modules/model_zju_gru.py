@@ -330,7 +330,7 @@ class EstimatorGRU(nn.Module):
             obs: ActorObs,
             use_estimated_values: Union[bool, torch.Tensor],
             eval_=False,
-            ):  # <-- my mood be like
+            **kwargs):  # <-- my mood be like
 
         # encode history proprio
         latent_obs = self.obs_gru.inference_forward(obs.prop_his)

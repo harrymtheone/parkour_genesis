@@ -75,8 +75,8 @@ class EstimatorGRU(nn.Module):
         # inference forward
         prop_latent = self.prop_his_enc(prop_his.transpose(1, 2))
         depth_latent = self.depth_enc(depth_his)
-
         gru_input = torch.cat((prop_latent, depth_latent), dim=1)
+
         # TODO: transformer here?
         gru_out, self.hidden_states = self.gru(gru_input.unsqueeze(0), self.hidden_states)
         return gru_out.squeeze(0)
@@ -126,10 +126,13 @@ class Policy(nn.Module):
         # inference forward
         priv_out = self.priv_gru.inference_forward(obs_critic.priv, obs_critic.scan, obs_critic.edge_mask)
         est_out = self.estimator_gru.inference_forward(obs.prop_his, obs.depth)
-        gru_out = torch.where(use_estimated_values, est_out, priv_out)
 
-        actor_input = torch.cat([obs.proprio, gru_out], dim=1)
-        mean = self.actor_backbone(actor_input)
+        if type(use_estimated_values) is torch.Tensor:
+            gru_out = torch.where(use_estimated_values, est_out, priv_out)
+        else:
+            gru_out = est_out if use_estimated_values else priv_out
+
+        mean = self.actor_backbone(torch.cat([obs.proprio, gru_out], dim=1))
 
         if eval_:
             return mean
@@ -142,10 +145,10 @@ class Policy(nn.Module):
         est_out = self.estimator_gru(obs.prop_his, obs.depth, hidden_states[1])
         gru_out = torch.where(use_estimated_values, est_out, priv_out)
 
-        actor_input = torch.cat([obs.proprio, gru_out], dim=2)
-        mean = gru_wrapper(self.actor_backbone, actor_input)
-
+        mean = gru_wrapper(self.actor_backbone, torch.cat([obs.proprio, gru_out], dim=2))
         self.distribution = Normal(mean, torch.exp(self.log_std))
+
+        return priv_out, est_out
 
     @property
     def action_mean(self):

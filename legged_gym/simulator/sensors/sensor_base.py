@@ -8,7 +8,7 @@ from legged_gym.utils.math import transform_by_trans_quat, transform_quat_by_qua
 
 
 class SensorBase:
-    def __init__(self, cfg_dict, device, mesh_id):
+    def __init__(self, cfg_dict, device, mesh_id, sim):
         self.cfg_dict = cfg_dict
         self.num_envs = cfg_dict['num_envs']
         self.device = device
@@ -17,7 +17,11 @@ class SensorBase:
         if self.device.type != 'cuda':
             raise ValueError("Only cuda rendering is currently supported!")
 
-        # offset from base
+        # save ID of link attached to
+        self.id_link_attached_to = sim.create_indices(
+            sim.get_full_names([cfg_dict['link_attached_to']], True), True)
+
+        # offset from link attached to
         self.sensor_offset_pos_design = torch.zeros(self.num_envs, 3, dtype=torch.float, device=device)
         self.sensor_offset_quat_design = torch.zeros(self.num_envs, 4, dtype=torch.float, device=device)
         self.sensor_offset_pos = torch.zeros(self.num_envs, 3, dtype=torch.float, device=device)
@@ -34,16 +38,19 @@ class SensorBase:
     def get(self):
         raise NotImplementedError
 
-    def update_sensor_pos(self, root_pos: torch.Tensor, root_quat: torch.Tensor):
+    def update_sensor_pos(self, links_pos: torch.Tensor, links_quat: torch.Tensor):
+        l_pos = links_pos[:, self.id_link_attached_to].squeeze(1)
+        l_quat = links_quat[:, self.id_link_attached_to].squeeze(1)
+
         # update depth camera and convert to voxel grid
         self.sensor_pos_design.assign(wp.from_torch(
-            transform_by_trans_quat(self.sensor_offset_pos_design, root_pos, root_quat), dtype=wp.vec3f))
+            transform_by_trans_quat(self.sensor_offset_pos_design, l_pos, l_quat), dtype=wp.vec3f))
         self.sensor_quat_design.assign(wp.from_torch(
-            transform_quat_by_quat(self.sensor_offset_quat_design, root_quat), dtype=wp.quatf))
+            transform_quat_by_quat(self.sensor_offset_quat_design, l_quat), dtype=wp.quatf))
         self.sensor_pos.assign(wp.from_torch(
-            transform_by_trans_quat(self.sensor_offset_pos, root_pos, root_quat), dtype=wp.vec3f))
+            transform_by_trans_quat(self.sensor_offset_pos, l_pos, l_quat), dtype=wp.vec3f))
         self.sensor_quat.assign(wp.from_torch(
-            transform_quat_by_quat(self.sensor_offset_quat, root_quat), dtype=wp.quatf))
+            transform_quat_by_quat(self.sensor_offset_quat, l_quat), dtype=wp.quatf))
 
     def launch_kernel(self):
         raise NotImplementedError

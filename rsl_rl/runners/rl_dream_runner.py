@@ -118,16 +118,7 @@ class RLDreamRunner:
             torch.cuda.synchronize()
             learn_time = time.time() - start
 
-            # self.env.update_phase_enabled(linear_change(1., 0., 2000, 0, self.cur_it))
-
-            # self.env.reward_scales['orientation'] = linear_change(-1.0 * 3, -1.0, 1000, 500, self.cur_it)
-            # self.env.reward_scales['base_height'] = linear_change(-1.0 * 3, -1.0, 1000, 500, self.cur_it)
-            # self.env.reward_scales['dof_error'] = linear_change(-0.04 * 10, -0.04, 1000, 500, self.cur_it)
-
             self.env.update_reward_curriculum(self.cur_it)
-
-            # if self.cur_it > 5000:
-            #     self.env.cfg.domain_rand.push_robots = True
 
             if self.log_dir is not None:
                 self.log(locals())

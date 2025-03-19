@@ -26,7 +26,7 @@ class SensorManager:
         if device.type == 'cuda':
             self._init_warp_kernel()
 
-    def update(self, step_counter, root_pos, root_quat, reset_flag):
+    def update(self, step_counter, links_pos, links_quat, reset_flag):
         if self.device.type == 'cpu':
             # IsaacGym builtin sensors
             if step_counter % self.depth_update_interval == 0:
@@ -43,7 +43,7 @@ class SensorManager:
             def _update(interval, sensors, graph):
                 if step_counter % interval == 0:
                     for s in sensors:
-                        s.update_sensor_pos(root_pos, root_quat)
+                        s.update_sensor_pos(links_pos, links_quat)
 
                     wp.capture_launch(graph)
 
@@ -88,11 +88,11 @@ class SensorManager:
 
         for sensor_name in cfg_dict:
             if sensor_name.startswith('depth') and self.device.type == 'cpu':
-                from .isaacgym_depth_cam import IsaacGymDepthCam
-                self.depth_sensors[sensor_name] = IsaacGymDepthCam(cfg_dict[sensor_name], self.device, self.simulator)
+                from .depth_cam_isaacgym import DepthCamIsaacGym
+                self.depth_sensors[sensor_name] = DepthCamIsaacGym(cfg_dict[sensor_name], self.device, self.simulator)
 
             elif sensor_name.startswith('depth') and self.device.type == 'cuda':
-                self.depth_sensors[sensor_name] = DepthCam(cfg_dict[sensor_name], self.device, self.meshes.id)
+                self.depth_sensors[sensor_name] = DepthCam(cfg_dict[sensor_name], self.device, self.meshes.id, self.simulator)
 
             elif sensor_name.startswith('lidar'):
                 raise NotImplementedError
