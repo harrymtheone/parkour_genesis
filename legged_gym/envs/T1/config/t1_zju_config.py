@@ -5,7 +5,7 @@ from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 class T1ZJUCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
-        num_envs = 4096  # 6144
+        num_envs = 2048  # 6144
 
         n_proprio = 50
         len_prop_his = 10
@@ -24,11 +24,13 @@ class T1ZJUCfg(T1BaseCfg):
         activated = True
 
         class depth_0:
-            position = [0.15, 0, 0.38]  # front camera
+            link_attached_to = 'Waist'
+            position = [0.1, 0, 0.]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-            pitch = 60  # positive is looking down
+            pitch = 30  # positive is looking down
             pitch_range = [-1, 1]
 
+            data_format = 'depth'  # depth, cloud
             update_interval = 5  # 5 works without retraining, 8 worse
             delay_prop = (5, 1)  # Gaussian (mean, std)
 
@@ -41,17 +43,40 @@ class T1ZJUCfg(T1BaseCfg):
             dis_noise_global = 0.01  # in meters
             dis_noise_gaussian = 0.01  # in meters
 
-    class terrain(T1BaseCfg.terrain):
-        num_rows = 20  # number of terrain rows (levels)   spreaded is beneficial !
-        num_cols = 12  # number of terrain cols (types)
+    class commands:
+        num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+        resampling_time = 8.  # time before command are changed[s]
 
-        curriculum = False
+        lin_vel_clip = 0.1
+        ang_vel_clip = 0.2
+        parkour_vel_tolerance = 0.3
+
+        sw_switch = True
+
+        class flat_ranges:
+            lin_vel_x = [-1.0, 1.0]
+            lin_vel_y = [-0.4, 0.4]
+            ang_vel_yaw = [-1., 1.]
+
+        class stair_ranges:
+            lin_vel_x = [0.6, 1.5]
+            lin_vel_y = [-0.5, 0.5]
+            ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
+            heading = [-1.5, 1.5]
+
+        class parkour_ranges:
+            lin_vel_x = [0.8, 1.2]  # min value should be greater than lin_vel_clip
+            ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
+
+    class terrain(T1BaseCfg.terrain):
+        num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
+        num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 1,
-            'stairs_up': 1,
-            'stairs_down': 1,
+            'rough_slope': 2,
+            'stairs_up': 0,
+            'stairs_down': 0,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -60,7 +85,7 @@ class T1ZJUCfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 6,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 
@@ -132,15 +157,13 @@ class T1ZJUCfg(T1BaseCfg):
             # contact
             feet_contact_forces = -0.01
             feet_stumble = -1.0
-            feet_edge = -1.0
+            feet_edge = -3.0
 
             # vel tracking
-            tracking_lin_vel = 1.2
-            tracking_goal_vel = 1.5
+            tracking_lin_vel = 2.0
+            tracking_goal_vel = 3.0
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
-            low_speed = 0.2
-            track_vel_hard = 0.5
 
             # base pos
             default_joint_pos = 0.5
@@ -170,6 +193,7 @@ class T1ZJUCfgPPO(T1BaseCfgPPO):
         critic_hidden_dims = [512, 256, 128]
 
         use_recurrent_policy = True
+        enable_reconstructor = False
 
         obs_gru_hidden_size = 64
         recon_gru_hidden_size = 256
@@ -178,6 +202,7 @@ class T1ZJUCfgPPO(T1BaseCfgPPO):
         len_base_vel = 3
         len_latent_feet = 8
         len_latent_body = 16
+        len_base_height = 0
         transformer_embed_dim = 64
 
     class algorithm:

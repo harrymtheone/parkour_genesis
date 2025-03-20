@@ -204,7 +204,11 @@ class LocoTransformer(nn.Module):
         obs_gru_hidden_size = policy_cfg.obs_gru_hidden_size
         transformer_embed_dim = policy_cfg.transformer_embed_dim
         self.len_latent = policy_cfg.len_latent
-        vae_output_dim = policy_cfg.len_latent + policy_cfg.len_base_vel + policy_cfg.len_latent_feet + policy_cfg.len_latent_body
+        vae_output_dim = (policy_cfg.len_latent
+                          + policy_cfg.len_base_vel
+                          + policy_cfg.len_latent_feet
+                          + policy_cfg.len_latent_body
+                          + policy_cfg.len_base_height)
 
         # patch embedding
         self.cnn_scan = nn.Conv2d(in_channels=2, out_channels=transformer_embed_dim, kernel_size=4, stride=4)
@@ -286,20 +290,14 @@ class LocoTransformer(nn.Module):
         return eps * std + mu
 
 
-class PrivMixer(nn.Module):
-    # A replacement of Transformer, using purely Linear layers
-
-    def __init__(self, env_cfg, policy_cfg):
-        super().__init__()
-
-    def forward(self, scan, latent_obs):
-        pass
-
-
 class Actor(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        vae_output_dim = policy_cfg.len_latent + policy_cfg.len_base_vel + policy_cfg.len_latent_feet + policy_cfg.len_latent_body
+        vae_output_dim = (policy_cfg.len_latent
+                          + policy_cfg.len_base_vel
+                          + policy_cfg.len_latent_feet
+                          + policy_cfg.len_latent_body
+                          + policy_cfg.len_base_height)
 
         self.actor = make_linear_layers(env_cfg.n_proprio + vae_output_dim,
                                         *policy_cfg.actor_hidden_dims,
@@ -311,6 +309,112 @@ class Actor(nn.Module):
         return self.actor(torch.cat([obs, priv], dim=1))
 
 
+class EstimatorNoRecon(nn.Module):
+    is_recurrent = True
+    from legged_gym.envs.T1.t1_zju_environment import ActorObs
+
+    def __init__(self, env_cfg, policy_cfg):
+        super().__init__()
+        self.obs_gru = ObsGRU(env_cfg, policy_cfg)
+        self.reconstructor = ReconGRU(env_cfg, policy_cfg)
+        self.transformer = LocoTransformer(env_cfg, policy_cfg)
+        self.actor = Actor(env_cfg, policy_cfg)
+
+        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
+        self.distribution = None
+
+    def act(self,
+            obs: ActorObs,
+            use_estimated_values: Union[bool, torch.Tensor],
+            eval_=False,
+            **kwargs):  # <-- my mood be like
+
+        # encode history proprio
+        latent_obs = self.obs_gru.inference_forward(obs.prop_his)
+
+        # cross-model mixing using transformer
+        if type(use_estimated_values) is torch.Tensor:
+            est_latent, est, _, _ = self.transformer(obs.scan, latent_obs)
+            latent_input = torch.where(
+                use_estimated_values,
+                torch.cat([est_latent, est.detach()], dim=1),
+                torch.cat([est_latent, obs.priv_actor], dim=1)
+            )
+        elif use_estimated_values:
+            est_latent, est, _, _ = self.transformer(obs.scan, latent_obs)
+            latent_input = torch.cat([est_latent, est.detach()], dim=1)
+        else:
+            est_latent, _, _, _ = self.transformer(obs.scan, latent_obs)
+            latent_input = torch.cat([est_latent, obs.priv_actor], dim=1)
+
+        # compute action
+        mean = self.actor(obs.proprio, latent_input)
+
+        # output action
+        if eval_:
+            return mean
+        else:
+            # sample action from distribution
+            self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+            return self.distribution.sample()
+
+    def train_act(
+            self,
+            obs: ActorObs,
+            hidden_states,
+            use_estimated_values: torch.Tensor,
+    ):  # <-- my mood be like
+
+        # encode history proprio
+        obs_enc_hidden_states, _ = hidden_states
+        latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden_states)
+
+        # cross-model mixing using transformer
+        est_latent, est, _, _ = gru_wrapper(self.transformer.forward, obs.scan, latent_obs)
+        latent_input = torch.where(
+            use_estimated_values,
+            torch.cat([est_latent, est.detach()], dim=2),
+            torch.cat([est_latent, obs.priv_actor], dim=2)
+        )
+
+        # compute action
+        mean = gru_wrapper(self.actor.forward, obs.proprio, latent_input)
+
+        # output action
+        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+
+    def reconstruct(self, obs, obs_enc_hidden, *args):
+        # encode history proprio
+        latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden)
+        est_latent, est, est_logvar, ot1 = gru_wrapper(self.transformer.forward, obs.scan, latent_obs)
+        return None, None, est_latent, est, est_logvar, ot1
+
+    def get_actions_log_prob(self, actions):
+        return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
+
+    @property
+    def action_mean(self):
+        return self.distribution.mean
+
+    @property
+    def action_std(self):
+        return self.distribution.stddev
+
+    @property
+    def entropy(self):
+        return self.distribution.entropy().sum(dim=-1)
+
+    def reset_std(self, std, device):
+        new_log_std = torch.log(std * torch.ones_like(self.std.data, device=device))
+        self.log_std.data = new_log_std.data
+
+    def get_hidden_state(self):
+        return (self.obs_gru.get_hidden_state(),)
+
+    def reset(self, dones):
+        self.obs_gru.reset(dones)
+
+
 class EstimatorGRU(nn.Module):
     is_recurrent = True
     from legged_gym.envs.T1.t1_zju_environment import ActorObs
@@ -320,7 +424,6 @@ class EstimatorGRU(nn.Module):
         self.obs_gru = ObsGRU(env_cfg, policy_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
         self.transformer = LocoTransformer(env_cfg, policy_cfg)
-        # self.transformer = PrivMixer(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
@@ -341,12 +444,12 @@ class EstimatorGRU(nn.Module):
 
         # cross-model mixing using transformer
         if type(use_estimated_values) is torch.Tensor:
-            recon_input = torch.where(
+            recon_output = torch.where(
                 use_estimated_values.unsqueeze(-1).unsqueeze(-1),
                 recon_refine,
                 obs.scan
             )
-            est_latent, est, _, _ = self.transformer(recon_input, latent_obs)
+            est_latent, est, _, _ = self.transformer(recon_output, latent_obs)
             latent_input = torch.where(
                 use_estimated_values,
                 torch.cat([est_latent, est.detach()], dim=1),

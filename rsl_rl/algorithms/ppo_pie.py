@@ -256,17 +256,18 @@ class PPO_PIE(BaseAlgorithm):
             vae_loss = -0.5 * vae_loss[mask_batch].sum(dim=1).mean()
 
             # reconstructor loss
-            recon_loss = self.l1_loss(recon[mask_batch], obs_batch.scan.flatten(2)[mask_batch])
+            recon_loss = self.l1_loss(recon[mask_batch], critic_obs_batch.scan.flatten(2)[mask_batch])
 
-            # Symmetry loss
-            obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
-            self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states_batch)
+            # # Symmetry loss
+            # obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
+            # self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states_batch)
+            #
+            # action_mean_original = action_mean_original[:batch_size]
+            # mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
+            # symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
 
-            action_mean_original = action_mean_original[:batch_size]
-            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
-
-        return kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, symmetry_loss
+        # return kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, symmetry_loss
+        return kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, 0.
 
     def play_act(self, obs, **kwargs):
         return self.actor.act(obs, eval_=True)

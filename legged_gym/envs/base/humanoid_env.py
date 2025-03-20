@@ -133,7 +133,7 @@ class HumanoidEnv(ParkourTask):
         diff = torch.norm(diff[:, self.dof_activated], dim=1)
 
         rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
-        rew[self.env_class == 12] *= 0.1
+        rew[self.env_class == 2] *= 0.5
         return rew
 
     def _reward_feet_contact_number(self):
@@ -142,7 +142,7 @@ class HumanoidEnv(ParkourTask):
         Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
         """
         rew = torch.where(self.contact_filt == self._get_stance_mask(), 1, -0.3)
-        rew[self.env_class == 12] *= 0.1
+        rew[self.env_class == 2] *= 0.5
         return torch.mean(rew, dim=1)
 
     def _reward_feet_clearance(self):
@@ -405,8 +405,9 @@ class HumanoidEnv(ParkourTask):
 
     def _reward_feet_rotation(self):
         rew = -torch.sum(self.feet_euler_xyz[..., :2].square(), dim=2)
-        feet_height_factor = 1 - torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, 0, 1)
-        return torch.exp(torch.sum(rew * feet_height_factor, dim=1) * self.cfg.rewards.tracking_sigma)
+        # feet_height_factor = 1 - torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, 0, 1)
+        # return torch.exp(torch.sum(rew * feet_height_factor, dim=1) * self.cfg.rewards.tracking_sigma)
+        return torch.exp(torch.sum(rew, dim=1) * self.cfg.rewards.tracking_sigma)
 
     def _reward_feet_stumble(self):
         # Penalize feet hitting vertical surfaces

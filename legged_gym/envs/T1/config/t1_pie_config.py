@@ -24,11 +24,16 @@ class T1PIECfg(T1BaseCfg):
         activated = True
 
         class depth_0:
-            position = [0.15, 0, 0.38]  # front camera
+            # link_attached_to = 'Trunk'
+            # position = [0.15, 0, 0.38]  # front camera
+            link_attached_to = 'Waist'
+            position = [0.1, 0, 0.]  # front camera
+
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-            pitch = 60  # positive is looking down
+            pitch = 30  # positive is looking down
             pitch_range = [-1, 1]
 
+            data_format = 'depth'  # depth, cloud
             update_interval = 5  # 5 works without retraining, 8 worse
             delay_prop = (5, 1)  # Gaussian (mean, std)
 

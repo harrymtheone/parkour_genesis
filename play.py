@@ -29,12 +29,12 @@ def play(args):
 
     # override some parameters for testing
     env_cfg.play.control = False
-    env_cfg.env.num_envs = 1
+    env_cfg.env.num_envs = 3
     env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
     env_cfg.terrain.num_rows = 5
+    env_cfg.terrain.max_init_terrain_level = 4
     env_cfg.terrain.curriculum = True
     # env_cfg.terrain.max_difficulty = True
-    env_cfg.terrain.max_init_terrain_level = 4
     # env_cfg.asset.disable_gravity = True
 
     # env_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
@@ -77,7 +77,7 @@ def play(args):
             time_start = time.time()
 
             rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, )
-            # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.6, eval_=True)
+            # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
 
             if type(rtn) is tuple:
                 if len(rtn) == 2:
@@ -89,12 +89,13 @@ def play(args):
 
                 # env.draw_hmap(hmap_rough)
                 env.draw_hmap(hmap_refine)
+                # env.draw_body_edge(edge_refine)
                 # env.draw_feet_hmap(est_mu[:, -16-16:-16])  # feet height map estimation
                 # env.draw_body_hmap(est_mu[:, -16:])  # body height map estimation
             else:
                 actions = rtn
 
-            # env.draw_hmap(obs.scan)
+            # env.draw_hmap(obs.scan[:, 0])
             # env.draw_body_edge(critic_obs.base_edge_mask)
             # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
 

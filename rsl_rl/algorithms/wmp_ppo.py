@@ -8,7 +8,7 @@ from rsl_rl.modules.model_zju_gru import EstimatorGRU
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from .alg_base import BaseAlgorithm
 
-from rsl_rl.modules.dreamer.models import WorldModel
+from rsl_rl.modules.dreamer.world_model import WorldModel
 
 try:
     from torch.amp import GradScaler

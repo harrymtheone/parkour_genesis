@@ -119,15 +119,23 @@ class T1ZJUEnvironment(T1BaseEnv):
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
             self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
+            # self.base_height.unsqueeze(1)
         ), dim=-1)
 
         # compute height map
-        scan = torch.clip(self.sim.root_pos[:, 2].unsqueeze(1) - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        # scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.base_height.unsqueeze(1), -1, 1.)
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
+        scan_edge = torch.stack([scan, self.get_edge_mask().float()], dim=1)
 
         # compose actor observation
-        scan_edge = torch.stack([scan, self.get_edge_mask().float()], dim=1)
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan_edge)
+        self.actor_obs = ActorObs(
+            proprio,
+            self.prop_his_buf.get(),
+            self.sensors.get('depth_0').squeeze(2),
+            priv_actor_obs,
+            scan_edge
+        )
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer

@@ -123,6 +123,11 @@ class RLDreamRunner:
             if self.log_dir is not None:
                 self.log(locals())
 
+            print(f'time_train_act, {sum(self.alg.time_train_act)}')
+            print(f'time_back, {sum(self.alg.time_back)}')
+            self.alg.time_train_act.clear()
+            self.alg.time_back.clear()
+
             if self.cur_it % self.save_interval == 0:
                 self.save(os.path.join(self.log_dir, f'model_{self.cur_it}.pt'))
             self.save(os.path.join(self.log_dir, 'latest.pt'))

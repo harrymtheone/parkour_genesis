@@ -32,12 +32,12 @@ class ActorGRU(nn.Module):
         # disable args validation for speedup
         Normal.set_default_validate_args = False
 
-    def act(self, obs, obs_critic, eval_=False, **kwargs):
+    def act(self, obs, eval_=False, **kwargs):
         # inference forward
-        obs_enc, self.hidden_states = self.gru(obs_critic.priv.unsqueeze(0), self.hidden_states)
-        scan_enc = self.scan_enc(obs_critic.scan.flatten(1))
-        edge_enc = self.edge_mask_enc(obs_critic.edge_mask.flatten(1))
-        actor_input = torch.cat([obs_critic.priv, obs_enc.squeeze(0), scan_enc, edge_enc], dim=1)
+        obs_enc, self.hidden_states = self.gru(obs.priv.unsqueeze(0), self.hidden_states)
+        scan_enc = self.scan_enc(obs.scan.flatten(1))
+        edge_enc = self.edge_mask_enc(obs.edge_mask.flatten(1))
+        actor_input = torch.cat([obs.priv, obs_enc.squeeze(0), scan_enc, edge_enc], dim=1)
         mean = self.actor_backbone(actor_input)
 
         if eval_:
@@ -46,7 +46,7 @@ class ActorGRU(nn.Module):
         self.distribution = Normal(mean, torch.exp(self.log_std))
         return self.distribution.sample()
 
-    def train_act(self, obs, obs_critic, hidden_states, **kwargs):
+    def train_act(self, obs_critic, hidden_states, **kwargs):
         obs_enc, _ = self.gru(obs_critic.priv, hidden_states)
         scan_enc = gru_wrapper(self.scan_enc, obs_critic.scan.flatten(2))
         edge_enc = gru_wrapper(self.edge_mask_enc, obs_critic.edge_mask.flatten(2))

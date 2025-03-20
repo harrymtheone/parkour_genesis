@@ -1,10 +1,12 @@
+import time
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.model_zju import Critic
-from rsl_rl.modules.model_zju_gru import EstimatorGRU
+from rsl_rl.modules.model_zju_gru import EstimatorNoRecon, EstimatorGRU
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from .alg_base import BaseAlgorithm
 
@@ -15,12 +17,13 @@ except ImportError:
 
 
 class Transition:
-    def __init__(self):
+    def __init__(self, enable_reconstructor):
         self.observations = None
         self.critic_observations = None
         self.obs_enc_hidden_states = None
-        self.recon_hidden_states = None
-        self.observations_next = None
+        if enable_reconstructor:
+            self.recon_hidden_states = None
+            self.observations_next = None
         self.actions = None
         self.rewards = None
         self.dones = None
@@ -46,13 +49,19 @@ class PPO_ZJU(BaseAlgorithm):
         self.cfg = train_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate
         self.device = device
+        self.enable_reconstructor = train_cfg.policy.enable_reconstructor
 
         # PPO component
-        self.actor = EstimatorGRU(env_cfg, train_cfg.policy).to(self.device)
+        if self.enable_reconstructor:
+            self.actor = EstimatorGRU(env_cfg, train_cfg.policy).to(self.device)
+        else:
+            self.actor = EstimatorNoRecon(env_cfg, train_cfg.policy).to(self.device)
+
         # if train_cfg.policy.use_recurrent_policy:
         #     self.actor = EstimatorGRU(env_cfg, train_cfg.policy).to(self.device)
         # else:
         #     self.actor = Estimator(env_cfg, train_cfg).to(self.device)
+
         self.critic = Critic(env_cfg, train_cfg).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
@@ -62,7 +71,7 @@ class PPO_ZJU(BaseAlgorithm):
         self.l1_loss = nn.L1Loss()
 
         # Rollout Storage
-        self.transition = Transition()
+        self.transition = Transition(self.enable_reconstructor)
         self.storage = RolloutStorage(env_cfg.num_envs, train_cfg.runner.num_steps_per_env, self.device)
 
     def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
@@ -71,7 +80,10 @@ class PPO_ZJU(BaseAlgorithm):
             self.transition.observations = obs
             self.transition.critic_observations = obs_critic
             if self.actor.is_recurrent:
-                self.transition.obs_enc_hidden_states, self.transition.recon_hidden_states = self.actor.get_hidden_state()
+                hidden = self.actor.get_hidden_state()
+                self.transition.obs_enc_hidden_states = hidden[0]
+                if self.enable_reconstructor:
+                    self.transition.recon_hidden_states = hidden[1]
 
             actions = self.actor.act(obs, use_estimated_values=use_estimated_values)
 
@@ -79,7 +91,8 @@ class PPO_ZJU(BaseAlgorithm):
                 # only for the first step where hidden_state is None
                 hidden = self.actor.get_hidden_state()
                 self.transition.obs_enc_hidden_states = 0 * hidden[0]
-                self.transition.recon_hidden_states = 0 * hidden[1]
+                if self.enable_reconstructor:
+                    self.transition.recon_hidden_states = 0 * hidden[1]
 
             # store
             self.transition.actions = actions
@@ -91,7 +104,8 @@ class PPO_ZJU(BaseAlgorithm):
             return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
-        self.transition.observations_next = args[0].as_obs_next()
+        if self.enable_reconstructor:
+            self.transition.observations_next = args[0].as_obs_next()
         self.transition.rewards = rewards.clone().unsqueeze(1)
         self.transition.dones = dones.unsqueeze(1)
 
@@ -115,8 +129,9 @@ class PPO_ZJU(BaseAlgorithm):
         self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
     def update(self, cur_it=0, **kwargs):
-        update_est = (cur_it > 5000) and cur_it % 5 == 0
-        
+        # update_est = cur_it % 5 == 0
+        update_est = True and self.enable_reconstructor
+
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
@@ -191,12 +206,13 @@ class PPO_ZJU(BaseAlgorithm):
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
-        mean_estimation_loss /= num_updates
-        mean_prediction_loss /= num_updates
-        mean_vae_loss /= num_updates
-        mean_recon_rough_loss /= num_updates
-        mean_recon_refine_loss /= num_updates
-        mean_symmetry_loss /= num_updates
+        if update_est:
+            mean_estimation_loss /= num_updates
+            mean_prediction_loss /= num_updates
+            mean_vae_loss /= num_updates
+            mean_recon_rough_loss /= num_updates
+            mean_recon_refine_loss /= num_updates
+            mean_symmetry_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -211,13 +227,19 @@ class PPO_ZJU(BaseAlgorithm):
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
-            'Loss/estimation_loss': mean_estimation_loss,
-            'Loss/Ot+1 prediction_loss': mean_prediction_loss,
-            'Loss/VAE_loss': mean_vae_loss,
-            'Loss/recon_rough_loss': mean_recon_rough_loss,
-            'Loss/recon_refine_loss': mean_recon_refine_loss,
-            'Loss/symmetry_loss': mean_symmetry_loss,
+
         }
+
+        if update_est:
+            return_dict.update({
+                'Loss/estimation_loss': mean_estimation_loss,
+                'Loss/Ot+1 prediction_loss': mean_prediction_loss,
+                'Loss/VAE_loss': mean_vae_loss,
+                'Loss/recon_rough_loss': mean_recon_rough_loss,
+                'Loss/recon_refine_loss': mean_recon_refine_loss,
+                'Loss/symmetry_loss': mean_symmetry_loss,
+            })
+
         return return_dict
 
     @torch.compile
@@ -226,7 +248,7 @@ class PPO_ZJU(BaseAlgorithm):
             obs_batch = batch['observations']
             critic_obs_batch = batch['critic_observations']
             obs_enc_hidden_states_batch = batch['obs_enc_hidden_states']
-            recon_hidden_states_batch = batch['recon_hidden_states']
+            recon_hidden_states_batch = batch['recon_hidden_states'] if self.enable_reconstructor else None
             mask_batch = batch['masks'].squeeze()
             actions_batch = batch['actions']
             target_values_batch = batch['values']
@@ -292,19 +314,19 @@ class PPO_ZJU(BaseAlgorithm):
             recon_rough_loss = self.mse_loss(recon_rough[mask_batch], scan)
             recon_refine_loss = self.l1_loss(recon_refine[mask_batch], scan)
 
-        #     # Symmetry loss
-        #     obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
-        #     self.actor.train_act(
-        #         obs_mirrored_batch,
-        #         hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
-        #         use_estimated_values=use_estimated_values_batch
-        #     )
-        #
-        #     mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-        #     symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
-        #
-        # return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss
-        return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, 0.
+            # Symmetry loss
+            obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
+            self.actor.train_act(
+                obs_mirrored_batch,
+                hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
+                use_estimated_values=use_estimated_values_batch
+            )
+
+            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
+            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+
+        return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss
+        # return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, 0.
 
     def play_act(self, obs, **kwargs):
         return self.actor.act(obs, **kwargs)
