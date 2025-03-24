@@ -1,10 +1,9 @@
-import random
-
 try:
     import isaacgym, torch
 except ImportError:
     import torch
 
+import random
 import time
 
 from rich.live import Live
