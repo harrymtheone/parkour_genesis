@@ -270,8 +270,8 @@ class Terrain:
             terrain.terrain_type = Terrain.terrain_type.parkour_stair
             parkour_stair_terrain(terrain,
                                   step_height=step_height_goal,
-                                  # step_width=random.uniform(0.25, 0.35))  # 0.31
-                                  step_width=0.31)  # 0.31
+                                  step_width=random.uniform(0.25, 0.35))  # 0.31
+                                  # step_width=0.31)  # 0.31
             terrain.centered_origin = False
             # self.add_roughness(terrain, difficulty)
 

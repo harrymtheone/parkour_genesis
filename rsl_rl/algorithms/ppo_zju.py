@@ -129,9 +129,10 @@ class PPO_ZJU(BaseAlgorithm):
         self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
     def update(self, cur_it=0, **kwargs):
-        # update_est = cur_it % 5 == 0
-        update_est = True and self.enable_reconstructor
+        update_est = cur_it % 5 == 0
+        update_est = True
 
+        update_est &= self.enable_reconstructor
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
@@ -288,7 +289,7 @@ class PPO_ZJU(BaseAlgorithm):
     @torch.compile
     def _compute_estimation_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            batch_size = 2
+            batch_size = 4
 
             obs_batch = batch['observations'][:batch_size]
             obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'][:batch_size].contiguous()

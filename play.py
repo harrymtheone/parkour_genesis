@@ -48,7 +48,7 @@ def play(args):
     env_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
         'rough_slope': 0,
-        'stairs_up': 0,
+        'stairs_up': 1,
         'stairs_down': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -76,7 +76,7 @@ def play(args):
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, )
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
 
             if type(rtn) is tuple:

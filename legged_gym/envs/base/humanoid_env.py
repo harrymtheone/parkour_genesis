@@ -1,3 +1,4 @@
+import math
 import torch
 
 from legged_gym.envs.base.parkour_task import ParkourTask
@@ -221,7 +222,7 @@ class HumanoidEnv(ParkourTask):
             torch.exp(-lin_vel_error_square * self.cfg.rewards.tracking_sigma)
         )
 
-        rew[self.env_class >= 4] = 0.
+        rew[self.env_class >= 2] = 0.
         return rew
 
     def _reward_tracking_goal_vel(self):
@@ -229,13 +230,31 @@ class HumanoidEnv(ParkourTask):
         Tracks linear velocity commands along the xy axes.
         Calculates a reward based on how closely the robot's linear velocity matches the commanded values.
         """
-        lin_vel_upper_bound = torch.where(self.commands[:, :2] < 0, 1e5, self.commands[:, :2] + self.cfg.commands.parkour_vel_tolerance)
-        lin_vel_lower_bound = torch.where(self.commands[:, :2] > 0, -1e5, self.commands[:, :2] - self.cfg.commands.parkour_vel_tolerance)
-        clip_lin_vel = torch.clip(self.base_lin_vel[:, :2], lin_vel_lower_bound, lin_vel_upper_bound)
-        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - clip_lin_vel), dim=1)
+        # lin_vel_upper_bound = torch.where(self.commands[:, :2] < 0, 1e5, self.commands[:, :2] + self.cfg.commands.parkour_vel_tolerance)
+        # lin_vel_lower_bound = torch.where(self.commands[:, :2] > 0, -1e5, self.commands[:, :2] - self.cfg.commands.parkour_vel_tolerance)
+        # clip_lin_vel = torch.clip(self.base_lin_vel[:, :2], lin_vel_lower_bound, lin_vel_upper_bound)
+        # lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - clip_lin_vel), dim=1)
+        #
+        # rew = torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
+        # rew[self.env_class < 4] = 0.
+        # return rew
 
-        rew = torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
-        rew[self.env_class < 4] = 0.
+        cmd_vel_norm = torch.norm(self.commands[:, :2], dim=1)
+        root_lin_vel_projection = torch.norm(self.sim.root_lin_vel[:, :2], dim=1) * torch.cos(self.delta_yaw)
+
+        lin_vel_error = torch.where(
+            self.env_class < 4,
+            torch.norm(self.commands[:, :2] - self.base_lin_vel[:, :2], dim=1),  # pyramid stair
+            torch.abs(cmd_vel_norm - root_lin_vel_projection)  # parkour terrain
+        )
+
+        rew = torch.where(
+            lin_vel_error < self.cfg.commands.parkour_vel_tolerance,
+            torch.exp(-lin_vel_error * 0.3),
+            torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma) - 1 + math.exp(-self.cfg.commands.parkour_vel_tolerance * 0.3)
+        )
+
+        rew[self.env_class < 2] = 0.
         return rew
 
     def _reward_tracking_ang_vel(self):

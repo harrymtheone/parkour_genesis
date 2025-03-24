@@ -632,11 +632,13 @@ class BaseTask:
 
     def _compute_reward(self):
         self.rew_buf[:] = 0.
+        self.extras['rew_elements'] = {}
 
         for i, name in enumerate(self._reward_names):
             rew = self._reward_functions[i]() * self.reward_scales[name] * self.dt
             self.rew_buf[:] += rew
             self.episode_sums[name][:] += rew
+            self.extras['rew_elements'][name] = rew
 
         if self.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf, min=0.)

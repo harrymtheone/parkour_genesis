@@ -5,7 +5,7 @@ from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 class T1ZJUCfg(T1BaseCfg):
     class env(T1BaseCfg.env):
-        num_envs = 2048  # 6144
+        num_envs = 4096  # 6144
 
         n_proprio = 50
         len_prop_his = 10
@@ -59,13 +59,14 @@ class T1ZJUCfg(T1BaseCfg):
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [0.6, 1.5]
-            lin_vel_y = [-0.5, 0.5]
+            lin_vel_x = [0.6, 1.2]
+            lin_vel_y = [-0.5, 0.2]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.8, 1.2]  # min value should be greater than lin_vel_clip
+            # lin_vel_x = [0.4, 0.6]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.5, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
@@ -74,9 +75,9 @@ class T1ZJUCfg(T1BaseCfg):
 
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 2,
-            'stairs_up': 0,
-            'stairs_down': 0,
+            'rough_slope': 1,
+            'stairs_up': 1,
+            'stairs_down': 1,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -85,7 +86,7 @@ class T1ZJUCfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 6,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 1,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 
@@ -137,7 +138,7 @@ class T1ZJUCfg(T1BaseCfg):
         cycle_time = 0.7  # 0.64
         target_joint_pos_scale = 0.3  # 0.19
 
-        min_dist = 0.2
+        min_dist = 0.25
         max_dist = 0.50
         max_contact_force = 300
 
@@ -162,7 +163,7 @@ class T1ZJUCfg(T1BaseCfg):
             # vel tracking
             tracking_lin_vel = 2.0
             tracking_goal_vel = 3.0
-            tracking_ang_vel = 1.1
+            tracking_ang_vel = 2.5
             vel_mismatch_exp = 0.5
 
             # base pos
@@ -211,8 +212,8 @@ class T1ZJUCfgPPO(T1BaseCfgPPO):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 10
-        num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
+        num_learning_epochs = 4
+        num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
         gamma = 0.99
@@ -224,7 +225,7 @@ class T1ZJUCfgPPO(T1BaseCfgPPO):
         continue_from_last_std = True
 
     class runner(T1BaseCfgPPO.runner):
-        max_iterations = 50000  # number of policy updates
+        max_iterations = 3000  # number of policy updates
 
         # logging
         save_interval = 100  # check for potential saves every this many iterations

@@ -32,25 +32,58 @@
 # plt.show()
 
 
-import numpy as np
+# import numpy as np
+# import matplotlib.pyplot as plt
+#
+# # Define reward function parameters
+# tracking_sigma = 2.0  # Example value for self.cfg.rewards.tracking_sigma
+# v_cmd_xy = 0.5  # Fixed commanded velocity (m/s)
+#
+# # Generate actual velocity values
+# v_xy = np.linspace(0, 1.5, 100)
+#
+# # Compute velocity error based on the minimum condition in the reward function
+# vel_err = np.minimum(v_xy, v_cmd_xy + 0.1) - v_cmd_xy
+#
+# # Compute reward values
+# reward = np.exp(-vel_err**2 * tracking_sigma)
+#
+# # Plot the reward function
+# plt.figure(figsize=(6, 4))
+# plt.plot(v_xy, reward, label=r'$e^{-\sigma (\text{vel\_err})^2}$', color='b')
+# plt.axvline(x=v_cmd_xy, linestyle="--", color="red", label="Commanded velocity")
+# plt.axvline(x=v_cmd_xy + 0.1, linestyle="--", color="green", label="Upper threshold")
+# plt.show()
+
+import torch
+import math
 import matplotlib.pyplot as plt
 
-# Define reward function parameters
-tracking_sigma = 10  # Example value for self.cfg.rewards.tracking_sigma
-v_cmd_xy = 0.5  # Fixed commanded velocity (m/s)
+# Define parameters
+parkour_vel_tolerance = 0.3  # Example value
+tracking_sigma = 5  # Example value
 
-# Generate actual velocity values
-v_xy = np.linspace(0, 1.5, 100)
+# Define lin_vel_error range
+lin_vel_error = torch.linspace(0, 1.5, 100)  # Adjust range as needed
 
-# Compute velocity error based on the minimum condition in the reward function
-vel_err = np.minimum(v_xy, v_cmd_xy + 0.1) - v_cmd_xy
+# Compute reward function
+rew = torch.where(
+    lin_vel_error < parkour_vel_tolerance,
+    torch.exp(-lin_vel_error * 0.3),
+    torch.exp(-(lin_vel_error - parkour_vel_tolerance) * tracking_sigma) - 1 + math.exp(-parkour_vel_tolerance * 0.3)
+)
 
-# Compute reward values
-reward = np.exp(-vel_err**2 * tracking_sigma)
+# Convert to numpy for plotting
+lin_vel_error_np = lin_vel_error.numpy()
+rew_np = rew.numpy()
 
-# Plot the reward function
-plt.figure(figsize=(6, 4))
-plt.plot(v_xy, reward, label=r'$e^{-\sigma (\text{vel\_err})^2}$', color='b')
-plt.axvline(x=v_cmd_xy, linestyle="--", color="red", label="Commanded velocity")
-plt.axvline(x=v_cmd_xy + 0.1, linestyle="--", color="green", label="Upper threshold")
+# Plot the function
+plt.figure(figsize=(8, 5))
+plt.plot(lin_vel_error_np, rew_np, label="Reward Function", color='b')
+plt.axvline(x=parkour_vel_tolerance, color='r', linestyle='--', label="Tolerance Threshold")
+plt.xlabel("Linear Velocity Error")
+plt.ylabel("Reward")
+plt.title("Reward Function vs. Linear Velocity Error")
+plt.legend()
+plt.grid(True)
 plt.show()

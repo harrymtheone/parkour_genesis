@@ -396,6 +396,7 @@ class ParkourTask(BaseTask):
 
         if self.global_counter % 5 == 0:
             self.delta_yaw[:] = wrap_to_pi(self.target_yaw - self.base_euler[:, 2]) * (self.command_x_parkour > self.cfg.commands.lin_vel_clip)
+        delta_yaw_error = 1.0 * self.delta_yaw
 
         # stair terrains use heading commands
         env_is_stair = torch.logical_and(self.env_class >= 2, self.env_class < 4)
@@ -406,10 +407,10 @@ class ParkourTask(BaseTask):
 
         # envs' yaw value of parkour terrain is computed using yaw difference
         env_is_parkour = self.env_class >= 4
-        self.commands[env_is_parkour, 2] = self.delta_yaw[env_is_parkour]
-        self.commands[env_is_parkour, 2] = torch.clip(self.commands[env_is_parkour, 2], *self.cmd_ranges_parkour['ang_vel_yaw'])
+        self.commands[env_is_parkour, 2] = delta_yaw_error[env_is_parkour]
+        # self.commands[env_is_parkour, 2] = torch.clip(self.commands[env_is_parkour, 2], *self.cmd_ranges_parkour['ang_vel_yaw'])
 
-        cmd_ratio = torch.clip(1 - torch.abs(3 * self.delta_yaw / torch.pi), min=0)
+        cmd_ratio = torch.clip(1 - torch.abs(delta_yaw_error / torch.pi), min=0)
         self.commands[env_is_parkour, 0] = (cmd_ratio * self.command_x_parkour)[env_is_parkour]
 
         # constraint command ranges

@@ -6,6 +6,7 @@ import time
 import torch
 import wandb
 
+from legged_gym.utils.terrain import Terrain
 from rsl_rl.algorithms import BaseAlgorithm, algorithm_dict
 
 
@@ -57,7 +58,9 @@ class RLDreamRunner:
 
         # AdaSmpl for each terrain type
         terrain_class, terrain_env_counts = torch.unique(self.env.env_class, return_counts=True)
+        terrain_class_name = [Terrain.terrain_type(tc.item()).name for tc in terrain_class]
         coefficient_variation = torch.ones_like(terrain_class)
+        terrain_coefficient_variation = {}
 
         # adaptive sampling probability (prob to use ground truth)
         p_smpl = 1.0
@@ -100,9 +103,10 @@ class RLDreamRunner:
 
                 # update AdaSmpl coefficient
                 if self.cur_it - self.start_it > 20:  # ensure there are enough samples
-                    for i, t in enumerate(terrain_class):
+                    for i, (t, n) in enumerate(zip(terrain_class, terrain_class_name)):
                         rew_terrain = last_env_reward[self.env.env_class == t]
                         coefficient_variation[i] = rew_terrain.std() / (rew_terrain.mean().abs() + 1e-5)
+                        terrain_coefficient_variation[f'Coefficient Variation/{n}'] = coefficient_variation[i].item()
 
                     # probability to use ground truth value
                     p_smpl = 0.999 * p_smpl + 0.001 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
@@ -122,11 +126,6 @@ class RLDreamRunner:
 
             if self.log_dir is not None:
                 self.log(locals())
-
-            print(f'time_train_act, {sum(self.alg.time_train_act)}')
-            print(f'time_back, {sum(self.alg.time_back)}')
-            self.alg.time_train_act.clear()
-            self.alg.time_back.clear()
 
             if self.cur_it % self.save_interval == 0:
                 self.save(os.path.join(self.log_dir, f'model_{self.cur_it}.pt'))
@@ -154,6 +153,8 @@ class RLDreamRunner:
                 level_tensor = [ep[terrain_name] for ep in ep_terrain_level]
                 level_tensor = torch.stack(level_tensor, dim=0)
                 wandb_dict['Terrain Level/' + terrain_name] = torch.mean(level_tensor).item()
+
+        wandb_dict.update(locs['terrain_coefficient_variation'])
 
         # logging update information
         wandb_dict.update(locs['update_info'])

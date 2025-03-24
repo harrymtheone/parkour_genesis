@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
-from ..base.utils import ObsBase, HistoryBuffer
+from ..base.utils import ObsBase
 
 
 class ActorObs(ObsBase):
@@ -129,18 +129,14 @@ class T1ZJUEnvironment(T1BaseEnv):
         scan_edge = torch.stack([scan, self.get_edge_mask().float()], dim=1)
 
         # compose actor observation
-        self.actor_obs = ActorObs(
-            proprio,
-            self.prop_his_buf.get(),
-            self.sensors.get('depth_0').squeeze(2),
-            priv_actor_obs,
-            scan_edge
-        )
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan_edge)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer
         reset_flag = self.episode_length_buf <= 1
-        self.prop_his_buf.append(proprio, reset_flag)
+        prop_no_cmd = proprio.clone()
+        prop_no_cmd[:, 3 + 3:3 + 3 + 5] = 0.
+        self.prop_his_buf.append(prop_no_cmd, reset_flag)
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
@@ -171,7 +167,7 @@ class T1ZJUEnvironment(T1BaseEnv):
             # pts = cloud[cloud_valid]
             #
             # if len(pts) > 0:
-            #     indices = torch.randperm(len(pts))[:200]
+            #     indices = torch.randperm(len(pts))[:500]
             #     self.sim.draw_points(pts[indices])
 
         super().render()
