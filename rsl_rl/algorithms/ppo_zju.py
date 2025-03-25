@@ -1,5 +1,3 @@
-import time
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -42,9 +40,7 @@ class Transition:
 
 
 class PPO_ZJU(BaseAlgorithm):
-    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), env=None, **kwargs):
-        self.env = env
-
+    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), **kwargs):
         # PPO parameters
         self.cfg = train_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate

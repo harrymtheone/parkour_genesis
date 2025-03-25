@@ -1,9 +1,7 @@
-import numpy as np
-
 from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 
-class T1ZJUCfg(T1BaseCfg):
+class T1_ZJU_Cfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
 
@@ -76,8 +74,8 @@ class T1ZJUCfg(T1BaseCfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 1,
-            'stairs_down': 1,
+            'stairs_up': 0,
+            'stairs_down': 0,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -86,7 +84,7 @@ class T1ZJUCfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 0,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 
@@ -180,7 +178,7 @@ class T1ZJUCfg(T1BaseCfg):
             collision = -1.
 
 
-class T1ZJUCfgPPO(T1BaseCfgPPO):
+class T1_ZJU_Cfg_PPO(T1BaseCfgPPO):
     seed = -1
     runner_name = 'rl_dream'  # rl, distil, mixed
     algorithm_name = 'ppo_zju'
@@ -226,6 +224,37 @@ class T1ZJUCfgPPO(T1BaseCfgPPO):
 
     class runner(T1BaseCfgPPO.runner):
         max_iterations = 3000  # number of policy updates
+
+        # logging
+        save_interval = 100  # check for potential saves every this many iterations
+
+
+class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
+    class terrain(T1BaseCfg.terrain):
+        num_rows = 10  # number of terrain rows (levels)
+        num_cols = 20  # number of terrain cols (types)
+
+        terrain_dict = {
+            'smooth_slope': 1,
+            'rough_slope': 1,
+            'stairs_up': 0,
+            'stairs_down': 0,
+            'discrete': 0,
+            'stepping_stone': 0,
+            'gap': 0,
+            'pit': 0,
+            'parkour': 0,
+            'parkour_gap': 0,
+            'parkour_box': 0,
+            'parkour_step': 0,
+            'parkour_stair': 4,  # First train a policy without stair for 2000 epochs
+            'parkour_flat': 0,
+        }
+
+
+class T1_ZJU_Stair_Cfg_PPO(T1_ZJU_Cfg_PPO):
+    class runner(T1BaseCfgPPO.runner):
+        max_iterations = 50000  # number of policy updates
 
         # logging
         save_interval = 100  # check for potential saves every this many iterations

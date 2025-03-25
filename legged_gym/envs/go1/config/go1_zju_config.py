@@ -189,7 +189,7 @@ class Go1_ZJU_CfgPPO(Go1BaseCfgPPO):
 class Go1_ZJU_Pit_Cfg(Go1_ZJU_Cfg):
     class terrain(Go1_ZJU_Cfg.terrain):
         terrain_dict = {
-            'smooth_slope': 0,
+            'smooth_slope': 1,
             'rough_slope': 1,
             'stairs_up': 1,
             'stairs_down': 1,

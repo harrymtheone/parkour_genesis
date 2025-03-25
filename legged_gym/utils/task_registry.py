@@ -47,11 +47,7 @@ class TaskRegistry:
         env = task_class(cfg=env_cfg, args=args)
         return env, env_cfg
 
-    def make_alg_runner(self, env, log_root, args=None, train_cfg=None):
-        # if no args passed get command line arguments
-        if args is None:
-            args = get_args()
-
+    def make_alg_runner(self, env_cfg, train_cfg, args, log_root):
         # if config files are passed use them, otherwise load from the name
         if train_cfg is None:
             if args.task is None:
@@ -72,7 +68,7 @@ class TaskRegistry:
         # make runners
         if train_cfg.runner_name in runner_list:
             runner = runner_list[train_cfg.runner_name]
-            runner = runner(env, train_cfg, log_dir=model_dir, device=args.device)
+            runner = runner(env_cfg, train_cfg, log_dir=model_dir, device=args.device)
         else:
             raise ValueError(f'Runner not recognized! With train_cfg.runner_name={train_cfg.runner_name}')
 

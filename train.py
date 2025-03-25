@@ -32,14 +32,11 @@ def train(args):
     if args.debug:
         mode = "disabled"
         # args.headless = False
-        env_cfg.terrain.num_rows = 10
-        env_cfg.terrain.num_cols = 2
-        env_cfg.env.num_envs = 512
+        # env_cfg.terrain.num_rows = 10
+        # env_cfg.terrain.num_cols = 2
+        # env_cfg.env.num_envs = 512
     else:
         mode = "online"
-
-    env, _ = task_registry.make_env(args=args, env_cfg=env_cfg)
-    ppo_runner, _ = task_registry.make_alg_runner(env, log_root, args=args, train_cfg=train_cfg)
 
     # save training parameters
     go1_cfg = class_to_dict(env_cfg)
@@ -52,7 +49,9 @@ def train(args):
                dir=log_root,
                config=go1_cfg)
 
-    ppo_runner.learn()
+    env, _ = task_registry.make_env(args=args, env_cfg=env_cfg)
+    ppo_runner, _ = task_registry.make_alg_runner(env_cfg, train_cfg, args, log_root)
+    ppo_runner.learn(env)
 
 
 if __name__ == '__main__':

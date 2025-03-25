@@ -8,7 +8,7 @@ from .T1.t1_pie_environment import T1PIEEnvironment
 from .T1.config.t1_pie_config import T1PIECfg, T1PIECfgPPO
 
 from .T1.t1_zju_environment import T1ZJUEnvironment
-from .T1.config.t1_zju_config import T1ZJUCfg, T1ZJUCfgPPO
+from .T1.config.t1_zju_config import T1_ZJU_Cfg, T1_ZJU_Cfg_PPO, T1_ZJU_Stair_Cfg, T1_ZJU_Stair_Cfg_PPO
 
 from .pdd.pdd_dreamwaq_environment import PddDreamWaqEnvironment
 from .pdd.config.pdd_dreamwaq_config import PddDreamWaqCfg, PddDreamWaqCfgPPO, PddDreamWaqGRUCfgPPO
@@ -36,7 +36,8 @@ task_list = [
     ['t1_priv', T1PrivEnvironment, T1PrivCfg(), T1PrivCfgPPO()],
     ['t1_dreamwaq', T1DreamWaqEnvironment, T1DreamWaqCfg(), T1DreamWaqCfgPPO()],
     ['t1_pie', T1PIEEnvironment, T1PIECfg(), T1PIECfgPPO()],
-    ['t1_zju', T1ZJUEnvironment, T1ZJUCfg(), T1ZJUCfgPPO()],
+    ['t1_zju', T1ZJUEnvironment, T1_ZJU_Cfg(), T1_ZJU_Cfg_PPO()],
+    ['t1_zju_stair', T1ZJUEnvironment, T1_ZJU_Stair_Cfg(), T1_ZJU_Stair_Cfg_PPO()],
 
     ['go1_zju', Go1ZJUEnvironment, Go1_ZJU_Cfg(), Go1_ZJU_CfgPPO()],
     ['go1_zju_pit', Go1ZJUEnvironment, Go1_ZJU_Pit_Cfg(), Go1_ZJU_VAE_Pit_CfgPPO()],
