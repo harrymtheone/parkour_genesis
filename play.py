@@ -47,7 +47,7 @@ def play(args):
     env_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
         'rough_slope': 0,
-        'stairs_up': 1,
+        'stairs_up': 0,
         'stairs_down': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -56,8 +56,8 @@ def play(args):
         'parkour': 0,
         'parkour_gap': 0,
         'parkour_box': 0,
-        'parkour_step': 0,
-        'parkour_stair': 1,
+        'parkour_step': 1,
+        'parkour_stair': 0,
         'parkour_flat': 0,
     }
     env_cfg.terrain.num_cols = sum(env_cfg.terrain.terrain_dict.values())
@@ -69,7 +69,7 @@ def play(args):
 
     # load policy
     train_cfg.runner.resume = True
-    runner, _ = task_registry.make_alg_runner(env, log_root, args=args, train_cfg=train_cfg)
+    runner, _ = task_registry.make_alg_runner(env_cfg, train_cfg, args, log_root)
 
     with Live(gen_info_panel(args, env), refresh_per_second=60) as live:
         for _ in range(10 * int(env.max_episode_length)):

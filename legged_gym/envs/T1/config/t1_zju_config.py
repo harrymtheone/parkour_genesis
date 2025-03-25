@@ -153,11 +153,6 @@ class T1_ZJU_Cfg(T1BaseCfg):
             knee_distance = 0.2
             feet_rotation = 0.5
 
-            # contact
-            feet_contact_forces = -0.01
-            feet_stumble = -1.0
-            feet_edge = -3.0
-
             # vel tracking
             tracking_lin_vel = 2.0
             tracking_goal_vel = 3.0
@@ -230,13 +225,28 @@ class T1_ZJU_Cfg_PPO(T1BaseCfgPPO):
 
 
 class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
+    class rewards(T1_ZJU_Cfg.rewards):
+        class scales(T1_ZJU_Cfg.rewards.scales):
+            # gait
+            feet_distance = 0.2
+            knee_distance = 0.2
+            feet_rotation = 0.5
+
+            # contact
+            feet_contact_forces = -0.01
+            feet_stumble = -1.0
+            feet_edge = -3.0
+
+            # base pos
+            default_joint_pos = 0.5
+
     class terrain(T1BaseCfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 1,
+            'rough_slope': 0,
             'stairs_up': 0,
             'stairs_down': 0,
             'discrete': 0,
@@ -247,7 +257,7 @@ class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 4,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 3,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 

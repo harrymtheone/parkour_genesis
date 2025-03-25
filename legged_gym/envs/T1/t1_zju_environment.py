@@ -6,12 +6,40 @@ from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
 
 
+# class ActorObs(ObsBase):
+#     def __init__(self, proprio, prop_his, depth, priv_actor, scan):
+#         super().__init__()
+#         self.proprio = proprio.clone()
+#         self.prop_his = prop_his.clone()
+#         self.depth = depth.clone()
+#         self.priv_actor = priv_actor.clone()
+#         self.scan = scan.clone()
+#
+#     def as_obs_next(self):
+#         # remove unwanted attribute to save CUDA memory
+#         return ObsNext(self.proprio)
+#
+#     def mirror(self):
+#         return ActorObs(
+#             mirror_proprio_by_x(self.proprio),
+#             mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
+#             torch.flip(self.depth, dims=[3]),
+#             self.priv_actor,
+#             torch.flip(self.scan, dims=[2]),
+#         )
+#
+#     @staticmethod
+#     def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
+#         dof_prop_mirrored = dof_prop.clone()
+#         mirror_dof_prop_by_x(dof_prop_mirrored, 0)
+#         return dof_prop_mirrored
+
+
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, depth, priv_actor, scan):
+    def __init__(self, proprio, prop_his, priv_actor, scan):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
-        self.depth = depth.clone()
         self.priv_actor = priv_actor.clone()
         self.scan = scan.clone()
 
@@ -19,15 +47,13 @@ class ActorObs(ObsBase):
         # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
 
-    @torch.compiler.disable
     def mirror(self):
-        return type(self)(*[
+        return ActorObs(
             mirror_proprio_by_x(self.proprio),
             mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
-            torch.flip(self.depth, dims=[3]),
             self.priv_actor,
             torch.flip(self.scan, dims=[2]),
-        ])
+        )
 
     @staticmethod
     def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
@@ -129,7 +155,8 @@ class T1ZJUEnvironment(T1BaseEnv):
         scan_edge = torch.stack([scan, self.get_edge_mask().float()], dim=1)
 
         # compose actor observation
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan_edge)
+        # self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan_edge)
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), priv_actor_obs, scan_edge)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer
@@ -147,9 +174,9 @@ class T1ZJUEnvironment(T1BaseEnv):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
             self._draw_goals()
             # self._draw_height_field(draw_guidance=True)
-            # self._draw_edge()
+            self._draw_edge()
             # self._draw_camera()
-            self._draw_feet_at_edge()
+            # self._draw_feet_at_edge()
 
         if self.cfg.sensors.activated:
             depth_img = self.sensors.get('depth_0')

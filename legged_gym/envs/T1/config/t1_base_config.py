@@ -41,7 +41,7 @@ class T1BaseCfg(BaseConfig):
         description_type = 'trimesh'  # plane, heightfield or trimesh
         max_error = 0.1  # for fast
 
-        y_range = [-0.4, 0.4]
+        y_range = [-0.2, 0.2]
 
         edge_width_thresh = 0.05
         horizontal_scale = 0.02  # [m] influence computation time by a lot

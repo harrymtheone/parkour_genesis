@@ -32,6 +32,7 @@ class IsaacGymWrapper(BaseWrapper):
         self.cam_handles = []
         if not self.headless:
             self._create_viewer()
+            self.clear_lines = True
 
         self.init_done = True
 
@@ -488,7 +489,8 @@ class IsaacGymWrapper(BaseWrapper):
         else:
             self.gym.poll_viewer_events(self.viewer)
 
-        self.gym.clear_lines(self.viewer)
+        if self.clear_lines:
+            self.gym.clear_lines(self.viewer)
 
         if not self.free_cam:
             p = self.gym.get_viewer_camera_transform(self.viewer, None).p

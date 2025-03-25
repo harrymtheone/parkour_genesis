@@ -161,7 +161,7 @@ class Terrain:
         slope = difficulty * 0.4
         step_up_height = 0.02 + 0.08 * difficulty
         step_down_height = 0.02 + 0.08 * difficulty
-        step_height_goal = 0.04 + 0.06 * difficulty  # 跑酷楼梯的高度
+        step_height_goal = 0.07 + 0.09 * difficulty  # 跑酷楼梯的高度
         discrete_obstacles_height = 0.03 + difficulty * 0.15
         stepping_stones_size = 1.5 * (1.05 - difficulty)
         stone_distance = 0.05 if difficulty == 0 else 0.1
@@ -251,7 +251,7 @@ class Terrain:
 
         elif choice < self.proportions[10]:
             terrain.terrain_type = Terrain.terrain_type.parkour_box
-            parkour_box_terrain(terrain, box_height=[pit_depth - 0.05, pit_depth + 0.05])
+            parkour_box_terrain(terrain, box_height_range=[pit_depth - 0.05, pit_depth + 0.05])
             terrain.centered_origin = False
             self.add_roughness(terrain, 0 * difficulty)
 
@@ -259,10 +259,9 @@ class Terrain:
             terrain.terrain_type = Terrain.terrain_type.parkour_step
             parkour_step_terrain(terrain,
                                  step_height=pit_depth,
-                                 x_range=[0.8, 1.2],
-                                 y_range=self.cfg.y_range,
-                                 half_valid_width=[1.2, 1.5],
-                                 pad_height=0)
+                                 rand_x_range=(0.8, 1.2),
+                                 rand_y_range=self.cfg.y_range,
+                                 step_width_range=(1., 1.6))
             terrain.centered_origin = False
             self.add_roughness(terrain, difficulty)
 
@@ -270,8 +269,8 @@ class Terrain:
             terrain.terrain_type = Terrain.terrain_type.parkour_stair
             parkour_stair_terrain(terrain,
                                   step_height=step_height_goal,
-                                  step_width=random.uniform(0.25, 0.35))  # 0.31
-                                  # step_width=0.31)  # 0.31
+                                  # step_depth=random.uniform(0.25, 0.35))  # 0.31
+                                  step_depth=0.31)  # 0.31
             terrain.centered_origin = False
             # self.add_roughness(terrain, difficulty)
 

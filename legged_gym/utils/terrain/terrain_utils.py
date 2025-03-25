@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
@@ -291,41 +293,49 @@ def parkour_gap_terrain(terrain: SubTerrain,
 
 
 def parkour_box_terrain(terrain: SubTerrain,
-                        platform_len=1.5,
-                        box_length=(1., 2.0),
-                        box_width=(1.5, 3),
-                        box_height=(0.2, 0.5),
-                        x_range=(3, 4)):
-    num_box = 3
+                        platform_len=0.5,
+                        box_length_range=(1., 2.0),
+                        box_width_range=(1.5, 3),
+                        box_height_range=(0.2, 0.5),
+                        dist_x_range=(3, 4),
+                        guidance_width=0.2):
+    num_box = 4
 
+    # prepare magnitudes
     mid_y = terrain.length // 2  # length is actually y width
+
+    guidance_width = round(guidance_width / terrain.horizontal_scale)
     platform_len = round(platform_len / terrain.horizontal_scale)
+    box_length_range = np.round(np.array(box_length_range) / terrain.horizontal_scale)
+    box_width_range = np.round(np.array(box_width_range) / terrain.horizontal_scale)
+    dist_x_range = np.round(np.array(dist_x_range) / terrain.horizontal_scale)
+    box_height_range = np.round(np.array(box_height_range) / terrain.vertical_scale)
 
-    box_length_min = round(box_length[0] / terrain.horizontal_scale)
-    box_length_max = round(box_length[1] / terrain.horizontal_scale)
-    box_width_min = round(box_width[0] / terrain.horizontal_scale)
-    box_width_max = round(box_width[1] / terrain.horizontal_scale)
-    box_height_min = round(box_height[0] / terrain.vertical_scale)
-    box_height_max = round(box_height[1] / terrain.vertical_scale)
-
-    dis_x_min = round(x_range[0] / terrain.horizontal_scale)
-    dis_x_max = round(x_range[1] / terrain.horizontal_scale)
+    # buffer
+    terrain.height_field_guidance = terrain.height_field_raw.copy()
+    goals = np.zeros((num_box + 1, 2))
 
     cur_x = platform_len
-
-    goals = np.zeros((num_box + 2, 2))
-    goals[0] = [platform_len - 1, mid_y]
-
     for i in range(num_box):
-        rand_x = np.random.randint(dis_x_min, dis_x_max)
-        rand_len = np.random.randint(box_length_min, box_length_max)
-        rand_wid = np.random.randint(box_width_min, box_width_max)
-        rand_height = np.random.randint(box_height_min, box_height_max)
+        rand_x = random.randint(*dist_x_range)
+        rand_len = random.randint(*box_length_range) // 2
+        rand_wid = random.randint(*box_width_range) // 2
+        rand_height = random.randint(*box_height_range)
         cur_x += rand_x
 
-        goals[i + 1] = [cur_x, mid_y]
-        terrain.height_field_raw[cur_x - rand_len // 2: cur_x + rand_len // 2,
-        mid_y - rand_wid // 2: mid_y + rand_wid // 2] = rand_height
+        # height field raw
+        x_slice = slice(cur_x - rand_len, cur_x + rand_len)
+        y_slice = slice(mid_y - rand_wid, mid_y + rand_wid)
+        terrain.height_field_raw[x_slice, y_slice] = rand_height
+
+        # height field guidance
+        terrain.height_field_guidance[x_slice, y_slice] = rand_height
+        guidance_height = np.tile(np.linspace(0, rand_height, guidance_width), (rand_wid * 2, 1)).T
+        x_slice = slice(cur_x - rand_len - guidance_width, cur_x - rand_len)
+        terrain.height_field_guidance[x_slice, y_slice] = guidance_height
+
+        # goal
+        goals[i] = [cur_x, mid_y]
 
     goals[-1] = [terrain.width, mid_y]
     terrain.goals = goals * terrain.horizontal_scale
@@ -333,71 +343,64 @@ def parkour_box_terrain(terrain: SubTerrain,
 
 def parkour_step_terrain(terrain: SubTerrain,
                          platform_len=2.5,
-                         platform_height=0.,
-                         x_range=[0.2, 0.4],
-                         y_range=[-0.15, 0.15],
-                         half_valid_width=[0.15, 0.2],
+                         rand_x_range=(0.2, 0.4),  # x distance between two steps
+                         rand_y_range=(-0.15, 0.15),  # y distance between two steps center
+                         step_width_range=(2, 3),
                          step_height=0.2,
-                         pad_width=0.1,
-                         pad_height=0.5):
-    num_stones = 6
+                         guidance_width=0.2):
+    num_steps = 6
 
-    goals = np.zeros((num_stones + 2, 2))
-    mid_y = terrain.length // 2  # length is actually y width
-
-    dis_x_min = round((x_range[0] + step_height) / terrain.horizontal_scale)
-    dis_x_max = round((x_range[1] + step_height) / terrain.horizontal_scale)
-    dis_y_min = round(y_range[0] / terrain.horizontal_scale)
-    dis_y_max = round(y_range[1] / terrain.horizontal_scale)
-
-    step_height = round(step_height / terrain.vertical_scale)
-
-    half_valid_width = round(np.random.uniform(half_valid_width[0], half_valid_width[1]) / terrain.horizontal_scale)
-
+    # prepare magnitudes
     platform_len = round(platform_len / terrain.horizontal_scale)
-    platform_height = round(platform_height / terrain.vertical_scale)
-    terrain.height_field_raw[0:platform_len, :] = platform_height
+    mid_y = terrain.length // 2  # length is actually y width
+    guidance_width = round(guidance_width / terrain.horizontal_scale)
+    rand_x_range = np.round((np.array(rand_x_range) + step_height) / terrain.horizontal_scale)
+    rand_y_range = np.round(np.array(rand_y_range) / terrain.horizontal_scale)
+    step_height = round(step_height / terrain.vertical_scale)
+    half_step_width = round(random.uniform(*step_width_range) / 2 / terrain.horizontal_scale)
+
+    # buffer
+    goals = np.zeros((num_steps + 1, 2))
+    terrain.height_field_guidance = terrain.height_field_raw.copy()
 
     dis_x = platform_len
-    last_dis_x = dis_x
-    stair_height = 0
-    goals[0] = [platform_len - round(1 / terrain.horizontal_scale), mid_y]
-    for i in range(num_stones):
-        rand_x = np.random.randint(dis_x_min, dis_x_max)
-        rand_y = np.random.randint(dis_y_min, dis_y_max)
-        if i < num_stones // 2:
+    stair_height = last_stair_height = 0
+    for i in range(num_steps):
+        rand_x = np.random.randint(*rand_x_range)
+        rand_y = np.random.randint(*rand_y_range)
+
+        if i < num_steps // 2:
             stair_height += step_height
-        elif i > num_stones // 2:
+        elif i > num_steps // 2:
             stair_height -= step_height
-        terrain.height_field_raw[dis_x:dis_x + rand_x, ] = stair_height
+
+        # height field raw
+        x_slice = slice(dis_x, dis_x + rand_x)
+        y_slice = slice(mid_y + rand_y - half_step_width, mid_y + rand_y + half_step_width)
+        terrain.height_field_raw[x_slice, y_slice] = stair_height
+
+        # height field guidance
+        terrain.height_field_guidance[x_slice, y_slice] = stair_height
+
+        if i < num_steps // 2:
+            guidance_height = np.tile(np.linspace(last_stair_height, stair_height, guidance_width), (2 * half_step_width, 1)).T
+            terrain.height_field_guidance[dis_x - guidance_width: dis_x, y_slice] = guidance_height
+
+        goals[i] = [dis_x + rand_x // 2, mid_y + rand_y]
+
         dis_x += rand_x
-        terrain.height_field_raw[last_dis_x:dis_x, :mid_y + rand_y - half_valid_width] = 0
-        terrain.height_field_raw[last_dis_x:dis_x, mid_y + rand_y + half_valid_width:] = 0
+        last_stair_height = stair_height
 
-        last_dis_x = dis_x
-        goals[i + 1] = [dis_x - rand_x // 2, mid_y + rand_y]
-    final_dis_x = dis_x + np.random.randint(dis_x_min, dis_x_max)
-
-    if final_dis_x > terrain.width:
-        final_dis_x = terrain.width - 0.5 // terrain.horizontal_scale
-    goals[-1] = [final_dis_x, mid_y]
-
+    goals[-1] = [dis_x + round(1 / terrain.horizontal_scale), mid_y]
     terrain.goals = goals * terrain.horizontal_scale
-
-    # pad edges
-    pad_width = int(pad_width // terrain.horizontal_scale)
-    pad_height = int(pad_height // terrain.vertical_scale)
-    terrain.height_field_raw[:, :pad_width] = pad_height
-    terrain.height_field_raw[:, -pad_width:] = pad_height
-    terrain.height_field_raw[:pad_width, :] = pad_height
-    terrain.height_field_raw[-pad_width:, :] = pad_height
 
 
 def parkour_stair_terrain(terrain: SubTerrain,
                           platform_len=2.5,
                           num_steps=16,
                           step_height=0.2,
-                          step_width=0.2,
+                          step_depth=0.2,
+                          goal_deviation=1.0,
                           only_up=True):
     if only_up:
         num_steps = 40
@@ -405,7 +408,7 @@ def parkour_stair_terrain(terrain: SubTerrain,
         mid_y = terrain.length // 2  # length is actually y width
 
         step_height = round(step_height / terrain.vertical_scale)
-        step_width = round(step_width / terrain.horizontal_scale)
+        step_depth = round(step_depth / terrain.horizontal_scale)
 
         platform_len = round(platform_len / terrain.horizontal_scale)
 
@@ -414,29 +417,34 @@ def parkour_stair_terrain(terrain: SubTerrain,
 
         for i in range(num_steps):
             stair_height += step_height
-            terrain.height_field_raw[dis_x:dis_x + step_width] = stair_height
+            terrain.height_field_raw[dis_x:dis_x + step_depth] = stair_height
 
-            terrain.height_field_guidance[dis_x:dis_x + step_width] = stair_height
-            guidance_height = np.tile(np.linspace(last_stair_height, stair_height, step_width // 2), (terrain.length, 1)).T
+            terrain.height_field_guidance[dis_x:dis_x + step_depth] = stair_height
+            guidance_height = np.tile(np.linspace(last_stair_height, stair_height, step_depth // 2), (terrain.length, 1)).T
 
             if i < num_steps:
-                terrain.height_field_guidance[dis_x - step_width // 2: dis_x] = guidance_height
+                terrain.height_field_guidance[dis_x - step_depth // 2: dis_x] = guidance_height
             elif i > num_steps:
-                terrain.height_field_guidance[dis_x: dis_x + step_width // 2] = guidance_height
+                terrain.height_field_guidance[dis_x: dis_x + step_depth // 2] = guidance_height
 
-            dis_x += step_width
+            dis_x += step_depth
             last_stair_height = stair_height
 
-        goals = np.zeros((1, 2))
-        goals[0] = [dis_x - round(1.0 / terrain.horizontal_scale), mid_y]
-        terrain.goals = goals * terrain.horizontal_scale
-    else:
+        def rand_deviation():
+            return round(random.uniform(-goal_deviation, goal_deviation) / terrain.horizontal_scale)
 
+        goals = np.zeros((3, 2))
+        goals[0] = [platform_len + round(4.0 / terrain.horizontal_scale), mid_y + rand_deviation()]
+        goals[1] = [platform_len + round(8.0 / terrain.horizontal_scale), mid_y + rand_deviation()]
+        goals[-1] = [dis_x - round(1.0 / terrain.horizontal_scale), mid_y]
+        terrain.goals = goals * terrain.horizontal_scale
+
+    else:
         terrain.height_field_guidance = terrain.height_field_raw.copy()
         mid_y = terrain.length // 2  # length is actually y width
 
         step_height = round(step_height / terrain.vertical_scale)
-        step_width = round(step_width / terrain.horizontal_scale)
+        step_depth = round(step_depth / terrain.horizontal_scale)
 
         platform_len = round(platform_len / terrain.horizontal_scale)
 
@@ -451,17 +459,14 @@ def parkour_stair_terrain(terrain: SubTerrain,
             else:
                 mid_x_stair = dis_x
 
-            terrain.height_field_raw[dis_x:dis_x + step_width] = stair_height
+            terrain.height_field_raw[dis_x:dis_x + step_depth] = stair_height
 
-            terrain.height_field_guidance[dis_x:dis_x + step_width] = stair_height
-            guidance_height = np.tile(np.linspace(last_stair_height, stair_height, step_width // 2), (terrain.length, 1)).T
-
+            terrain.height_field_guidance[dis_x:dis_x + step_depth] = stair_height
             if i < num_steps:
-                terrain.height_field_guidance[dis_x - step_width // 2: dis_x] = guidance_height
-            elif i > num_steps:
-                terrain.height_field_guidance[dis_x: dis_x + step_width // 2] = guidance_height
+                guidance_height = np.tile(np.linspace(last_stair_height, stair_height, step_depth // 2), (terrain.length, 1)).T
+                terrain.height_field_guidance[dis_x - step_depth // 2: dis_x] = guidance_height
 
-            dis_x += step_width
+            dis_x += step_depth
             last_stair_height = stair_height
 
         goals = np.zeros((2, 2))

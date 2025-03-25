@@ -510,6 +510,8 @@ class ParkourTask(BaseTask):
         if self.init_done or (not self.cfg.terrain.measure_heights):
             return
 
+        self.sim.clear_lines = False
+
         pts = []
         for i in range(self.sim.height_samples.shape[0]):
             for j in range(self.sim.height_samples.shape[1]):
