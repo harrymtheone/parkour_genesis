@@ -67,13 +67,6 @@ class HumanoidEnv(ParkourTask):
         self.feet_height[:] = feet_pos[:, :, 2] + self.cfg.normalization.feet_height_correction - proj_ground_height
         self.feet_euler_xyz[:] = quat_to_xyz(self.sim.link_quat[:, self.feet_indices])
 
-    def _check_termination(self):
-        super()._check_termination()
-        roll_cutoff = torch.abs(self.base_euler[:, 0]) > 0.6
-        pitch_cutoff = torch.abs(self.base_euler[:, 1]) > 0.6
-        self.reset_buf[:] |= roll_cutoff
-        self.reset_buf[:] |= pitch_cutoff
-
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
 
@@ -97,6 +90,13 @@ class HumanoidEnv(ParkourTask):
         self.feet_air_time[self.contact_filt | self.is_zero_command.unsqueeze(1)] = 0.
         self.last_feet_vel_xy[:] = self.sim.link_vel[:, self.feet_indices, :2]
         self.last_contacts[:] = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1) > 2.
+
+    def _check_termination(self):
+        super()._check_termination()
+        roll_cutoff = torch.abs(self.base_euler[:, 0]) > 0.6
+        pitch_cutoff = torch.abs(self.base_euler[:, 1]) > 0.6
+        self.reset_buf[:] |= roll_cutoff
+        self.reset_buf[:] |= pitch_cutoff
 
     def _update_phase(self):
         """ return the phase value ranging from 0 to 1 """
@@ -358,6 +358,37 @@ class HumanoidEnv(ParkourTask):
         quat_mismatch = torch.exp(-torch.sum(torch.abs(self.base_euler[:, :2]), dim=1) * 10)
         orientation = torch.exp(-torch.norm(self.projected_gravity[:, :2], dim=1) * 20)
         return (quat_mismatch + orientation) / 2.
+
+    def _reward_com(self):
+        """
+        Computes the reward for humanoid locomotion by encouraging the robot
+        to keep its center of mass (CoM) between its legs.
+        """
+
+        # Get the humanoid's center of mass (CoM)
+        com = humanoid.get_center_of_mass()  # Should return a 3D position (x, y, z)
+
+        # Get the positions of both feet (assumed to be the average of multiple contact points)
+        left_foot = humanoid.get_foot_position("left")
+        right_foot = humanoid.get_foot_position("right")
+
+        # Compute the midpoint between the feet
+        foot_midpoint = (left_foot + right_foot) / 2.0
+
+        # Compute horizontal deviation of CoM from the foot midpoint
+        com_deviation = np.linalg.norm(com[:2] - foot_midpoint[:2])  # Only consider x and y axes
+
+        # Penalize large deviations of CoM from the foot midpoint
+        balance_reward = np.exp(-5.0 * com_deviation)  # Exponential decay to strongly discourage large deviations
+
+        # Encourage forward movement (positive x-direction)
+        forward_velocity = humanoid.get_velocity()[0]  # Assume x-axis represents forward motion
+        forward_reward = np.clip(forward_velocity, 0, 2)  # Reward forward motion up to a max speed of 2 m/s
+
+        # Combine rewards
+        reward = 0.7 * balance_reward + 0.3 * forward_reward
+
+        return reward
 
     def _reward_base_height(self):
         """

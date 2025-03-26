@@ -11,6 +11,7 @@ from tqdm import tqdm
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.simulator.base_wrapper import BaseWrapper, DriveMode
 from legged_gym.utils.helpers import class_to_dict
+from legged_gym.utils.math import transform_by_quat
 from legged_gym.utils.terrain import Terrain
 
 
@@ -255,6 +256,12 @@ class IsaacGymWrapper(BaseWrapper):
                                        self.com_displacements[env_id, 1],
                                        self.com_displacements[env_id, 2])
 
+        for i, p in enumerate(props):
+            self._link_mass[env_id, i] = props[i].mass
+            self._link_com_shift[env_id, i, 0] = p.com.x
+            self._link_com_shift[env_id, i, 1] = p.com.y
+            self._link_com_shift[env_id, i, 2] = p.com.z
+
     def create_indices(self, names, is_link):
         indices = self._zero_tensor(len(names), dtype=torch.long)
 
@@ -387,6 +394,14 @@ class IsaacGymWrapper(BaseWrapper):
     @property
     def link_vel(self):
         return self._rigid_body_states[..., 7:10]
+
+    @property
+    def link_COM(self):
+        return self.link_pos + transform_by_quat(self._link_com_shift, self.link_quat).unflatten(0, (self.num_envs, -1))
+
+    @property
+    def link_mass(self):
+        return self._link_mass
 
     # ---------------------------------------------- Step Interface ----------------------------------------------
 

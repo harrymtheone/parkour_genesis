@@ -166,6 +166,9 @@ class BaseWrapper:
         """ Randomise some of the rigid body properties of the actor in the given environments, i.e.
             sample the mass, centre of mass position, friction and restitution."""
 
+        self._link_mass = self._zero_tensor(self.num_envs, self.num_bodies)
+        self._link_com_shift = self._zero_tensor(self.num_envs, self.num_bodies, 3)
+
         if not self.init_done:
             self.friction_coeffs = 1 + self._zero_tensor(self.num_envs, 1)
             self.payload_masses = self._zero_tensor(self.num_envs, 1)

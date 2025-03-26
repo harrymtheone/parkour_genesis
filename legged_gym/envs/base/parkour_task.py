@@ -504,6 +504,15 @@ class ParkourTask(BaseTask):
         cam_pos = self.sensors.get('depth_0', get_pos=True)
         self.sim.draw_points(cam_pos, 0.05, (1, 0, 0), sphere_lines=16)
 
+    def _draw_link_COM(self, whole_body=True):
+        if whole_body:
+            # COM_pos = self.base_COM[self.lookat_id].cpu().numpy()
+            COM_pos = self.sim.link_COM[self.lookat_id, 0].cpu().numpy()
+            self.sim.draw_points([COM_pos], 0.05, (1, 0, 0), sphere_lines=16)
+        else:
+            COM_pos = self.sim.link_COM[self.lookat_id].cpu().numpy()
+            self.sim.draw_points(COM_pos, 0.05, (1, 0, 0), sphere_lines=16)
+
     def _draw_height_field(self, draw_guidance=True):
         # for debug use!!!
         # draw height lines

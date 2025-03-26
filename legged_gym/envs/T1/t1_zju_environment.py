@@ -173,10 +173,12 @@ class T1ZJUEnvironment(T1BaseEnv):
     def render(self):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
             self._draw_goals()
-            # self._draw_height_field(draw_guidance=True)
-            self._draw_edge()
             # self._draw_camera()
+            self._draw_link_COM()
             # self._draw_feet_at_edge()
+
+            # self._draw_height_field(draw_guidance=True)
+            # self._draw_edge()
 
         if self.cfg.sensors.activated:
             depth_img = self.sensors.get('depth_0')

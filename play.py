@@ -56,8 +56,8 @@ def play(args):
         'parkour': 0,
         'parkour_gap': 0,
         'parkour_box': 0,
-        'parkour_step': 1,
-        'parkour_stair': 0,
+        'parkour_step': 0,
+        'parkour_stair': 1,
         'parkour_flat': 0,
     }
     env_cfg.terrain.num_cols = sum(env_cfg.terrain.terrain_dict.values())

@@ -94,6 +94,7 @@ class BaseTask:
         self.base_lin_vel = self._zero_tensor(self.num_envs, 3)  # in base frame
         self.base_ang_vel = self._zero_tensor(self.num_envs, 3)  # in base frame
         self.projected_gravity = self._zero_tensor(self.num_envs, 3)  # # in base frame
+        self.base_COM = self._zero_tensor(self.num_envs, 3)
         self.gravity_vec = torch.tensor([[0, 0, -1]], dtype=torch.float, device=self.device).repeat(self.num_envs, 1)  # in world frame
         self.forward_vec = torch.tensor([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
 
@@ -328,6 +329,10 @@ class BaseTask:
         self.base_lin_vel[:] = transform_by_quat(self.sim.root_lin_vel, inv_quat_yaw)
         self.base_ang_vel[:] = transform_by_quat(self.sim.root_ang_vel, inv_base_quat)
         self.projected_gravity[:] = transform_by_quat(self.gravity_vec, inv_base_quat)
+
+        # update COM
+        self.base_COM[:] = (self.sim.link_mass.unsqueeze(2) * self.sim.link_COM).sum(dim=1)
+        self.base_COM[:] /= self.sim.link_mass.sum(dim=1)
 
     def _post_physics_pre_step(self):
         self.episode_length_buf[:] += 1
