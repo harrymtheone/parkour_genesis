@@ -3,7 +3,6 @@ try:
 except ImportError:
     import torch
 
-import random
 import time
 
 from rich.live import Live

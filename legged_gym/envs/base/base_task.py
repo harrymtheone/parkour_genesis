@@ -332,7 +332,7 @@ class BaseTask:
 
         # update COM
         self.base_COM[:] = (self.sim.link_mass.unsqueeze(2) * self.sim.link_COM).sum(dim=1)
-        self.base_COM[:] /= self.sim.link_mass.sum(dim=1)
+        self.base_COM[:] /= self.sim.link_mass.sum(dim=1, keepdim=True)
 
     def _post_physics_pre_step(self):
         self.episode_length_buf[:] += 1

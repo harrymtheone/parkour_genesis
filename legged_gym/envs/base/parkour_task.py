@@ -169,17 +169,23 @@ class ParkourTask(BaseTask):
             + self.cfg.terrain.border_size
         )
 
-    def _get_heights(self, points, use_guidance=False):
+    def _get_heights(self, points, averaging=False, use_guidance=False):
         if self.cfg.terrain.description_type not in ['heightfield', 'trimesh']:
             return self._zero_tensor(self.num_envs, points.size(1))
 
-        points = (points / self.sim.terrain.cfg.horizontal_scale).long()
+        points = (points / self.cfg.terrain.horizontal_scale).long()
         px = points[:, :, 0].view(-1)
         py = points[:, :, 1].view(-1)
         px = torch.clip(px, 0, self.sim.height_samples.size(0) - 2)
         py = torch.clip(py, 0, self.sim.height_samples.size(1) - 2)
 
-        if use_guidance:
+        if averaging:
+            heights = self.sim.height_samples[px, py]
+            heights[:] += self.sim.height_samples[px + 1, py]
+            heights[:] += self.sim.height_samples[px, py + 1]
+            heights[:] += self.sim.height_samples[px + 1, py + 1]
+            heights[:] /= 4
+        elif use_guidance:
             heights = self.sim.height_guidance[px, py]
             heights += self.sim.height_guidance[px + 1, py]
             heights += self.sim.height_guidance[px, py + 1]
@@ -506,12 +512,12 @@ class ParkourTask(BaseTask):
 
     def _draw_link_COM(self, whole_body=True):
         if whole_body:
-            # COM_pos = self.base_COM[self.lookat_id].cpu().numpy()
-            COM_pos = self.sim.link_COM[self.lookat_id, 0].cpu().numpy()
-            self.sim.draw_points([COM_pos], 0.05, (1, 0, 0), sphere_lines=16)
-        else:
             COM_pos = self.sim.link_COM[self.lookat_id].cpu().numpy()
             self.sim.draw_points(COM_pos, 0.05, (1, 0, 0), sphere_lines=16)
+        else:
+            COM_pos = self.base_COM[self.lookat_id].cpu().numpy()
+            # COM_pos = self.sim.link_COM[self.lookat_id, 0].cpu().numpy()
+            self.sim.draw_points([COM_pos], 0.05, (1, 0, 0), sphere_lines=16)
 
     def _draw_height_field(self, draw_guidance=True):
         # for debug use!!!

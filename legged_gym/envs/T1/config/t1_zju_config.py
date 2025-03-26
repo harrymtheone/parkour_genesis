@@ -64,7 +64,7 @@ class T1_ZJU_Cfg(T1BaseCfg):
 
         class parkour_ranges:
             # lin_vel_x = [0.4, 0.6]  # min value should be greater than lin_vel_clip
-            lin_vel_x = [0.5, 1.2]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.8, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
@@ -109,7 +109,7 @@ class T1_ZJU_Cfg(T1BaseCfg):
         randomize_com = switch
 
         push_robots = False
-        action_delay = True
+        action_delay = False
         add_dof_lag = False
         add_imu_lag = False
 
@@ -139,6 +139,9 @@ class T1_ZJU_Cfg(T1BaseCfg):
         min_dist = 0.25
         max_dist = 0.50
         max_contact_force = 300
+
+        foothold_pts = [(-0.1, 0.12, 10), (-0.05, 0.05, 5), -0.03]  # (a, b, num points)
+        foothold_contact_thresh = 0.01
 
         rew_norm_factor = 1.0
 
@@ -231,17 +234,18 @@ class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
     class rewards(T1_ZJU_Cfg.rewards):
         class scales(T1_ZJU_Cfg.rewards.scales):
             # gait
-            feet_distance = 0.5
-            knee_distance = 0.5
+            feet_distance = 0.2
+            knee_distance = 0.2
             feet_rotation = 0.5
 
             # contact
-            feet_contact_forces = -0.01
+            feet_contact_forces = -0.003
             feet_stumble = -1.0
-            feet_edge = -0.5
+            # feet_edge = -0.5
+            foothold = -0.5
 
             # base pos
-            default_joint_pos = 0.5
+            default_joint_pos = 1.0
 
     class terrain(T1BaseCfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
@@ -290,14 +294,14 @@ class T1_ZJU_Parkour_Cfg(T1_ZJU_Cfg):
             feet_edge = -0.5
 
             # base pos
-            default_joint_pos = 0.5
+            default_joint_pos = 1.0
 
     class terrain(T1BaseCfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 1,
+            'smooth_slope': 2,
             'rough_slope': 0,
             'stairs_up': 0,
             'stairs_down': 0,

@@ -112,7 +112,7 @@ def transform_quat_by_quat(v, u):  # result = u * v, notice the order! Rotate by
 
 @torch.jit.script
 def transform_by_trans_quat(vec, trans, quat):
-    return transform_by_quat(vec, quat) + trans
+    return transform_by_quat(vec, quat).view(vec.shape) + trans
 
 
 @torch.jit.script

@@ -159,9 +159,9 @@ class Terrain:
                              vertical_scale=self.cfg.vertical_scale,
                              horizontal_scale=self.cfg.horizontal_scale)
         slope = difficulty * 0.4
-        step_up_height = 0.02 + 0.08 * difficulty
-        step_down_height = 0.02 + 0.08 * difficulty
-        step_height_goal = 0.07 + 0.09 * difficulty  # 跑酷楼梯的高度
+        stair_up_height = 0.02 + 0.08 * difficulty
+        stair_down_height = 0.02 + 0.08 * difficulty
+        stair_height_goal = 0.07 + 0.09 * difficulty  # 跑酷楼梯的高度
         discrete_obstacles_height = 0.03 + difficulty * 0.15
         stepping_stones_size = 1.5 * (1.05 - difficulty)
         stone_distance = 0.05 if difficulty == 0 else 0.1
@@ -186,10 +186,10 @@ class Terrain:
         elif choice < self.proportions[3]:
             if choice < self.proportions[2]:
                 terrain.terrain_type = Terrain.terrain_type.stairs_up
-                pyramid_stairs_terrain(terrain, step_width=0.31, step_height=-step_up_height, platform_size=3.)
+                pyramid_stairs_terrain(terrain, step_width=0.31, step_height=-stair_up_height, platform_size=3.)
             else:
                 terrain.terrain_type = Terrain.terrain_type.stairs_down
-                pyramid_stairs_terrain(terrain, step_width=0.31, step_height=step_down_height, platform_size=3.)
+                pyramid_stairs_terrain(terrain, step_width=0.31, step_height=stair_down_height, platform_size=3.)
 
             # self.add_roughness(terrain, difficulty)
 
@@ -268,7 +268,7 @@ class Terrain:
         elif choice < self.proportions[12]:
             terrain.terrain_type = Terrain.terrain_type.parkour_stair
             parkour_stair_terrain(terrain,
-                                  step_height=step_height_goal,
+                                  step_height=stair_height_goal,
                                   # step_depth=random.uniform(0.25, 0.35))  # 0.31
                                   step_depth=0.31)  # 0.31
             terrain.centered_origin = False

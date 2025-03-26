@@ -519,11 +519,11 @@ class IsaacGymWrapper(BaseWrapper):
         cam_pos = look_at_pos + self.lookat_vec
         self.gym.viewer_camera_look_at(self.viewer, None, gymapi.Vec3(*cam_pos), gymapi.Vec3(*look_at_pos))
 
-    def draw_points(self, points, radius=0.02, color=(0, 1, 0), sphere_lines=4):
+    def draw_points(self, points, radius=0.02, color=(0, 1, 0), sphere_lines=4, z_shift=0.02):
         sphere_geom = gymutil.WireframeSphereGeometry(radius, sphere_lines, sphere_lines, None, color=color)
 
         for pt in points:
-            sphere_pose = gymapi.Transform(gymapi.Vec3(pt[0], pt[1], pt[2] + 0.02), r=None)
+            sphere_pose = gymapi.Transform(gymapi.Vec3(pt[0], pt[1], pt[2] + z_shift), r=None)
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self._envs[self.lookat_id], sphere_pose)
 
     def render_camera(self, depth_tensor):

@@ -1,8 +1,9 @@
 import math
+
 import torch
 
 from legged_gym.envs.base.parkour_task import ParkourTask
-from legged_gym.utils.math import quat_to_xyz
+from legged_gym.utils.math import quat_to_xyz, transform_by_trans_quat
 
 
 class HumanoidEnv(ParkourTask):
@@ -41,6 +42,11 @@ class HumanoidEnv(ParkourTask):
         self.feet_height = self._zero_tensor(self.num_envs, len(self.feet_indices))
         self.feet_euler_xyz = self._zero_tensor(self.num_envs, len(self.feet_indices), 3)
 
+        self.foothold_pts_local = self._get_foothold_points()
+        n_points = self.foothold_pts_local.size(1)
+        self.foothold_pts_pos = self._zero_tensor(self.num_envs, 2, n_points, 3)
+        self.foothold_pts_contact = self._zero_tensor(self.num_envs, 2, n_points, dtype=torch.bool)
+
     def _reset_idx(self, env_ids: torch.Tensor):
         super()._reset_idx(env_ids)
         self.phase_length_buf[env_ids] = 0.
@@ -66,6 +72,18 @@ class HumanoidEnv(ParkourTask):
         proj_ground_height = self._get_heights(feet_pos + self.cfg.terrain.border_size, use_guidance=self.cfg.rewards.use_guidance_terrain)
         self.feet_height[:] = feet_pos[:, :, 2] + self.cfg.normalization.feet_height_correction - proj_ground_height
         self.feet_euler_xyz[:] = quat_to_xyz(self.sim.link_quat[:, self.feet_indices])
+
+        # update foothold points position
+        self.foothold_pts_pos[:] = transform_by_trans_quat(
+            self.foothold_pts_local[:, None, :, :].repeat(1, 2, 1, 1),
+            self.sim.link_pos[:, self.feet_indices, None, :],
+            self.sim.link_quat[:, self.feet_indices, None, :].repeat(1, 1, self.foothold_pts_local.size(1), 1)
+        )
+
+        foothold_pts_proj_height = self._get_heights(
+            self.foothold_pts_pos.flatten(1, 2) + self.cfg.terrain.border_size, averaging=True).unflatten(1, (2, -1))
+        foothold_pts_height = torch.abs(self.foothold_pts_pos[..., 2] - foothold_pts_proj_height)
+        self.foothold_pts_contact[:] = foothold_pts_height < self.cfg.rewards.foothold_contact_thresh
 
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
@@ -120,6 +138,15 @@ class HumanoidEnv(ParkourTask):
         clock_input = torch.stack(self._get_clock_input(), dim=1)
         stance_mask = (clock_input >= 0) | (torch.abs(clock_input) < 0.1) | self.is_zero_command.unsqueeze(1)
         return stance_mask
+
+    def _get_foothold_points(self):
+        x_prop, y_prop, z_shift = self.cfg.rewards.foothold_pts
+
+        x_range = torch.linspace(*x_prop)
+        y_range = torch.linspace(*y_prop)
+        grid_x, grid_y = torch.meshgrid(x_range, y_range, indexing='xy')
+        foothold_pts = torch.stack([grid_x.flatten(), grid_y.flatten(), torch.full(grid_x.flatten().shape, z_shift)], dim=-1)
+        return foothold_pts.repeat(self.num_envs, 1, 1).to(self.device)
 
     # ================================================ Rewards ================================================== #
     def _reward_joint_pos(self):
@@ -475,3 +502,17 @@ class HumanoidEnv(ParkourTask):
 
         rew[self.env_class < 2] = 0.
         return rew
+
+    def _reward_foothold(self):
+        valid_foothold_perc = self.foothold_pts_contact.sum(dim=2) / self.foothold_pts_contact.size(2)
+        rew = (1 - valid_foothold_perc) * self.contact_filt
+        return rew.sum(dim=1)
+
+    # ----------------------------------------- Graphics -------------------------------------------
+
+    def _draw_foothold(self):
+        foothold_pos = self.foothold_pts_pos[self.lookat_id].flatten(0, 1).cpu().numpy()
+        foothold_contact = self.foothold_pts_contact[self.lookat_id].flatten(0, 1).cpu().numpy()
+
+        self.sim.draw_points(foothold_pos[foothold_contact], color=(0, 1, 0), radius=0.01, sphere_lines=16, z_shift=0.)
+        self.sim.draw_points(foothold_pos[~foothold_contact], color=(1, 0, 0), radius=0.01, sphere_lines=16, z_shift=0.)
