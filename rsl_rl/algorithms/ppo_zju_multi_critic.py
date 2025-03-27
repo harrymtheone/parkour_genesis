@@ -26,7 +26,8 @@ class Transition:
         self.rewards_default = None
         self.rewards_feet_edge = None
         self.dones = None
-        self.values = None
+        self.values_default = None
+        self.values_feet_edge = None
         self.actions_log_prob = None
         self.action_mean = None
         self.action_sigma = None
@@ -98,7 +99,8 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
             # store
             self.transition.actions = actions
-            self.transition.values = self.critic.evaluate(obs_critic).detach()
+            self.transition.values_default = self.critic['default'].evaluate(obs_critic).detach()
+            self.transition.values_feet_edge = self.critic['feet_edge'].evaluate(obs_critic).detach()
             self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions).detach()
             self.transition.action_mean = self.actor.action_mean.detach()
             self.transition.action_sigma = self.actor.action_std.detach()
@@ -110,11 +112,14 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             self.transition.observations_next = args[0].as_obs_next()
         self.transition.dones = dones.unsqueeze(1)
 
-        self.transition.rewards_default = infos['some_rew'].clone().unsqueeze(1)
-        self.transition.rewards_feet_edge = infos['rewards_feet_edge'].clone().unsqueeze(1)
+        # from Logan
+        rew_elements = infos['rew_elements']
+        # feet_reward = rew_elements['feet_edge'].clone().unsqueeze(1)
+        feet_reward = (rew_elements['foothold'] + rew_elements['feet_contact_forces']).clone().unsqueeze(1)
 
-
-
+        default_reward = rewards.clone().unsqueeze(1) - feet_reward
+        self.transition.rewards_default = default_reward
+        self.transition.rewards_feet_edge = feet_reward
 
         # Bootstrapping on time-outs
         if 'time_outs' in infos:
@@ -123,7 +128,8 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             else:
                 bootstrapping = (infos['time_outs']).unsqueeze(1).to(self.device)
 
-            self.transition.rewards_default += self.cfg.gamma * self.transition.values * bootstrapping
+            self.transition.rewards_default += self.cfg.gamma * self.transition.values_default * bootstrapping
+            self.transition.rewards_feet_edge += self.cfg.gamma * self.transition.values_feet_edge * bootstrapping
 
         # Record the transition
         self.storage.add_transitions(self.transition)
@@ -132,8 +138,9 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             self.actor.reset(dones)
 
     def compute_returns(self, last_critic_obs):
-        last_values = self.critic.evaluate(last_critic_obs).detach()
-        self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
+        last_values_default = self.critic['default'].evaluate(last_critic_obs).detach()
+        last_values_feet_edge = self.critic['feet_edge'].evaluate(last_critic_obs).detach()
+        self.storage.compute_returns(last_values_default, last_values_feet_edge, self.cfg.gamma, self.cfg.lam)
 
     def update(self, cur_it=0, **kwargs):
         update_est = cur_it % 5 == 0
@@ -141,6 +148,8 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         update_est &= self.enable_reconstructor
         mean_value_loss = 0
+        mean_feet_edge_value_loss = 0
+        mean_default_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
@@ -161,22 +170,19 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         for batch in generator:
             # ########################## policy loss ##########################
-            value_loss, surrogate_loss, entropy_loss = self._compute_policy_loss(batch)
-            loss = surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss
-
-            with torch.no_grad():
-                kl_mean = kl_divergence(
-                    Normal(batch['action_mean'], batch['action_sigma']),
-                    Normal(self.actor.action_mean, self.actor.action_std)
-                )[batch['masks'].squeeze()].sum(dim=-1).mean().item()
+            kl_mean, value_loss_default, value_loss_feet_edge, surrogate_loss, entropy_loss, symmetry_loss = self._compute_policy_loss(batch)
+            loss = surrogate_loss + self.cfg.value_loss_coef * (value_loss_default + value_loss_feet_edge) - entropy_loss + symmetry_loss
 
             num_updates += 1
             # policy statistics
-            kl_change.append(kl_mean)
-            mean_kl += kl_mean
-            mean_value_loss += value_loss
+            kl_change.append(kl_mean.item())
+            mean_kl += kl_mean.item()
+            mean_default_value_loss += value_loss_default
+            mean_feet_edge_value_loss += value_loss_feet_edge
+            mean_value_loss = mean_default_value_loss + mean_feet_edge_value_loss
             mean_surrogate_loss += surrogate_loss
             mean_entropy_loss += entropy_loss
+            mean_symmetry_loss += symmetry_loss
 
             # ########################## estimation loss ##########################
             loss_est = 0
@@ -190,7 +196,6 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
                 mean_vae_loss += vae_loss.item()
                 mean_recon_rough_loss += recon_rough_loss.item()
                 mean_recon_refine_loss += recon_refine_loss.item()
-                mean_symmetry_loss += symmetry_loss if type(symmetry_loss) is float else symmetry_loss.item()
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -212,15 +217,17 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         mean_kl /= num_updates
         mean_value_loss /= num_updates
+        mean_default_value_loss /= num_updates
+        mean_feet_edge_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
+        mean_symmetry_loss /= num_updates
         if update_est:
             mean_estimation_loss /= num_updates
             mean_prediction_loss /= num_updates
             mean_vae_loss /= num_updates
             mean_recon_rough_loss /= num_updates
             mean_recon_refine_loss /= num_updates
-            mean_symmetry_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -232,8 +239,11 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             'Loss/learning_rate': self.learning_rate,
             'Loss/kl_div': mean_kl,
             'Loss/value_loss': mean_value_loss,
+            'Loss/default_value_loss': mean_default_value_loss,
+            'Loss/feet_edge_value_loss': mean_feet_edge_value_loss,
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
+            'Loss/symmetry_loss': mean_symmetry_loss,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
 
         }
@@ -245,7 +255,6 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
                 'Loss/VAE_loss': mean_vae_loss,
                 'Loss/recon_rough_loss': mean_recon_rough_loss,
                 'Loss/recon_refine_loss': mean_recon_refine_loss,
-                'Loss/symmetry_loss': mean_symmetry_loss,
             })
 
         return return_dict
@@ -259,9 +268,11 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             recon_hidden_states_batch = batch['recon_hidden_states'] if self.enable_reconstructor else None
             mask_batch = batch['masks'].squeeze()
             actions_batch = batch['actions']
-            target_values_batch = batch['values']
+            default_values_batch = batch['values_default']
+            feet_edge_values_batch = batch['values_feet_edge']
             advantages_batch = batch['advantages']
-            returns_batch = batch['returns']
+            default_returns_batch = batch['returns_default']
+            feet_edge_returns_batch = batch['returns_feet_edge']
             old_actions_log_prob_batch = batch['actions_log_prob']
             use_estimated_values_batch = batch['use_estimated_values']
 
@@ -271,8 +282,15 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
                 use_estimated_values=use_estimated_values_batch
             )
 
+            with torch.no_grad():
+                kl_mean = kl_divergence(
+                    Normal(batch['action_mean'], batch['action_sigma']),
+                    Normal(self.actor.action_mean, self.actor.action_std)
+                )[mask_batch].sum(dim=-1).mean()
+
             actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
-            evaluation = self.critic.evaluate(critic_obs_batch)
+            evaluation_default = self.critic['default'].evaluate(critic_obs_batch)
+            evaluation_feet_edge = self.critic['feet_edge'].evaluate(critic_obs_batch)
 
             # Surrogate loss
             ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
@@ -282,16 +300,39 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
             # Value function loss
             if self.cfg.use_clipped_value_loss:
-                value_clipped = target_values_batch + (evaluation - target_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_losses = (evaluation - returns_batch).pow(2)
-                value_losses_clipped = (value_clipped - returns_batch).pow(2)
-                value_loss = torch.max(value_losses, value_losses_clipped)[mask_batch].mean()
-            else:
-                value_loss = (evaluation - returns_batch)[mask_batch].pow(2).mean()
+                value_clipped_default = default_values_batch + (
+                        evaluation_default - default_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
+                value_losses_default = (evaluation_default - default_returns_batch).pow(2)
+                value_losses_clipped_default = (value_clipped_default - default_returns_batch).pow(2)
+                value_losses_default = torch.max(value_losses_default, value_losses_clipped_default)[mask_batch].mean()
 
+                value_clipped_feet_edge = feet_edge_values_batch + (
+                        evaluation_feet_edge - feet_edge_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
+                value_losses_feet_edge = (evaluation_feet_edge - feet_edge_returns_batch).pow(2)
+                value_losses_clipped_feet_edge = (value_clipped_feet_edge - feet_edge_returns_batch).pow(2)
+                value_losses_feet_edge = torch.max(value_losses_feet_edge, value_losses_clipped_feet_edge)[mask_batch].mean()
+            else:
+                value_losses_default = (evaluation_default - default_returns_batch)[mask_batch].pow(2).mean()
+                value_losses_feet_edge = (evaluation_feet_edge - feet_edge_returns_batch)[mask_batch].pow(2).mean()
+
+            # Entropy loss
             entropy_loss = self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
-            return value_loss, surrogate_loss, entropy_loss
+            # Symmetry loss
+            batch_size = 4
+            action_mean_original = self.actor.action_mean[:batch_size].detach()
+
+            obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
+            self.actor.train_act(
+                obs_mirrored_batch,
+                hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
+                use_estimated_values=use_estimated_values_batch[:batch_size]
+            )
+
+            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
+            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+
+            return kl_mean, value_losses_default, value_losses_feet_edge, surrogate_loss, entropy_loss, symmetry_loss
 
     @torch.compile
     def _compute_estimation_loss(self, batch: dict):
@@ -322,19 +363,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             recon_rough_loss = self.mse_loss(recon_rough[mask_batch], scan)
             recon_refine_loss = self.l1_loss(recon_refine[mask_batch], scan)
 
-            # Symmetry loss
-            obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
-            self.actor.train_act(
-                obs_mirrored_batch,
-                hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
-                use_estimated_values=use_estimated_values_batch
-            )
-
-            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
-
-        return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss
-        # return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, 0.
+        return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss
 
     def play_act(self, obs, **kwargs):
         return self.actor.act(obs, **kwargs)

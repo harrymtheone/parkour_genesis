@@ -132,13 +132,13 @@ class PPO_ZJU(BaseAlgorithm):
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
+        mean_symmetry_loss = 0
         mean_kl = 0
         mean_recon_rough_loss = 0
         mean_recon_refine_loss = 0
         mean_estimation_loss = 0
         mean_prediction_loss = 0
         mean_vae_loss = 0
-        mean_symmetry_loss = 0
 
         kl_change = []
         num_updates = 0
@@ -150,8 +150,8 @@ class PPO_ZJU(BaseAlgorithm):
 
         for batch in generator:
             # ########################## policy loss ##########################
-            value_loss, surrogate_loss, entropy_loss = self._compute_policy_loss(batch)
-            loss = surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss
+            value_loss, surrogate_loss, entropy_loss, symmetry_loss = self._compute_policy_loss(batch)
+            loss = surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss + symmetry_loss
 
             with torch.no_grad():
                 kl_mean = kl_divergence(
@@ -166,12 +166,13 @@ class PPO_ZJU(BaseAlgorithm):
             mean_value_loss += value_loss
             mean_surrogate_loss += surrogate_loss
             mean_entropy_loss += entropy_loss
+            mean_symmetry_loss += symmetry_loss
 
             # ########################## estimation loss ##########################
             loss_est = 0
             if update_est:
-                estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss = self._compute_estimation_loss(batch)
-                loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss + symmetry_loss
+                estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss = self._compute_estimation_loss(batch)
+                loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss
 
                 # estimation statistics
                 mean_estimation_loss += estimation_loss.item()
@@ -179,7 +180,6 @@ class PPO_ZJU(BaseAlgorithm):
                 mean_vae_loss += vae_loss.item()
                 mean_recon_rough_loss += recon_rough_loss.item()
                 mean_recon_refine_loss += recon_refine_loss.item()
-                mean_symmetry_loss += symmetry_loss if type(symmetry_loss) is float else symmetry_loss.item()
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -203,13 +203,13 @@ class PPO_ZJU(BaseAlgorithm):
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
+        mean_symmetry_loss /= num_updates
         if update_est:
             mean_estimation_loss /= num_updates
             mean_prediction_loss /= num_updates
             mean_vae_loss /= num_updates
             mean_recon_rough_loss /= num_updates
             mean_recon_refine_loss /= num_updates
-            mean_symmetry_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -223,6 +223,7 @@ class PPO_ZJU(BaseAlgorithm):
             'Loss/value_loss': mean_value_loss,
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
+            'Loss/symmetry_loss': mean_symmetry_loss,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
 
         }
@@ -234,7 +235,6 @@ class PPO_ZJU(BaseAlgorithm):
                 'Loss/VAE_loss': mean_vae_loss,
                 'Loss/recon_rough_loss': mean_recon_rough_loss,
                 'Loss/recon_refine_loss': mean_recon_refine_loss,
-                'Loss/symmetry_loss': mean_symmetry_loss,
             })
 
         return return_dict
@@ -280,7 +280,21 @@ class PPO_ZJU(BaseAlgorithm):
 
             entropy_loss = self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
-            return value_loss, surrogate_loss, entropy_loss
+            # Symmetry loss
+            batch_size = 4
+            action_mean_original = self.actor.action_mean[:batch_size].detach()
+
+            obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
+            self.actor.train_act(
+                obs_mirrored_batch,
+                hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
+                use_estimated_values=use_estimated_values_batch[:batch_size]
+            )
+
+            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
+            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+
+            return value_loss, surrogate_loss, entropy_loss, symmetry_loss
 
     @torch.compile
     def _compute_estimation_loss(self, batch: dict):
@@ -311,19 +325,7 @@ class PPO_ZJU(BaseAlgorithm):
             recon_rough_loss = self.mse_loss(recon_rough[mask_batch], scan)
             recon_refine_loss = self.l1_loss(recon_refine[mask_batch], scan)
 
-            # Symmetry loss
-            obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
-            self.actor.train_act(
-                obs_mirrored_batch,
-                hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
-                use_estimated_values=use_estimated_values_batch
-            )
-
-            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
-
-        return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss
-        # return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, 0.
+        return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss
 
     def play_act(self, obs, **kwargs):
         return self.actor.act(obs, **kwargs)

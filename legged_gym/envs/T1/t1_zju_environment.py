@@ -47,6 +47,7 @@ class ActorObs(ObsBase):
         # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
 
+    @torch.compiler.disable
     def mirror(self):
         return ActorObs(
             mirror_proprio_by_x(self.proprio),

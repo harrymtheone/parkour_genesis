@@ -1,7 +1,7 @@
 from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
 
 
-class T1_ZJU_Cfg(T1BaseCfg):
+class T1_Multi_Critic_Cfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
 
@@ -94,11 +94,11 @@ class T1_ZJU_Cfg(T1BaseCfg):
     class domain_rand(T1BaseCfg.domain_rand):
         switch = True
 
-        randomize_start_pos = True
-        randomize_start_y = True
-        randomize_start_yaw = False
-        randomize_start_vel = False
-        randomize_start_pitch = False
+        randomize_start_pos = False
+        randomize_start_y = switch
+        randomize_start_yaw = switch
+        randomize_start_vel = switch
+        randomize_start_pitch = switch
 
         randomize_start_dof_pos = True
         randomize_start_dof_vel = True
@@ -162,6 +162,10 @@ class T1_ZJU_Cfg(T1BaseCfg):
             tracking_ang_vel = 2.5
             vel_mismatch_exp = 0.5
 
+            # contact
+            feet_contact_forces = -0.002
+            foothold = -1.
+
             # base pos
             default_joint_pos = 0.5
             orientation = 1.
@@ -176,10 +180,10 @@ class T1_ZJU_Cfg(T1BaseCfg):
             collision = -1.
 
 
-class T1_ZJU_Cfg_PPO(T1BaseCfgPPO):
+class T1_Multi_Critic_Cfg_PPO(T1BaseCfgPPO):
     seed = -1
     runner_name = 'rl_dream'  # rl, distil, mixed
-    algorithm_name = 'ppo_zju'
+    algorithm_name = 'ppo_zju_mc'
 
     class policy:
         # actor parameters
@@ -231,10 +235,12 @@ class T1_ZJU_Cfg_PPO(T1BaseCfgPPO):
 # ------------------------------------------- Stair -------------------------------------------
 # -----------------------------------------------------------------------------------------------
 
-class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
-    class rewards(T1_ZJU_Cfg.rewards):
-        class scales(T1_ZJU_Cfg.rewards.scales):
+class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
+    class rewards(T1_Multi_Critic_Cfg.rewards):
+        class scales(T1_Multi_Critic_Cfg.rewards.scales):
             # gait
+            joint_pos = 2.
+
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
@@ -246,7 +252,7 @@ class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
             foothold = -1.
 
             # base pos
-            default_joint_pos = 1.0
+            default_joint_pos = 3.0
 
     class terrain(T1BaseCfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
@@ -265,12 +271,12 @@ class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 2,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 
 
-class T1_ZJU_Stair_Cfg_PPO(T1_ZJU_Cfg_PPO):
+class T1_Multi_Critic_Stair_Cfg_PPO(T1_Multi_Critic_Cfg_PPO):
     class runner(T1BaseCfgPPO.runner):
         max_iterations = 50000  # number of policy updates
 
@@ -282,9 +288,9 @@ class T1_ZJU_Stair_Cfg_PPO(T1_ZJU_Cfg_PPO):
 # ------------------------------------------- Parkour -------------------------------------------
 # -----------------------------------------------------------------------------------------------
 
-class T1_ZJU_Parkour_Cfg(T1_ZJU_Cfg):
-    class rewards(T1_ZJU_Cfg.rewards):
-        class scales(T1_ZJU_Cfg.rewards.scales):
+class T1_Multi_Critic_Parkour_Cfg(T1_Multi_Critic_Cfg):
+    class rewards(T1_Multi_Critic_Cfg.rewards):
+        class scales(T1_Multi_Critic_Cfg.rewards.scales):
             # gait
             feet_distance = 0.2
             knee_distance = 0.2
@@ -320,7 +326,7 @@ class T1_ZJU_Parkour_Cfg(T1_ZJU_Cfg):
         }
 
 
-class T1_ZJU_Parkour_Cfg_PPO(T1_ZJU_Cfg_PPO):
+class T1_Multi_Critic_Parkour_Cfg_PPO(T1_Multi_Critic_Cfg_PPO):
     class runner(T1BaseCfgPPO.runner):
         max_iterations = 50000  # number of policy updates
 

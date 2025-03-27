@@ -78,7 +78,8 @@ class RolloutStorageMultiCritic:
         self.num_envs = num_envs
 
         self.storage = {}
-        self.returns = torch.zeros(n_trans_per_env, num_envs, 1, device=self.device)
+        self.returns_default = torch.zeros(n_trans_per_env, num_envs, 1, device=self.device)
+        self.returns_feet_edge = torch.zeros(n_trans_per_env, num_envs, 1, device=self.device)
         self.advantages = torch.zeros(n_trans_per_env, num_envs, 1, device=self.device)
 
         from legged_gym.envs.base.utils import ObsBase
@@ -125,25 +126,33 @@ class RolloutStorageMultiCritic:
     def clear(self):
         self.step = 0
 
-    def compute_returns(self, last_values, gamma, lam):
+    def compute_returns(self, last_values_default, last_values_feet_edge, gamma, lam):
         advantage = 0
         dones_buf = self.storage['dones'].buf.float()
-        rewards_buf = self.storage['rewards'].buf
-        values_buf = self.storage['values'].buf
+        rewards_default_buf = self.storage['rewards_default'].buf
+        rewards_feet_edge_buf = self.storage['rewards_feet_edge'].buf
+        values_default_buf = self.storage['values_default'].buf
+        values_feet_edge_buf = self.storage['values_feet_edge'].buf
+        w1 = 1
+        w2 = 1
 
         for step in reversed(range(self.num_transitions_per_env)):
             if step == self.num_transitions_per_env - 1:
-                next_values = last_values
+                next_values_default = last_values_default
+                next_values_feet_edge = last_values_feet_edge
             else:
-                next_values = self.storage['values'].get(step + 1)
+                next_values_default = self.storage['values_default'].get(step + 1)
+                next_values_feet_edge = self.storage['values_feet_edge'].get(step + 1)
 
             next_is_not_terminal = 1.0 - dones_buf[step]
-            delta = rewards_buf[step] + next_is_not_terminal * gamma * next_values - values_buf[step]
-            advantage = delta + next_is_not_terminal * gamma * lam * advantage
-            self.returns[step] = advantage + values_buf[step]
+            delta_default = rewards_default_buf[step] + next_is_not_terminal * gamma * next_values_default - values_default_buf[step]
+            delta_feet_edge = rewards_feet_edge_buf[step] + next_is_not_terminal * gamma * next_values_feet_edge - values_feet_edge_buf[step]
+            advantage = w1*delta_default + w2*delta_feet_edge + 1*next_is_not_terminal * gamma * lam * advantage
+            self.returns_default[step] = advantage + values_default_buf[step]
+            self.returns_feet_edge[step] = advantage + values_feet_edge_buf[step]
 
         # Compute and normalize the advantages
-        self.advantages[:] = self.returns - values_buf
+        self.advantages[:] = w1*self.returns_default + w2*self.returns_feet_edge - (w1*values_default_buf + w2*values_feet_edge_buf)
         self.advantages[:] = (self.advantages - self.advantages.mean()) / (self.advantages.std() + 1e-8)
 
     def mini_batch_generator(self, num_mini_batches, num_epochs=8):
@@ -154,7 +163,8 @@ class RolloutStorageMultiCritic:
         mini_batch_size = batch_size // num_mini_batches
         indices = torch.randperm(batch_size)
 
-        returns = self.returns.flatten(0, 1)
+        returns_default = self.returns_default.flatten(0, 1)
+        returns_feet_edge = self.returns_feet_edge.flatten(0, 1)
         advantages = self.advantages.flatten(0, 1)
 
         for epoch in range(num_epochs):
@@ -164,7 +174,8 @@ class RolloutStorageMultiCritic:
                 batch_idx = indices[start:end]
 
                 batch_dict = {n: v.flatten_get(batch_idx) for n, v in self.storage.items()}
-                batch_dict['returns'] = returns[batch_idx]
+                batch_dict['returns_default'] = returns_default[batch_idx]
+                batch_dict['returns_feet_edge'] = returns_feet_edge[batch_idx]
                 batch_dict['advantages'] = advantages[batch_idx]
 
                 yield batch_dict
@@ -183,7 +194,8 @@ class RolloutStorageMultiCritic:
                 for n, v in self.storage.items():
                     batch_dict[n] = v.get((slice(None), slice(start, stop)))
 
-                batch_dict['returns'] = self.returns[:, start: stop]
+                batch_dict['returns_default'] = self.returns_default[:, start: stop]
+                batch_dict['returns_feet_edge'] = self.returns_feet_edge[:, start: stop]
                 batch_dict['advantages'] = self.advantages[:, start: stop]
 
                 yield batch_dict

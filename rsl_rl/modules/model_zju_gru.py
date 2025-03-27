@@ -333,19 +333,8 @@ class EstimatorNoRecon(nn.Module):
         latent_obs = self.obs_gru.inference_forward(obs.prop_his)
 
         # cross-model mixing using transformer
-        if type(use_estimated_values) is torch.Tensor:
-            est_latent, est, _, _ = self.transformer(obs.scan, latent_obs)
-            latent_input = torch.where(
-                use_estimated_values,
-                torch.cat([est_latent, est.detach()], dim=1),
-                torch.cat([est_latent, obs.priv_actor], dim=1)
-            )
-        elif use_estimated_values:
-            est_latent, est, _, _ = self.transformer(obs.scan, latent_obs)
-            latent_input = torch.cat([est_latent, est.detach()], dim=1)
-        else:
-            est_latent, _, _, _ = self.transformer(obs.scan, latent_obs)
-            latent_input = torch.cat([est_latent, obs.priv_actor], dim=1)
+        est_latent, _, _, _ = self.transformer(obs.scan, latent_obs)
+        latent_input = torch.cat([est_latent, obs.priv_actor], dim=1)
 
         # compute action
         mean = self.actor(obs.proprio, latent_input)
@@ -371,11 +360,7 @@ class EstimatorNoRecon(nn.Module):
 
         # cross-model mixing using transformer
         est_latent, est, _, _ = gru_wrapper(self.transformer.forward, obs.scan, latent_obs)
-        latent_input = torch.where(
-            use_estimated_values,
-            torch.cat([est_latent, est.detach()], dim=2),
-            torch.cat([est_latent, obs.priv_actor], dim=2)
-        )
+        latent_input = torch.cat([est_latent, obs.priv_actor], dim=2)
 
         # compute action
         mean = gru_wrapper(self.actor.forward, obs.proprio, latent_input)
