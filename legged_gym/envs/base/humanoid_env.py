@@ -233,7 +233,7 @@ class HumanoidEnv(ParkourTask):
         """
         # print(self.sim.contact_forces[:, self.feet_indices, 2].cpu().numpy())
         contact_forces = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1)
-        return torch.sum((contact_forces - self.cfg.rewards.max_contact_force).clip(min=0), dim=1)
+        return (contact_forces - self.cfg.rewards.max_contact_force).clip(min=0).sum(dim=1)
 
     def _reward_tracking_lin_vel(self):
         """
@@ -489,7 +489,7 @@ class HumanoidEnv(ParkourTask):
     def _reward_feet_stumble(self):
         # Penalize feet hitting vertical surfaces
         return torch.any(torch.norm(self.sim.contact_forces[:, self.feet_indices, :2], dim=2) >
-                         5 * torch.abs(self.sim.contact_forces[:, self.feet_indices, 2]), dim=1)
+                         5 * torch.abs(self.sim.contact_forces[:, self.feet_indices, 2]), dim=1).float()
 
     # def _reward_dof_vel_limits(self):
     #     # Penalize dof velocities too close to the limit

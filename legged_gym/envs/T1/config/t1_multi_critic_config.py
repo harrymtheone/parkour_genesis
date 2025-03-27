@@ -246,7 +246,7 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             feet_rotation = 0.5
 
             # contact
-            feet_contact_forces = -0.002
+            feet_contact_forces = -0.01
             feet_stumble = -1.0
             # feet_edge = -0.5
             foothold = -1.
@@ -291,18 +291,20 @@ class T1_Multi_Critic_Stair_Cfg_PPO(T1_Multi_Critic_Cfg_PPO):
 class T1_Multi_Critic_Parkour_Cfg(T1_Multi_Critic_Cfg):
     class rewards(T1_Multi_Critic_Cfg.rewards):
         class scales(T1_Multi_Critic_Cfg.rewards.scales):
+            joint_pos = 5.
+
             # gait
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
 
             # contact
-            feet_contact_forces = -0.002
+            feet_contact_forces = -0.005
             feet_stumble = -1.0
             feet_edge = -0.5
 
             # base pos
-            default_joint_pos = 1.0
+            default_joint_pos = 5.0
 
     class terrain(T1BaseCfg.terrain):
         num_rows = 10  # number of terrain rows (levels)

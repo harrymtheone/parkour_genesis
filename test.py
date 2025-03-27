@@ -55,35 +55,98 @@
 # plt.axvline(x=v_cmd_xy + 0.1, linestyle="--", color="green", label="Upper threshold")
 # plt.show()
 
-import torch
-import math
+# import torch
+# import math
+# import matplotlib.pyplot as plt
+#
+# # Define parameters
+# parkour_vel_tolerance = 0.3  # Example value
+# tracking_sigma = 5  # Example value
+#
+# # Define lin_vel_error range
+# lin_vel_error = torch.linspace(0, 1.5, 100)  # Adjust range as needed
+#
+# # Compute reward function
+# rew = torch.where(
+#     lin_vel_error < parkour_vel_tolerance,
+#     torch.exp(-lin_vel_error * 0.3),
+#     torch.exp(-(lin_vel_error - parkour_vel_tolerance) * tracking_sigma) - 1 + math.exp(-parkour_vel_tolerance * 0.3)
+# )
+#
+# # Convert to numpy for plotting
+# lin_vel_error_np = lin_vel_error.numpy()
+# rew_np = rew.numpy()
+#
+# # Plot the function
+# plt.figure(figsize=(8, 5))
+# plt.plot(lin_vel_error_np, rew_np, label="Reward Function", color='b')
+# plt.axvline(x=parkour_vel_tolerance, color='r', linestyle='--', label="Tolerance Threshold")
+# plt.xlabel("Linear Velocity Error")
+# plt.ylabel("Reward")
+# plt.title("Reward Function vs. Linear Velocity Error")
+# plt.legend()
+# plt.grid(True)
+# plt.show()
+
+
+import numpy as np
+import noise
 import matplotlib.pyplot as plt
 
-# Define parameters
-parkour_vel_tolerance = 0.3  # Example value
-tracking_sigma = 5  # Example value
+from legged_gym.utils.terrain.utils import convert_heightfield_to_trimesh
+import open3d as o3d
 
-# Define lin_vel_error range
-lin_vel_error = torch.linspace(0, 1.5, 100)  # Adjust range as needed
 
-# Compute reward function
-rew = torch.where(
-    lin_vel_error < parkour_vel_tolerance,
-    torch.exp(-lin_vel_error * 0.3),
-    torch.exp(-(lin_vel_error - parkour_vel_tolerance) * tracking_sigma) - 1 + math.exp(-parkour_vel_tolerance * 0.3)
-)
+def generate_fractal_noise_2d(shape, scale=100, octaves=5, persistence=0.5, lacunarity=2.0, seed=None):
+    """
+    Generate 2D fractal noise using Perlin noise.
 
-# Convert to numpy for plotting
-lin_vel_error_np = lin_vel_error.numpy()
-rew_np = rew.numpy()
+    Parameters:
+        shape (tuple): (height, width) of the output noise grid.
+        scale (float): Frequency scale of the noise.
+        octaves (int): Number of noise layers.
+        persistence (float): Amplitude reduction per octave (0-1).
+        lacunarity (float): Frequency multiplier per octave (>1).
+        seed (int, optional): Random seed for noise generation.
 
-# Plot the function
-plt.figure(figsize=(8, 5))
-plt.plot(lin_vel_error_np, rew_np, label="Reward Function", color='b')
-plt.axvline(x=parkour_vel_tolerance, color='r', linestyle='--', label="Tolerance Threshold")
-plt.xlabel("Linear Velocity Error")
-plt.ylabel("Reward")
-plt.title("Reward Function vs. Linear Velocity Error")
-plt.legend()
-plt.grid(True)
+    Returns:
+        np.ndarray: 2D fractal noise array.
+    """
+    height, width = shape
+    noise_array = np.zeros((height, width))
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    for y in range(height):
+        for x in range(width):
+            noise_value = 0
+            frequency = 1.0 / scale
+            amplitude = 1.0
+            for _ in range(octaves):
+                noise_value += amplitude * noise.pnoise2(x * frequency, y * frequency, repeatx=width, repeaty=height)
+                frequency *= lacunarity
+                amplitude *= persistence
+
+            noise_array[y, x] = noise_value
+
+    # Normalize noise to range [0, 1]
+    noise_array = (noise_array - noise_array.min()) / (noise_array.max() - noise_array.min())
+    return noise_array
+
+
+# Example usage
+noise_2d = generate_fractal_noise_2d((256, 256), scale=50, octaves=6, persistence=0.5, lacunarity=2.0, seed=42)
+
+ver, tri = convert_heightfield_to_trimesh(noise_2d, 0.05, 0.5, 1.0)
+mesh = o3d.geometry.TriangleMesh()
+mesh.vertices = o3d.utility.Vector3dVector(ver)
+mesh.triangles = o3d.utility.Vector3iVector(tri)
+mesh.compute_vertex_normals()
+o3d.visualization.draw_geometries([mesh])
+
+# Visualize the fractal noise
+plt.imshow(noise_2d, cmap="gray")
+plt.colorbar()
+plt.title("2D Fractal Noise")
 plt.show()

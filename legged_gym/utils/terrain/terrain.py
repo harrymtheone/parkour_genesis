@@ -1,11 +1,10 @@
-import random
 from enum import Enum
 
 import pyfqmr
 import scipy
 
 from .terrain_utils import *
-from .utils import convert_heightfield_to_trimesh, add_fractal_roughness, edge_detection, generate_fractal_noise_2d
+from .utils import convert_heightfield_to_trimesh, edge_detection, generate_fractal_noise_2d
 
 
 class Terrain:
@@ -132,13 +131,19 @@ class Terrain:
                                downsampled_scale=self.cfg.downsampled_scale)
 
     def add_fractal_roughness(self, terrain, difficulty=1):
+        # heightfield_noise = generate_fractal_noise_2d(
+        #     xSize=int(terrain.width * self.cfg.horizontal_scale),
+        #     ySize=int(terrain.length * self.cfg.horizontal_scale),
+        #     xSamples=terrain.width,
+        #     ySamples=terrain.length,
+        #     zScale=0.08 + 0.07 * difficulty,  # 0.08, 0.15
+        #     frequency=10,
+        # ) / self.cfg.vertical_scale
+
         heightfield_noise = generate_fractal_noise_2d(
-            xSize=int(terrain.width * self.cfg.horizontal_scale),
-            ySize=int(terrain.length * self.cfg.horizontal_scale),
-            xSamples=terrain.width,
-            ySamples=terrain.length,
-            zScale=0.08 + 0.07 * difficulty,  # 0.08, 0.15
-            frequency=10,
+            (terrain.width, terrain.length),
+            terrain.horizontal_scale,
+            difficulty
         ) / self.cfg.vertical_scale
 
         terrain.height_field_raw[:] += heightfield_noise
@@ -279,8 +284,6 @@ class Terrain:
             parkour_flat_terrain(terrain)
             terrain.centered_origin = False
             self.add_roughness(terrain, difficulty)
-            # add_fractal_roughness(terrain, levels=6, scale=0.2)
-            add_fractal_roughness(terrain, difficulty)
 
         return terrain
 
