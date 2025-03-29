@@ -42,24 +42,24 @@ class Transition:
 
 
 class PPO_ZJU_Multi_Critic(BaseAlgorithm):
-    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), env=None, **kwargs):
+    def __init__(self, task_cfg, device=torch.device('cpu'), env=None, **kwargs):
         self.env = env
 
         # PPO parameters
-        self.cfg = train_cfg.algorithm
+        self.cfg = task_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate
         self.device = device
-        self.enable_reconstructor = train_cfg.policy.enable_reconstructor
+        self.enable_reconstructor = task_cfg.policy.enable_reconstructor
 
         # PPO component
         if self.enable_reconstructor:
-            self.actor = EstimatorGRU(env_cfg, train_cfg.policy).to(self.device)
+            self.actor = EstimatorGRU(task_cfg.env, task_cfg.policy).to(self.device)
         else:
-            self.actor = EstimatorNoRecon(env_cfg, train_cfg.policy).to(self.device)
+            self.actor = EstimatorNoRecon(task_cfg.env, task_cfg.policy).to(self.device)
 
         self.critic = nn.ModuleDict({
-            'default': UniversalCritic(env_cfg, train_cfg),
-            'contact': UniversalCritic(env_cfg, train_cfg),
+            'default': UniversalCritic(task_cfg.env, task_cfg.policy),
+            'contact': UniversalCritic(task_cfg.env, task_cfg.policy),
         }).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
@@ -70,7 +70,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         # Rollout Storage
         self.transition = Transition(self.enable_reconstructor)
-        self.storage = RolloutStorage(env_cfg.num_envs, train_cfg.runner.num_steps_per_env, self.device)
+        self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
     def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):

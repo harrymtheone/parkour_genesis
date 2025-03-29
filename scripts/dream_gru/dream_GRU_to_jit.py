@@ -53,7 +53,7 @@ def trace():
         os.mkdir(trace_path)
 
     task_registry = TaskRegistry()
-    env_cfg, train_cfg = task_registry.get_cfgs(name=cfg)
+    env_cfg, train_cfg = task_registry.get_cfg(name=cfg)
 
     device = torch.device('cpu')
     load_path = os.path.join(f'../../logs/{proj}/', exptid, f'model_{checkpoint}.pt')

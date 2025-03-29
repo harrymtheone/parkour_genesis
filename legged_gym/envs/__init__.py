@@ -1,16 +1,16 @@
 from .T1.t1_priv_environment import T1PrivEnvironment
-from .T1.config.t1_priv_config import T1PrivCfg, T1PrivCfgPPO
+from .T1.config.t1_priv_config import T1PrivCfg
 
 from .T1.t1_dreamwaq_environment import T1DreamWaqEnvironment
-from .T1.config.t1_dreamwaq_config import T1DreamWaqCfg, T1DreamWaqCfgPPO
+from .T1.config.t1_dreamwaq_config import T1DreamWaqCfg
 
 from .T1.t1_pie_environment import T1PIEEnvironment
-from .T1.config.t1_pie_config import T1PIECfg, T1PIECfgPPO
+from .T1.config.t1_pie_config import T1PIECfg
 
 from .T1.t1_zju_environment import T1ZJUEnvironment
-from .T1.config.t1_zju_config import T1_ZJU_Cfg, T1_ZJU_Cfg_PPO, T1_ZJU_Stair_Cfg, T1_ZJU_Stair_Cfg_PPO, T1_ZJU_Parkour_Cfg, T1_ZJU_Parkour_Cfg_PPO
-from .T1.config.t1_multi_critic_config import T1_Multi_Critic_Cfg, T1_Multi_Critic_Cfg_PPO
-from .T1.config.t1_multi_critic_config import T1_Multi_Critic_Stair_Cfg, T1_Multi_Critic_Stair_Cfg_PPO
+from .T1.config.t1_zju_config import T1_ZJU_Cfg, T1_ZJU_Stair_Cfg, T1_ZJU_Parkour_Cfg
+from .T1.config.t1_multi_critic_config import T1_Multi_Critic_Cfg
+from .T1.config.t1_multi_critic_config import T1_Multi_Critic_Stair_Cfg
 
 from .pdd.pdd_dreamwaq_environment import PddDreamWaqEnvironment
 from .pdd.config.pdd_dreamwaq_config import PddDreamWaqCfg, PddDreamWaqCfgPPO, PddDreamWaqGRUCfgPPO
@@ -28,28 +28,28 @@ from .A1.a1_dreamer_environment import A1DreamerEnvironment
 from .A1.config.a1_dreamer_config import A1_ZJU_Cfg, A1_ZJU_CfgPPO
 
 task_list = [
-    ['pdd_scan', PddScanEnvironment, PddScanCfg(), PddScanCfgPPO()],
-    ['pdd_scan_stair', PddScanEnvironment, PddScanStairCfg(), PddScanStairCfgPPO()],
+    # ['pdd_scan', PddScanEnvironment, PddScanCfg(), PddScanCfgPPO()],  # TODO: not finished yet
+    # ['pdd_scan_stair', PddScanEnvironment, PddScanStairCfg(), PddScanStairCfgPPO()],  # TODO: not finished yet
+    #
+    # ['pdd_dreamwaq', PddDreamWaqEnvironment, PddDreamWaqCfg(), PddDreamWaqCfgPPO()],  # TODO: not finished yet
+    #
+    # ['pdd_zju', PddZJUEnvironment, PddZJUCfg(), PddZJUCfgPPO()],  # TODO: not finished yet
 
-    ['pdd_dreamwaq', PddDreamWaqEnvironment, PddDreamWaqCfg(), PddDreamWaqCfgPPO()],
+    ['t1_priv', T1PrivEnvironment, T1PrivCfg()],
+    ['t1_dreamwaq', T1DreamWaqEnvironment, T1DreamWaqCfg()],
+    ['t1_pie', T1PIEEnvironment, T1PIECfg()],
 
-    ['pdd_zju', PddZJUEnvironment, PddZJUCfg(), PddZJUCfgPPO()],
+    ['t1_zju', T1ZJUEnvironment, T1_ZJU_Cfg()],
+    ['t1_zju_stair', T1ZJUEnvironment, T1_ZJU_Stair_Cfg()],
+    ['t1_zju_parkour', T1ZJUEnvironment, T1_ZJU_Parkour_Cfg()],
 
-    ['t1_priv', T1PrivEnvironment, T1PrivCfg(), T1PrivCfgPPO()],
-    ['t1_dreamwaq', T1DreamWaqEnvironment, T1DreamWaqCfg(), T1DreamWaqCfgPPO()],
-    ['t1_pie', T1PIEEnvironment, T1PIECfg(), T1PIECfgPPO()],
+    ['t1_mc', T1ZJUEnvironment, T1_Multi_Critic_Cfg()],
+    ['t1_mc_stair', T1ZJUEnvironment, T1_Multi_Critic_Stair_Cfg()],
 
-    ['t1_zju', T1ZJUEnvironment, T1_ZJU_Cfg(), T1_ZJU_Cfg_PPO()],
-    ['t1_zju_stair', T1ZJUEnvironment, T1_ZJU_Stair_Cfg(), T1_ZJU_Stair_Cfg_PPO()],
-    ['t1_zju_parkour', T1ZJUEnvironment, T1_ZJU_Parkour_Cfg(), T1_ZJU_Parkour_Cfg_PPO()],
-
-    ['t1_mc', T1ZJUEnvironment, T1_Multi_Critic_Cfg(), T1_Multi_Critic_Cfg_PPO()],
-    ['t1_mc_stair', T1ZJUEnvironment, T1_Multi_Critic_Stair_Cfg(), T1_Multi_Critic_Stair_Cfg_PPO()],
-
-    ['go1_zju', Go1ZJUEnvironment, Go1_ZJU_Cfg(), Go1_ZJU_CfgPPO()],
-    ['go1_zju_pit', Go1ZJUEnvironment, Go1_ZJU_Pit_Cfg(), Go1_ZJU_VAE_Pit_CfgPPO()],
-
-    ['a1_zju', Go1ZJUEnvironment, Go1_ZJU_Cfg(), Go1_ZJU_CfgPPO()],
-    ['a1_zju_pit', Go1ZJUEnvironment, Go1_ZJU_Pit_Cfg(), Go1_ZJU_VAE_Pit_CfgPPO()],
+    # ['go1_zju', Go1ZJUEnvironment, Go1_ZJU_Cfg(), Go1_ZJU_CfgPPO()],  # TODO: not finished yet
+    # ['go1_zju_pit', Go1ZJUEnvironment, Go1_ZJU_Pit_Cfg(), Go1_ZJU_VAE_Pit_CfgPPO()],  # TODO: not finished yet
+    #
+    # ['a1_zju', Go1ZJUEnvironment, Go1_ZJU_Cfg(), Go1_ZJU_CfgPPO()],  # TODO: not finished yet
+    # ['a1_zju_pit', Go1ZJUEnvironment, Go1_ZJU_Pit_Cfg(), Go1_ZJU_VAE_Pit_CfgPPO()],  # TODO: not finished yet
 
 ]

@@ -618,7 +618,6 @@ class BaseTask:
     def update_reward_curriculum(self, epoch):
         if self.cfg.rewards.only_positive_rewards:
             self.only_positive_rewards = epoch < self.cfg.rewards.only_positive_rewards_until_epoch
-
     def _prepare_reward_function(self):
         # prepare list of functions
         self._reward_names = []

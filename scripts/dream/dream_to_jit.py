@@ -46,7 +46,7 @@ def trace():
         os.mkdir(trace_path)
 
     task_registry = TaskRegistry()
-    env_cfg, train_cfg = task_registry.get_cfgs(name='pdd_dreamwaq')
+    env_cfg, train_cfg = task_registry.get_cfg(name='pdd_dreamwaq')
 
     device = torch.device('cpu')
     load_path = os.path.join('../../logs/parkour_genesis/', exptid, f'model_{checkpoint}.pt')

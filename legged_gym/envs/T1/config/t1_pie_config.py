@@ -1,6 +1,4 @@
-import numpy as np
-
-from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
+from .t1_base_config import T1BaseCfg
 
 
 class T1PIECfg(T1BaseCfg):
@@ -157,12 +155,6 @@ class T1PIECfg(T1BaseCfg):
             dof_acc = -1e-7
             collision = -1.
 
-
-class T1PIECfgPPO(T1BaseCfgPPO):
-    seed = -1
-    runner_name = 'rl_dream'  # rl, distil, mixed
-    algorithm_name = 'ppo_pie'
-
     class policy:
         # actor parameters
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
@@ -197,8 +189,8 @@ class T1PIECfgPPO(T1BaseCfgPPO):
         use_amp = True
         continue_from_last_std = True
 
-    class runner(T1BaseCfgPPO.runner):
-        max_iterations = 50000  # number of policy updates
+    class runner(T1BaseCfg.runner):
+        runner_name = 'rl_dream'  # rl, distil, mixed
+        algorithm_name = 'ppo_pie'
 
-        # logging
-        save_interval = 100  # check for potential saves every this many iterations
+        max_iterations = 50000  # number of policy updates

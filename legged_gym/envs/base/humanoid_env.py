@@ -83,7 +83,7 @@ class HumanoidEnv(ParkourTask):
         foothold_pts_proj_height = self._get_heights(
             self.foothold_pts_pos.flatten(1, 2) + self.cfg.terrain.border_size, averaging=True).unflatten(1, (2, -1))
         foothold_pts_height = torch.abs(self.foothold_pts_pos[..., 2] - foothold_pts_proj_height)
-        self.foothold_pts_contact[:] = foothold_pts_height < self.cfg.rewards.foothold_contact_thresh
+        self.foothold_pts_contact[:] = foothold_pts_height < self.cfg.terrain.foothold_contact_thresh
 
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
@@ -140,7 +140,7 @@ class HumanoidEnv(ParkourTask):
         return stance_mask
 
     def _get_foothold_points(self):
-        x_prop, y_prop, z_shift = self.cfg.rewards.foothold_pts
+        x_prop, y_prop, z_shift = self.cfg.terrain.foothold_pts
 
         x_range = torch.linspace(*x_prop)
         y_range = torch.linspace(*y_prop)

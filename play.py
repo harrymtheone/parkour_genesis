@@ -23,27 +23,27 @@ def play(args):
     args.resume = True
 
     task_registry = TaskRegistry()
-    env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
+    task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    env_cfg.play.control = False
-    env_cfg.env.num_envs = 3
-    env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
-    env_cfg.terrain.num_rows = 5
-    env_cfg.terrain.max_init_terrain_level = 4
-    env_cfg.terrain.curriculum = True
-    # env_cfg.terrain.max_difficulty = True
-    # env_cfg.asset.disable_gravity = True
+    task_cfg.play.control = False
+    task_cfg.env.num_envs = 3
+    task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
+    task_cfg.terrain.num_rows = 5
+    task_cfg.terrain.max_init_terrain_level = 4
+    task_cfg.terrain.curriculum = True
+    # task_cfg.terrain.max_difficulty = True
+    # task_cfg.asset.disable_gravity = True
 
-    # env_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
-    # env_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
-    # env_cfg.depth.angle_range = [-1, 1]
-    # env_cfg.domain_rand.action_delay_range = [(5, 5)]
-    env_cfg.domain_rand.push_robots = False
-    # env_cfg.domain_rand.push_interval_s = 6
-    # env_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
+    # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
+    # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
+    # task_cfg.depth.angle_range = [-1, 1]
+    # task_cfg.domain_rand.action_delay_range = [(5, 5)]
+    task_cfg.domain_rand.push_robots = False
+    # task_cfg.domain_rand.push_interval_s = 6
+    # task_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
 
-    env_cfg.terrain.terrain_dict = {
+    task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
         'rough_slope': 0,
         'stairs_up': 0,
@@ -59,16 +59,17 @@ def play(args):
         'parkour_stair': 1,
         'parkour_flat': 0,
     }
-    env_cfg.terrain.num_cols = sum(env_cfg.terrain.terrain_dict.values())
+    task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
 
     # prepare environment
-    args.n_rendered_envs = env_cfg.env.num_envs
-    env, _ = task_registry.make_env(args=args, env_cfg=env_cfg)
+    args.n_rendered_envs = task_cfg.env.num_envs
+    task_cfg = task_registry.get_cfg(name=args.task)
+    env = task_registry.make_env(args=args, task_cfg=task_cfg)
     obs, obs_critic = env.get_observations(), env.get_critic_observations()
 
     # load policy
-    train_cfg.runner.resume = True
-    runner, _ = task_registry.make_alg_runner(env_cfg, train_cfg, args, log_root)
+    task_cfg.runner.resume = True
+    runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
     with Live(gen_info_panel(args, env), refresh_per_second=60) as live:
         for _ in range(10 * int(env.max_episode_length)):

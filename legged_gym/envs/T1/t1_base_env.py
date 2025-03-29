@@ -62,7 +62,7 @@ class T1BaseEnv(HumanoidEnv):
         self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
 
 
-@torch.compile
+@torch.jit.script
 def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):
     # [-switch(hip), switch(thigh), switch(calf)]
     left_idx = torch.tensor([1, 2, 3, 4, 5, 6], dtype=torch.long, device=prop.device) + start_idx
@@ -76,7 +76,7 @@ def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):
     prop[:, invert_idx] *= -1.
 
 
-@torch.compile
+@torch.jit.script
 def mirror_proprio_by_x(prop: torch.Tensor) -> torch.Tensor:
     prop = prop.clone()
 
@@ -105,7 +105,7 @@ def mirror_proprio_by_x(prop: torch.Tensor) -> torch.Tensor:
     return prop
 
 
-@torch.compile
+@torch.jit.script
 def mirror_priv_by_x(priv: torch.Tensor) -> torch.Tensor:
     priv = priv.clone()
 

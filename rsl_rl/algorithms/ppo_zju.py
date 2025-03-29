@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
-from rsl_rl.modules.model_zju import Critic
 from rsl_rl.modules.model_zju_gru import EstimatorNoRecon, EstimatorGRU
+from rsl_rl.modules.utils import UniversalCritic
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from .alg_base import BaseAlgorithm
 
@@ -40,25 +40,25 @@ class Transition:
 
 
 class PPO_ZJU(BaseAlgorithm):
-    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), **kwargs):
+    def __init__(self, task_cfg, device=torch.device('cpu'), **kwargs):
         # PPO parameters
-        self.cfg = train_cfg.algorithm
+        self.cfg = task_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate
         self.device = device
-        self.enable_reconstructor = train_cfg.policy.enable_reconstructor
+        self.enable_reconstructor = task_cfg.policy.enable_reconstructor
 
         # PPO component
         if self.enable_reconstructor:
-            self.actor = EstimatorGRU(env_cfg, train_cfg.policy).to(self.device)
+            self.actor = EstimatorGRU(task_cfg.env, task_cfg.policy).to(self.device)
         else:
-            self.actor = EstimatorNoRecon(env_cfg, train_cfg.policy).to(self.device)
+            self.actor = EstimatorNoRecon(task_cfg.env, task_cfg.policy).to(self.device)
 
         # if train_cfg.policy.use_recurrent_policy:
         #     self.actor = EstimatorGRU(env_cfg, train_cfg.policy).to(self.device)
         # else:
         #     self.actor = Estimator(env_cfg, train_cfg).to(self.device)
 
-        self.critic = Critic(env_cfg, train_cfg).to(self.device)
+        self.critic = UniversalCritic(task_cfg.env, task_cfg.policy).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
@@ -68,7 +68,7 @@ class PPO_ZJU(BaseAlgorithm):
 
         # Rollout Storage
         self.transition = Transition(self.enable_reconstructor)
-        self.storage = RolloutStorage(env_cfg.num_envs, train_cfg.runner.num_steps_per_env, self.device)
+        self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
     def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
@@ -297,7 +297,7 @@ class PPO_ZJU(BaseAlgorithm):
 
             return kl_mean, value_loss, surrogate_loss, entropy_loss, symmetry_loss
 
-    @torch.compile
+    # @torch.compile
     def _compute_estimation_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             batch_size = 4

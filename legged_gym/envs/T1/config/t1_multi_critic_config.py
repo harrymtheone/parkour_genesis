@@ -1,4 +1,4 @@
-from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
+from .t1_base_config import T1BaseCfg
 
 
 class T1_Multi_Critic_Cfg(T1BaseCfg):
@@ -140,9 +140,6 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         max_dist = 0.50
         max_contact_force = 300
 
-        foothold_pts = [(-0.1, 0.12, 10), (-0.05, 0.05, 5), -0.03]  # (a, b, num points)
-        foothold_contact_thresh = 0.01
-
         rew_norm_factor = 1.0
 
         class scales:
@@ -180,12 +177,6 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             dof_vel = -5e-4
             dof_acc = -1e-7
             collision = -1.
-
-
-class T1_Multi_Critic_Cfg_PPO(T1BaseCfgPPO):
-    seed = -1
-    runner_name = 'rl_dream'  # rl, distil, mixed
-    algorithm_name = 'ppo_zju_mc'
 
     class policy:
         # actor parameters
@@ -226,11 +217,11 @@ class T1_Multi_Critic_Cfg_PPO(T1BaseCfgPPO):
         use_amp = True
         continue_from_last_std = True
 
-    class runner(T1BaseCfgPPO.runner):
-        max_iterations = 3000  # number of policy updates
+    class runner(T1BaseCfg.runner):
+        runner_name = 'rl_dream'  # rl, distil, mixed
+        algorithm_name = 'ppo_zju_mc'
 
-        # logging
-        save_interval = 100  # check for potential saves every this many iterations
+        max_iterations = 3000  # number of policy updates
 
 
 # -----------------------------------------------------------------------------------------------
@@ -256,7 +247,7 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             # base pos
             default_joint_pos = 1.0
 
-    class terrain(T1BaseCfg.terrain):
+    class terrain(T1_Multi_Critic_Cfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
         num_cols = 20  # number of terrain cols (types)
 
@@ -277,13 +268,8 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             'parkour_flat': 0,
         }
 
-
-class T1_Multi_Critic_Stair_Cfg_PPO(T1_Multi_Critic_Cfg_PPO):
-    class runner(T1BaseCfgPPO.runner):
+    class runner(T1_Multi_Critic_Cfg.runner):
         max_iterations = 50000  # number of policy updates
-
-        # logging
-        save_interval = 100  # check for potential saves every this many iterations
 
 
 # -----------------------------------------------------------------------------------------------
@@ -308,7 +294,7 @@ class T1_Multi_Critic_Parkour_Cfg(T1_Multi_Critic_Cfg):
             # base pos
             default_joint_pos = 5.0
 
-    class terrain(T1BaseCfg.terrain):
+    class terrain(T1_Multi_Critic_Cfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
         num_cols = 20  # number of terrain cols (types)
 
@@ -329,10 +315,5 @@ class T1_Multi_Critic_Parkour_Cfg(T1_Multi_Critic_Cfg):
             'parkour_flat': 0,
         }
 
-
-class T1_Multi_Critic_Parkour_Cfg_PPO(T1_Multi_Critic_Cfg_PPO):
-    class runner(T1BaseCfgPPO.runner):
+    class runner(T1_Multi_Critic_Cfg.runner):
         max_iterations = 50000  # number of policy updates
-
-        # logging
-        save_interval = 100  # check for potential saves every this many iterations

@@ -41,7 +41,7 @@ if __name__ == '__main__':
     checkpoint = 39900
 
     task_registry = TaskRegistry()
-    env_cfg, train_cfg = task_registry.get_cfgs(name='go1_zju')
+    env_cfg, train_cfg = task_registry.get_cfg(name='go1_zju')
 
     # ----------------------------------------------------------------------------------------------------------
     prop = torch.randn(1, env_cfg.env.n_proprio)

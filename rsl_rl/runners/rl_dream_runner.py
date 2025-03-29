@@ -18,14 +18,14 @@ def linear_change(start, end, span, start_it, cur_it):
 
 
 class RLDreamRunner:
-    def __init__(self, env_cfg, train_cfg, log_dir=None, device=torch.device('cpu')):
-        self.env_cfg = env_cfg
-        self.cfg = train_cfg.runner
+    def __init__(self, task_cfg, log_dir=None, device=torch.device('cpu')):
+        self.task_cfg = task_cfg
+        self.cfg = task_cfg.runner
         self.log_dir = log_dir
         self.device = torch.device(device) if type(device) is str else device
 
         # Create algorithm
-        self.alg: BaseAlgorithm = algorithm_dict[train_cfg.algorithm_name](self.env_cfg.env, train_cfg, device=self.device)
+        self.alg: BaseAlgorithm = algorithm_dict[task_cfg.runner.algorithm_name](self.task_cfg, device=self.device)
 
         self.num_steps_per_env = self.cfg.num_steps_per_env
         self.save_interval = self.cfg.save_interval
@@ -45,11 +45,11 @@ class RLDreamRunner:
 
         # statistics
         infos = {}
-        n_envs = self.env_cfg.env.num_envs
+        n_envs = self.task_cfg.env.num_envs
         cur_reward_sum = torch.zeros(n_envs, device=self.device)
         cur_episode_length = torch.zeros(n_envs, device=self.device)
         last_env_reward = torch.zeros(n_envs, device=self.device)
-        mean_base_height = self.env_cfg.rewards.base_height_target + torch.zeros(n_envs, device=self.device)
+        mean_base_height = self.task_cfg.rewards.base_height_target + torch.zeros(n_envs, device=self.device)
         episode_rew_sum = collections.deque(maxlen=100)
         episode_length = collections.deque(maxlen=100)
 
@@ -129,7 +129,7 @@ class RLDreamRunner:
             self.save(os.path.join(self.log_dir, 'latest.pt'))
 
     def log(self, locs, width=80, pad=35):
-        self.tot_steps += self.num_steps_per_env * self.env_cfg.env.num_envs
+        self.tot_steps += self.num_steps_per_env * self.task_cfg.env.num_envs
         iteration_time = locs['collection_time'] + locs['learn_time']
         self.tot_time += iteration_time
 
@@ -166,7 +166,7 @@ class RLDreamRunner:
 
         # logging string to print
         progress = f" \033[1m Learning iteration {self.cur_it}/{self.start_it + self.cfg.max_iterations} \033[0m "
-        fps = int(self.num_steps_per_env * self.env_cfg.env.num_envs / iteration_time)
+        fps = int(self.num_steps_per_env * self.task_cfg.env.num_envs / iteration_time)
         curr_it = self.cur_it - self.start_it
         eta = self.tot_time / (curr_it + 1) * (self.cfg.max_iterations - curr_it)
         coefficient_variation = ", ".join([f"{x:.2f}" for x in locs['coefficient_variation'].tolist()])

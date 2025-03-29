@@ -5,6 +5,8 @@ from legged_gym.envs.base.base_config import BaseConfig
 
 
 class T1BaseCfg(BaseConfig):
+    seed = -1
+
     class play:
         control = False  # manually control or automatically
 
@@ -70,6 +72,9 @@ class T1BaseCfg(BaseConfig):
         feet_pts_y = np.linspace(-0.1, 0.1, 2)
 
         height_update_interval = 5  # 1 * dt
+
+        foothold_pts = [(-0.1, 0.12, 10), (-0.05, 0.05, 5), -0.03]  # (a, b, num points)
+        foothold_contact_thresh = 0.01
 
         max_init_terrain_level = 9  # starting curriculum state
         terrain_size = [8., 8.]
@@ -320,11 +325,10 @@ class T1BaseCfg(BaseConfig):
             default_buffer_size_multiplier = 5
             contact_collection = 2  # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
-
-class T1BaseCfgPPO(BaseConfig):
-    seed = -1
-
     class runner:
         num_steps_per_env = 24  # per iteration
         resume = False
         checkpoint = -1  # -1 = last saved model
+
+        # logging
+        save_interval = 100  # check for potential saves every this many iterations

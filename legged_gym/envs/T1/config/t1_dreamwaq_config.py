@@ -1,9 +1,10 @@
 import numpy as np
 
-from .t1_base_config import T1BaseCfg, T1BaseCfgPPO
+from .t1_base_config import T1BaseCfg
 
 
 class T1DreamWaqCfg(T1BaseCfg):
+
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
 
@@ -85,6 +86,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         feet_height_target_max = 0.06
         use_guidance_terrain = True
         only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards_until_epoch = 1e10  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
@@ -133,12 +135,6 @@ class T1DreamWaqCfg(T1BaseCfg):
             collision = -1.
             # stand_still = 2.0
 
-
-class T1DreamWaqCfgPPO(T1BaseCfgPPO):
-    seed = -1
-    runner_name = 'rl_dream'
-    algorithm_name = 'ppo_dreamwaq'
-
     class policy:
         init_noise_std = 1.0
         use_recurrent_policy = True
@@ -164,8 +160,8 @@ class T1DreamWaqCfgPPO(T1BaseCfgPPO):
         use_amp = True
         continue_from_last_std = True
 
-    class runner(T1BaseCfgPPO.runner):
-        max_iterations = 50000  # number of policy updates
+    class runner(T1BaseCfg.runner):
+        runner_name = 'rl_dream'
+        algorithm_name = 'ppo_dreamwaq'
 
-        # logging
-        save_interval = 100  # check for potential saves every this many iterations
+        max_iterations = 50000  # number of policy updates

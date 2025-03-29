@@ -38,18 +38,19 @@ class Transition:
 
 
 class PPODreamWaQ(BaseAlgorithm):
-    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), **kwargs):
+    def __init__(self, task_cfg, device=torch.device('cpu'), **kwargs):
         # PPO parameters
-        self.cfg = train_cfg.algorithm
+        self.cfg = task_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate
         self.device = device
 
         # PPO components
-        if train_cfg.policy.use_recurrent_policy:
-            self.actor = ActorGRU(env_cfg, train_cfg.policy).to(self.device)
+        if task_cfg.policy.use_recurrent_policy:
+            self.actor = ActorGRU(task_cfg.env, task_cfg.policy).to(self.device)
         else:
-            self.actor = Actor(env_cfg, train_cfg.policy).to(self.device)
-        self.critic = Critic(env_cfg, train_cfg.policy).to(self.device)
+            self.actor = Actor(task_cfg.env, task_cfg.policy).to(self.device)
+
+        self.critic = Critic(task_cfg.env, task_cfg.policy).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
@@ -58,7 +59,7 @@ class PPODreamWaQ(BaseAlgorithm):
 
         # Rollout Storage
         self.transition = Transition(self.actor.is_recurrent)
-        self.storage = RolloutStorage(env_cfg.num_envs, train_cfg.runner.num_steps_per_env, self.device)
+        self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
     def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
         # store observations

@@ -37,17 +37,17 @@ class Transition:
 
 
 class PPO_PIE(BaseAlgorithm):
-    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), env=None, **kwargs):
+    def __init__(self, task_cfg, device=torch.device('cpu'), env=None, **kwargs):
         self.env = env
 
         # PPO parameters
-        self.cfg = train_cfg.algorithm
+        self.cfg = task_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate
         self.device = device
 
         # PPO components
-        self.actor = Policy(env_cfg, train_cfg.policy).to(self.device)
-        self.critic = UniversalCritic(env_cfg, train_cfg).to(self.device)
+        self.actor = Policy(task_cfg.env, task_cfg.policy).to(self.device)
+        self.critic = UniversalCritic(task_cfg.env, task_cfg.policy).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
@@ -57,7 +57,7 @@ class PPO_PIE(BaseAlgorithm):
 
         # Rollout Storage
         self.transition = Transition()
-        self.storage = RolloutStorage(env_cfg.num_envs, train_cfg.runner.num_steps_per_env, self.device)
+        self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
     def act(self, obs, obs_critic, **kwargs):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):

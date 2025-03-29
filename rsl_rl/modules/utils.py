@@ -50,7 +50,7 @@ def gru_wrapper(func, *args, **kwargs):
 
 
 class UniversalCritic(nn.Module):
-    def __init__(self, env_cfg, train_cfg):
+    def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         activation = nn.ELU()
 
@@ -67,7 +67,7 @@ class UniversalCritic(nn.Module):
                                            activation_func=activation)
         self.edge_mask_enc = make_linear_layers(env_cfg.n_scan, 256, 64,
                                                 activation_func=activation)
-        self.critic = make_linear_layers(128 + 64 + 64, *train_cfg.policy.critic_hidden_dims, 1,
+        self.critic = make_linear_layers(128 + 64 + 64, *policy_cfg.critic_hidden_dims, 1,
                                          activation_func=nn.ELU(),
                                          output_activation=False)
 

@@ -199,7 +199,7 @@ class ActorGRU(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, env_cfg, train_cfg):
+    def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         channel_size = 16
         activation = nn.ELU()
@@ -214,7 +214,7 @@ class Critic(nn.Module):
             nn.Flatten()
         )
 
-        self.critic = make_linear_layers(8 * channel_size + env_cfg.n_scan, *train_cfg.critic_hidden_dims, 1,
+        self.critic = make_linear_layers(8 * channel_size + env_cfg.n_scan, *policy_cfg.critic_hidden_dims, 1,
                                          activation_func=nn.ELU(),
                                          output_activation=False)
 

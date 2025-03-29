@@ -28,7 +28,7 @@ def play(args):
     args.resume = True
 
     task_registry = TaskRegistry()
-    env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
+    env_cfg, train_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
     env_cfg.play.control = False

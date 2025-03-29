@@ -27,30 +27,27 @@ def train(args):
     print('-' * 10, 'log_root: ', log_root, '-' * 10)
 
     task_registry = TaskRegistry()
-    env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
+    task_cfg = task_registry.get_cfg(name=args.task)
 
     if args.debug:
         mode = "disabled"
-        args.headless = False
-        env_cfg.terrain.num_rows = 10
-        env_cfg.terrain.num_cols = 2
-        env_cfg.env.num_envs = 256
+        # args.headless = False
+        task_cfg.terrain.num_rows = 10
+        task_cfg.terrain.num_cols = 2
+        task_cfg.env.num_envs = 64
     else:
         mode = "online"
 
     # save training parameters
-    go1_cfg = class_to_dict(env_cfg)
-    go1_cfg.update(class_to_dict(train_cfg))
-
     wandb.init(project=args.proj_name,
                name=args.exptid,
-               group=train_cfg.algorithm_name,
+               group=task_cfg.runner.algorithm_name,
                mode=mode,
                dir=log_root,
-               config=go1_cfg)
+               config=class_to_dict(task_cfg))
 
-    env, _ = task_registry.make_env(args=args, env_cfg=env_cfg)
-    ppo_runner, _ = task_registry.make_alg_runner(env_cfg, train_cfg, args, log_root)
+    ppo_runner = task_registry.make_alg_runner(task_cfg=task_cfg, args=args, log_root=log_root)
+    env = task_registry.make_env(args=args, task_cfg=task_cfg)
     ppo_runner.learn(env)
 
 
