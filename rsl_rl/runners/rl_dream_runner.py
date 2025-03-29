@@ -92,8 +92,8 @@ class RLDreamRunner:
                             episode_length.extend(cur_episode_length[new_ids].cpu().numpy().tolist())
 
                             # # Do AdaSmpl for envs reset
-                            # if self.cur_it > 10000:
-                            #     use_estimated_values[new_ids] = torch.rand(len(new_ids[0]), device=self.device) > p_smpl
+                            if self.cur_it > 10000:
+                                use_estimated_values[new_ids] = torch.rand(len(new_ids[0]), device=self.device) > p_smpl
 
                             cur_reward_sum[new_ids] = 0.
                             cur_episode_length[new_ids] = 0.

@@ -31,7 +31,7 @@ def train(args):
 
     if args.debug:
         mode = "disabled"
-        # args.headless = False
+        args.headless = False
         env_cfg.terrain.num_rows = 10
         env_cfg.terrain.num_cols = 2
         env_cfg.env.num_envs = 256
@@ -44,7 +44,7 @@ def train(args):
 
     wandb.init(project=args.proj_name,
                name=args.exptid,
-               group=args.exptid[:3],
+               group=train_cfg.algorithm_name,
                mode=mode,
                dir=log_root,
                config=go1_cfg)

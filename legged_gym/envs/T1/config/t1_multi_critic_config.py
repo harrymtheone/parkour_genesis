@@ -163,11 +163,13 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             vel_mismatch_exp = 0.5
 
             # contact
-            feet_contact_forces = -0.002
+            feet_contact_forces = -0.005
+            feet_stumble = -1.0
+            # feet_edge = -0.5
             foothold = -1.
 
             # base pos
-            default_joint_pos = 0.5
+            default_joint_pos = 1.0
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
@@ -252,7 +254,7 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             foothold = -1.
 
             # base pos
-            default_joint_pos = 3.0
+            default_joint_pos = 1.0
 
     class terrain(T1BaseCfg.terrain):
         num_rows = 10  # number of terrain rows (levels)

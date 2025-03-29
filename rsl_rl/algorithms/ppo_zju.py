@@ -150,14 +150,9 @@ class PPO_ZJU(BaseAlgorithm):
 
         for batch in generator:
             # ########################## policy loss ##########################
-            value_loss, surrogate_loss, entropy_loss, symmetry_loss = self._compute_policy_loss(batch)
+            kl_mean, value_loss, surrogate_loss, entropy_loss, symmetry_loss = self._compute_policy_loss(batch)
+            kl_mean = kl_mean.item()
             loss = surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss + symmetry_loss
-
-            with torch.no_grad():
-                kl_mean = kl_divergence(
-                    Normal(batch['action_mean'], batch['action_sigma']),
-                    Normal(self.actor.action_mean, self.actor.action_std)
-                )[batch['masks'].squeeze()].sum(dim=-1).mean().item()
 
             num_updates += 1
             # policy statistics
@@ -260,6 +255,12 @@ class PPO_ZJU(BaseAlgorithm):
                 use_estimated_values=use_estimated_values_batch
             )
 
+            with torch.no_grad():
+                kl_mean = kl_divergence(
+                    Normal(batch['action_mean'], batch['action_sigma']),
+                    Normal(self.actor.action_mean, self.actor.action_std)
+                )[batch['masks'].squeeze()].sum(dim=-1).mean()
+
             actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
             evaluation = self.critic.evaluate(critic_obs_batch)
 
@@ -294,7 +295,7 @@ class PPO_ZJU(BaseAlgorithm):
             mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
             symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
 
-            return value_loss, surrogate_loss, entropy_loss, symmetry_loss
+            return kl_mean, value_loss, surrogate_loss, entropy_loss, symmetry_loss
 
     @torch.compile
     def _compute_estimation_loss(self, batch: dict):

@@ -163,7 +163,7 @@ class T1_ZJU_Cfg(T1BaseCfg):
             vel_mismatch_exp = 0.5
 
             # base pos
-            default_joint_pos = 0.5
+            default_joint_pos = 1.0
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
@@ -190,7 +190,7 @@ class T1_ZJU_Cfg_PPO(T1BaseCfgPPO):
         critic_hidden_dims = [512, 256, 128]
 
         use_recurrent_policy = True
-        enable_reconstructor = False
+        enable_reconstructor = True
 
         obs_gru_hidden_size = 64
         recon_gru_hidden_size = 256
@@ -240,7 +240,7 @@ class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
             feet_rotation = 0.5
 
             # contact
-            feet_contact_forces = -0.002
+            feet_contact_forces = -0.01
             feet_stumble = -1.0
             # feet_edge = -0.5
             foothold = -1.
@@ -265,7 +265,7 @@ class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 2,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 

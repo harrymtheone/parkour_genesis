@@ -134,7 +134,7 @@ class RolloutStorageMultiCritic:
 
         values_default_buf = self.storage['values_default'].buf
         values_contact_buf = self.storage['values_contact'].buf
-        w1, w2 = 1, 1
+        w_default, w_contact = 1., 0.25
 
         for step in reversed(range(self.num_transitions_per_env)):
             if step == self.num_transitions_per_env - 1:
@@ -160,7 +160,7 @@ class RolloutStorageMultiCritic:
         advantages_contact = self.returns_contact - values_contact_buf
         advantages_contact[:] = (advantages_contact - advantages_contact.mean()) / (advantages_contact.std() + 1e-8)
 
-        self.advantages[:] = w1 * advantages_default + w2 * advantages_contact
+        self.advantages[:] = w_default * advantages_default + w_contact * advantages_contact
 
     def mini_batch_generator(self, num_mini_batches, num_epochs=8):
         if self.step < self.num_transitions_per_env - 1:

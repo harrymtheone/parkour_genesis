@@ -97,6 +97,9 @@ class T1PrivCfg(T1BaseCfg):
         max_dist = 0.50
         max_contact_force = 300
 
+        foothold_pts = [(-0.1, 0.12, 10), (-0.05, 0.05, 5), -0.03]  # (a, b, num points)
+        foothold_contact_thresh = 0.01
+
         rew_norm_factor = 1.0
 
         class scales:
