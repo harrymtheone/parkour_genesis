@@ -181,8 +181,8 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             # ########################## estimation loss ##########################
             loss_est = 0
             if update_est:
-                estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss, symmetry_loss = self._compute_estimation_loss(batch)
-                loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss + symmetry_loss
+                estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss = self._compute_estimation_loss(batch)
+                loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss
 
                 # estimation statistics
                 mean_estimation_loss += estimation_loss.item()

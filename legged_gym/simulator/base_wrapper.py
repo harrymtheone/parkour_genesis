@@ -143,6 +143,14 @@ class BaseWrapper:
         raise NotImplementedError
 
     @property
+    def link_COM(self):
+        raise NotImplementedError
+
+    @property
+    def link_mass(self):
+        raise NotImplementedError
+
+    @property
     def contact_forces(self):
         raise NotImplementedError
 

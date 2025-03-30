@@ -109,7 +109,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         randomize_com = switch
 
         push_robots = False
-        action_delay = False
+        action_delay = True
         add_dof_lag = False
         add_imu_lag = False
 
@@ -187,7 +187,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         critic_hidden_dims = [512, 256, 128]
 
         use_recurrent_policy = True
-        enable_reconstructor = False
+        enable_reconstructor = True
 
         obs_gru_hidden_size = 64
         recon_gru_hidden_size = 256

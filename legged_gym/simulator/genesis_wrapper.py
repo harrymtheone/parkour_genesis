@@ -32,6 +32,7 @@ class GenesisWrapper(BaseWrapper):
             self.free_cam = False
             self.lookat_vec = np.array([-0, 2, 1])
             self.last_lookat_pos = np.array([0, 0, 0])
+            self.vis_tasks = []
 
         self.lookat_id = 0
 
@@ -271,7 +272,18 @@ class GenesisWrapper(BaseWrapper):
             if not self.suppress_warning:
                 print(f"[bold red]⚠️ Restitution is not supported by Genesis currently?![/bold red]")
 
+        for i, l in enumerate(self._robot.links):
+            self._link_mass[:, i] = l.get_mass()
+
+        self._link_mass[:, 0:1] += self.payload_masses
+        self._link_mass[:, 1:] *= self.link_mass_multiplier
+
     # ---------------------------------------------- IO Interface ----------------------------------------------
+
+    def get_trimesh(self):
+        vertices = self.terrain.vertices - np.array([[self.cfg.terrain.border_size, self.cfg.terrain.border_size, 0]])
+        triangles = self.terrain.triangles
+        return vertices, triangles
 
     def refresh_variable(self):
         pass
@@ -355,6 +367,14 @@ class GenesisWrapper(BaseWrapper):
     def link_vel(self):
         return self._robot.get_links_vel()
 
+    @property
+    def link_COM(self):
+        return self.rigid_solver.get_links_COM([l.idx for l in self._robot.links])
+
+    @property
+    def link_mass(self):
+        return self._link_mass
+
     # ---------------------------------------------- Step Interface ----------------------------------------------
 
     def apply_perturbation(self, force, torque, env_ids=None):
@@ -379,6 +399,9 @@ class GenesisWrapper(BaseWrapper):
         if not self.free_cam:
             self.lookat(self.lookat_id)
 
+        self._scene.clear_debug_objects()
+        self._render_vis_tasks()
+
         if self.enable_viewer_sync:
             self.viewer.update()
 
@@ -391,3 +414,25 @@ class GenesisWrapper(BaseWrapper):
         look_at_pos = self._robot.get_pos()[self.lookat_id].cpu().numpy()
         cam_pos = look_at_pos + self.lookat_vec
         self.viewer.set_camera_pose(pos=cam_pos, lookat=look_at_pos)
+
+    def draw_points(self, points, radius=0.02, color=(0, 1, 0), sphere_lines=4, z_shift=0.02):
+        if type(points) == list:
+            points = np.array(points)
+        elif type(points) == np.ndarray:
+            points = points.copy()
+        else:
+            raise ValueError("points must be a list or np.ndarray")
+
+        assert points.ndim == 2 and points.shape[1] == 3
+
+        if points.shape[0] == 0:
+            return
+
+        points[:, 2] += z_shift
+
+        self.vis_tasks.append((self._scene.draw_debug_spheres, points, radius, (*color, 0.5)))
+
+    def _render_vis_tasks(self):
+        while len(self.vis_tasks) > 0:
+            vis_task = self.vis_tasks.pop(0)
+            vis_task[0](*vis_task[1:])
