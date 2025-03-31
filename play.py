@@ -38,7 +38,8 @@ def play(args):
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
-    # task_cfg.domain_rand.action_delay_range = [(5, 5)]
+    # task_cfg.domain_rand.action_delay = True
+    # task_cfg.domain_rand.action_delay_range = [(10, 10)]
     task_cfg.domain_rand.push_robots = False
     # task_cfg.domain_rand.push_interval_s = 6
     # task_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]

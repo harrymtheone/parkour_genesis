@@ -360,9 +360,6 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss
 
     def play_act(self, obs, **kwargs):
-        values_default = self.critic['default'].evaluate(kwargs['obs_critic']).detach()
-        values_contact = self.critic['contact'].evaluate(kwargs['obs_critic']).detach()
-
         return self.actor.act(obs, **kwargs)
 
     def train(self):

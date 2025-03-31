@@ -36,9 +36,10 @@ class EstimatorGRU(nn.Module):
         recon_rough, recon_refine, hidden_recon = self.reconstructor(depth.unsqueeze(0), latent_obs, hidden_recon)
 
         # cross-model mixing using transformer
-        latent_input, _, _ = self.transformer(recon_refine.squeeze(0), latent_obs.squeeze(0))
+        est_latent, est, est_logvar, ot1 = self.transformer(recon_refine.squeeze(0), latent_obs.squeeze(0))
 
         # compute action
+        latent_input = torch.cat([est_latent, est.detach()], dim=1)
         mean = self.actor(proprio, latent_input)
 
         # output action
@@ -47,21 +48,22 @@ class EstimatorGRU(nn.Module):
 
 def trace():
     # proj, cfg, exptid, checkpoint = 't1', 't1_zju', 't1_zju_002', 12100
-    proj, cfg, exptid, checkpoint = 't1', 't1_zju', 't1_zju_002r1', 11200
+    # proj, cfg, exptid, checkpoint = 't1', 't1_zju', 't1_zju_002r1', 11200
+    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_002st04r2', 40000
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):
         os.mkdir(trace_path)
 
     task_registry = TaskRegistry()
-    env_cfg, train_cfg = task_registry.get_cfg(name=cfg)
+    task_cfg = task_registry.get_cfg(name=cfg)
 
     device = torch.device('cpu')
-    load_path = os.path.join(f'../../logs/{proj}/', exptid, f'model_{checkpoint}.pt')
+    load_path = os.path.join(f'../../logs/{proj}/', task_cfg.runner.algorithm_name, exptid, f'model_{checkpoint}.pt')
     print(f"Loading model from: {load_path}")
     state_dict = torch.load(load_path, map_location=device, weights_only=True)
 
-    model = EstimatorGRU(env_cfg.env, train_cfg.policy)
+    model = EstimatorGRU(task_cfg.env, task_cfg.policy)
     model.load_state_dict(state_dict['actor_state_dict'])
     model.eval()
 
@@ -79,12 +81,14 @@ def trace():
             print(f"Failed to save files: {e}")
 
     with torch.no_grad():
+        env, policy = task_cfg.env, task_cfg.policy
+
         # Save the traced actor
-        proprio = torch.zeros(1, env_cfg.env.n_proprio, device=device)
-        prop_his = torch.zeros(1, env_cfg.env.len_prop_his, env_cfg.env.n_proprio, device=device)
-        depth_his = torch.zeros(1, env_cfg.env.len_depth_his, *reversed(env_cfg.sensors.depth_0.resized), device=device)
-        hidden_obs_gru = torch.zeros(1, 1, train_cfg.policy.obs_gru_hidden_size, device=device)
-        hidden_recon = torch.zeros(2, 1, train_cfg.policy.recon_gru_hidden_size, device=device)
+        proprio = torch.zeros(1, env.n_proprio, device=device)
+        prop_his = torch.zeros(1, env.len_prop_his, env.n_proprio, device=device)
+        depth_his = torch.zeros(1, env.len_depth_his, *reversed(task_cfg.sensors.depth_0.resized), device=device)
+        hidden_obs_gru = torch.zeros(1, 1, policy.obs_gru_hidden_size, device=device)
+        hidden_recon = torch.zeros(2, 1, policy.recon_gru_hidden_size, device=device)
 
         trace_and_save(model, (proprio, prop_his, depth_his, hidden_obs_gru, hidden_recon))
 
