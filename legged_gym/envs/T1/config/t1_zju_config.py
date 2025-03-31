@@ -19,7 +19,7 @@ class T1_ZJU_Cfg(T1BaseCfg):
         episode_length_s = 40  # episode length in seconds
 
     class sensors:
-        activated = True
+        activated = False
 
         class depth_0:
             link_attached_to = 'Waist'
@@ -103,13 +103,13 @@ class T1_ZJU_Cfg(T1BaseCfg):
         randomize_start_dof_pos = True
         randomize_start_dof_vel = True
 
-        randomize_friction = False
+        randomize_friction = switch
         randomize_base_mass = switch
         randomize_link_mass = switch
         randomize_com = switch
 
-        push_robots = False
-        action_delay = False
+        push_robots = True
+        action_delay = True
         add_dof_lag = False
         add_imu_lag = False
 
@@ -190,7 +190,6 @@ class T1_ZJU_Cfg(T1BaseCfg):
         len_base_vel = 3
         len_latent_feet = 8
         len_latent_body = 16
-        len_base_height = 0
         transformer_embed_dim = 64
 
     class algorithm:
@@ -223,6 +222,9 @@ class T1_ZJU_Cfg(T1BaseCfg):
 # -----------------------------------------------------------------------------------------------
 
 class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
+    class sensors(T1_ZJU_Cfg.sensors):
+        activated = True
+
     class rewards(T1_ZJU_Cfg.rewards):
         class scales(T1_ZJU_Cfg.rewards.scales):
             # gait
@@ -269,6 +271,9 @@ class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
 # -----------------------------------------------------------------------------------------------
 
 class T1_ZJU_Parkour_Cfg(T1_ZJU_Cfg):
+    class sensors(T1_ZJU_Cfg.sensors):
+        activated = True
+
     class rewards(T1_ZJU_Cfg.rewards):
         class scales(T1_ZJU_Cfg.rewards.scales):
             # gait

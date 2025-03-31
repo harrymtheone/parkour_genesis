@@ -193,16 +193,14 @@ class ReconGRU(nn.Module):
         self.hidden_state[:, dones] = 0.
 
 
-class LocoTransformer(nn.Module):
+class Mixer(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        num_heads = 4
-        num_layers = 2  # 2
         predictor_hidden_dim = [128, 64]
         activation = nn.ReLU(inplace=True)
 
         obs_gru_hidden_size = policy_cfg.obs_gru_hidden_size
-        transformer_embed_dim = policy_cfg.transformer_embed_dim
+        mixer_embed_dim = policy_cfg.transformer_embed_dim
         self.len_latent = policy_cfg.len_latent
         vae_output_dim = (policy_cfg.len_latent
                           + policy_cfg.len_base_vel
@@ -210,35 +208,37 @@ class LocoTransformer(nn.Module):
                           + policy_cfg.len_latent_body)
 
         # patch embedding
-        self.cnn_scan = nn.Conv2d(in_channels=2, out_channels=transformer_embed_dim, kernel_size=4, stride=4)
-        self.layer_norm = nn.LayerNorm(transformer_embed_dim)
+        self.cnn_scan = nn.Sequential(  # 32, 16
+            nn.Conv2d(2, 16, 3, 2, 1),  # 16, 8
+            activation,
+            nn.Conv2d(16, 32, 3, 2, 1),  # 8, 4
+            activation,
+            nn.Conv2d(32, mixer_embed_dim, 3, 2, 1),  # 4, 2
+            activation,
+            nn.AdaptiveAvgPool2d((1, 1)),  # 1, 1
+            nn.Flatten()
+
+        )
 
         # observation embedding
         self.mlp_obs = nn.Sequential(
-            nn.Linear(obs_gru_hidden_size, transformer_embed_dim),
+            nn.Linear(obs_gru_hidden_size, mixer_embed_dim),
             activation,
         )
 
-        # position embedding
-        self.pos_embed = nn.Parameter(torch.zeros(1, 33, transformer_embed_dim))
-        nn.init.trunc_normal_(self.pos_embed, std=0.2)
-
-        # transformer
-        self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=transformer_embed_dim, nhead=num_heads, dim_feedforward=128, batch_first=True, dropout=0.),
-            num_layers=num_layers
-        )
+        self.mixer = make_linear_layers(mixer_embed_dim * 2, mixer_embed_dim * 2, mixer_embed_dim * 2,
+                                        activation_func=activation)
 
         # output VAE
         self.mlp_mu = nn.Sequential(
-            nn.Linear(transformer_embed_dim * 2, transformer_embed_dim),
+            nn.Linear(mixer_embed_dim * 2, mixer_embed_dim),
             activation,
-            nn.Linear(transformer_embed_dim, vae_output_dim),
+            nn.Linear(mixer_embed_dim, vae_output_dim),
         )
         self.mlp_logvar = nn.Sequential(
-            nn.Linear(transformer_embed_dim * 2, transformer_embed_dim),
+            nn.Linear(mixer_embed_dim * 2, mixer_embed_dim),
             activation,
-            nn.Linear(transformer_embed_dim, self.len_latent)
+            nn.Linear(mixer_embed_dim, self.len_latent)
         )
 
         # Ot+1 predictor
@@ -251,23 +251,9 @@ class LocoTransformer(nn.Module):
         )
 
     def forward(self, scan, latent_obs):
-        # patch embedding
-        x = self.cnn_scan(scan)  # (1, 1, 32, 16) -> (1, embed_dim, 8, 4)
-        x = x.flatten(2).transpose(1, 2)  # -> (1, 32, embed_dim)
-        x = self.layer_norm(x)
-
-        # convert latent_obs to a token
-        latent_obs = self.mlp_obs(latent_obs).unsqueeze(1)
-        x = torch.cat([latent_obs, x], dim=1)
-
-        # position encoding
-        x += self.pos_embed
-
-        # transformer
-        out = self.transformer(x)  # -> (1, 33, embed_dim)
-        token_prop = out[:, 0]
-        token_terrain = torch.mean(out[:, 1:], dim=1)
-        out = torch.cat([token_prop, token_terrain], dim=1)
+        latent_scan = self.cnn_scan(scan)  # (1, 1, 32, 16) -> (1, embed_dim, 8, 4)
+        latent_obs = self.mlp_obs(latent_obs)
+        out = self.mixer(torch.cat([latent_obs, latent_scan], dim=1))
 
         # decode the vector
         est_mu = self.mlp_mu(out)
@@ -315,7 +301,7 @@ class EstimatorNoRecon(nn.Module):
         super().__init__()
         self.obs_gru = ObsGRU(env_cfg, policy_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
-        self.transformer = LocoTransformer(env_cfg, policy_cfg)
+        self.mixer = Mixer(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
@@ -331,7 +317,7 @@ class EstimatorNoRecon(nn.Module):
         latent_obs = self.obs_gru.inference_forward(obs.prop_his)
 
         # cross-model mixing using transformer
-        est_latent, _, _, _ = self.transformer(obs.scan, latent_obs)
+        est_latent, _, _, _ = self.mixer(obs.scan, latent_obs)
         latent_input = torch.cat([est_latent, obs.priv_actor], dim=1)
 
         # compute action
@@ -357,7 +343,7 @@ class EstimatorNoRecon(nn.Module):
         latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden_states)
 
         # cross-model mixing using transformer
-        est_latent, est, _, _ = gru_wrapper(self.transformer.forward, obs.scan, latent_obs)
+        est_latent, est, _, _ = gru_wrapper(self.mixer.forward, obs.scan, latent_obs)
         latent_input = torch.cat([est_latent, obs.priv_actor], dim=2)
 
         # compute action
@@ -369,7 +355,7 @@ class EstimatorNoRecon(nn.Module):
     def reconstruct(self, obs, obs_enc_hidden, *args):
         # encode history proprio
         latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden)
-        est_latent, est, est_logvar, ot1 = gru_wrapper(self.transformer.forward, obs.scan, latent_obs)
+        est_latent, est, est_logvar, ot1 = gru_wrapper(self.mixer.forward, obs.scan, latent_obs)
         return None, None, est_latent, est, est_logvar, ot1
 
     def get_actions_log_prob(self, actions):
@@ -406,7 +392,7 @@ class EstimatorGRU(nn.Module):
         super().__init__()
         self.obs_gru = ObsGRU(env_cfg, policy_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
-        self.transformer = LocoTransformer(env_cfg, policy_cfg)
+        self.mixer = Mixer(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
@@ -432,7 +418,7 @@ class EstimatorGRU(nn.Module):
                 recon_refine,
                 obs.scan
             )
-            est_latent, est, _, _ = self.transformer(recon_output, latent_obs)
+            est_latent, est, _, _ = self.mixer(recon_output, latent_obs)
             latent_input = torch.where(
                 use_estimated_values,
                 torch.cat([est_latent, est.detach()], dim=1),
@@ -440,10 +426,10 @@ class EstimatorGRU(nn.Module):
             )
 
         elif use_estimated_values:
-            est_latent, est, _, _ = self.transformer(recon_refine, latent_obs)
+            est_latent, est, _, _ = self.mixer(recon_refine, latent_obs)
             latent_input = torch.cat([est_latent, est.detach()], dim=1)
         else:
-            est_latent, _, _, _ = self.transformer(obs.scan, latent_obs)
+            est_latent, _, _, _ = self.mixer(obs.scan, latent_obs)
             latent_input = torch.cat([est_latent, obs.priv_actor], dim=1)
 
         # compute action
@@ -479,7 +465,7 @@ class EstimatorGRU(nn.Module):
             recon_refine,
             obs.scan
         )
-        est_latent, est, _, _ = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
+        est_latent, est, _, _ = gru_wrapper(self.mixer.forward, recon_input, latent_obs)
         latent_input = torch.where(
             use_estimated_values,
             torch.cat([est_latent, est.detach()], dim=2),
@@ -503,7 +489,7 @@ class EstimatorGRU(nn.Module):
             obs.scan
         )
 
-        est_latent, est, est_logvar, ot1 = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
+        est_latent, est, est_logvar, ot1 = gru_wrapper(self.mixer.forward, recon_input, latent_obs)
 
         return recon_rough.squeeze(2), recon_refine.squeeze(2), est_latent, est, est_logvar, ot1
 

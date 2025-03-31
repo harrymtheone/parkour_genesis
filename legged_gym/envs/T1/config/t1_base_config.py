@@ -150,8 +150,8 @@ class T1BaseCfg(BaseConfig):
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
         randomize_action_delay_each_step = False
-        action_delay_range = [(0, 0), (0, 3), (0, 7), (0, 12), (0, 20)]
-        action_delay_update_steps = 3000 * 24
+        action_delay_range = [(0, 5), (0, 10), (5, 15), (5, 20)]
+        action_delay_update_steps = 2000 * 24
 
         add_dof_lag = False
         randomize_dof_lag = True  # if False, max delay will be used
@@ -173,7 +173,7 @@ class T1BaseCfg(BaseConfig):
         com_displacement_range = [-0.05, 0.05]
 
         randomize_friction = False
-        friction_range = [0.1, 2.0]
+        friction_range = [0.3, 2.0]
         compliance_range = [0.5, 1.5]
         restitution_range = [0.1, 0.9]
 

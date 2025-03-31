@@ -19,7 +19,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         episode_length_s = 40  # episode length in seconds
 
     class sensors:
-        activated = True
+        activated = False
 
         class depth_0:
             link_attached_to = 'Waist'
@@ -103,13 +103,13 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         randomize_start_dof_pos = True
         randomize_start_dof_vel = True
 
-        randomize_friction = False
+        randomize_friction = switch
         randomize_base_mass = switch
         randomize_link_mass = switch
         randomize_com = switch
 
-        push_robots = False
-        action_delay = True
+        push_robots = switch
+        action_delay = switch
         add_dof_lag = False
         add_imu_lag = False
 
@@ -187,7 +187,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         critic_hidden_dims = [512, 256, 128]
 
         use_recurrent_policy = True
-        enable_reconstructor = True
+        enable_reconstructor = False
 
         obs_gru_hidden_size = 64
         recon_gru_hidden_size = 256
@@ -196,7 +196,6 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         len_base_vel = 3
         len_latent_feet = 8
         len_latent_body = 16
-        len_base_height = 0
         transformer_embed_dim = 64
 
     class algorithm:
@@ -221,7 +220,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         runner_name = 'rl_dream'  # rl, distil, mixed
         algorithm_name = 'ppo_zju_mc'
 
-        max_iterations = 3000  # number of policy updates
+        max_iterations = 10000  # number of policy updates
 
 
 # -----------------------------------------------------------------------------------------------
@@ -229,6 +228,9 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 # -----------------------------------------------------------------------------------------------
 
 class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
+    class sensors(T1_Multi_Critic_Cfg.sensors):
+        activated = True
+
     class rewards(T1_Multi_Critic_Cfg.rewards):
         class scales(T1_Multi_Critic_Cfg.rewards.scales):
             # gait
@@ -277,6 +279,9 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
 # -----------------------------------------------------------------------------------------------
 
 class T1_Multi_Critic_Parkour_Cfg(T1_Multi_Critic_Cfg):
+    class sensors(T1_Multi_Critic_Cfg.sensors):
+        activated = True
+
     class rewards(T1_Multi_Critic_Cfg.rewards):
         class scales(T1_Multi_Critic_Cfg.rewards.scales):
             joint_pos = 5.

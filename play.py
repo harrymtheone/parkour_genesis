@@ -40,9 +40,9 @@ def play(args):
     # task_cfg.depth.angle_range = [-1, 1]
     # task_cfg.domain_rand.action_delay = True
     # task_cfg.domain_rand.action_delay_range = [(10, 10)]
-    task_cfg.domain_rand.push_robots = False
+    # task_cfg.domain_rand.push_robots = True
     # task_cfg.domain_rand.push_interval_s = 6
-    # task_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
+    # task_cfg.domain_rand.push_duration = [0.15]
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,

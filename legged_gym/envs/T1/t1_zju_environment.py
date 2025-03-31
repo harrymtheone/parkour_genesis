@@ -4,7 +4,6 @@ import torch
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.math import torch_rand_float
 
 
 class ActorObs(ObsBase):
@@ -51,7 +50,7 @@ class ActorObsNoDepth(ObsBase):
 
     @torch.compiler.disable
     def mirror(self):
-        return ActorObs(
+        return ActorObsNoDepth(
             mirror_proprio_by_x(self.proprio),
             mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
             self.priv_actor,
@@ -167,8 +166,10 @@ class T1ZJUEnvironment(T1BaseEnv):
         scan_edge = torch.stack([scan, self.get_edge_mask().float()], dim=1)
 
         # compose actor observation
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan_edge)
-        # self.actor_obs = ActorObsNoDepth(proprio, self.prop_his_buf.get(), priv_actor_obs, scan_edge)
+        if self.cfg.sensors.activated:
+            self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan_edge)
+        else:
+            self.actor_obs = ActorObsNoDepth(proprio, self.prop_his_buf.get(), priv_actor_obs, scan_edge)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer
