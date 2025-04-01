@@ -29,7 +29,7 @@ class T1_ZJU_Cfg(T1BaseCfg):
             pitch_range = [-1, 1]
 
             data_format = 'depth'  # depth, cloud
-            update_interval = 5  # 5 works without retraining, 8 worse
+            update_interval = 10  # 5 works without retraining, 8 worse
             delay_prop = (5, 1)  # Gaussian (mean, std)
 
             resolution = (106, 60)  # width, height
@@ -225,6 +225,15 @@ class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
     class sensors(T1_ZJU_Cfg.sensors):
         activated = True
 
+    class domain_rand(T1_ZJU_Cfg.domain_rand):
+        push_robots = True
+        push_duration = [0.15]
+        push_duration_update_steps = 1000 * 24
+
+        action_delay = True
+        action_delay_range = [(5, 20)]
+        action_delay_update_steps = 2000 * 24
+
     class rewards(T1_ZJU_Cfg.rewards):
         class scales(T1_ZJU_Cfg.rewards.scales):
             # gait
@@ -273,6 +282,15 @@ class T1_ZJU_Stair_Cfg(T1_ZJU_Cfg):
 class T1_ZJU_Parkour_Cfg(T1_ZJU_Cfg):
     class sensors(T1_ZJU_Cfg.sensors):
         activated = True
+
+    class domain_rand(T1_ZJU_Cfg.domain_rand):
+        push_robots = True
+        push_duration = [0.15]
+        push_duration_update_steps = 1000 * 24
+
+        action_delay = True
+        action_delay_range = [(5, 20)]
+        action_delay_update_steps = 2000 * 24
 
     class rewards(T1_ZJU_Cfg.rewards):
         class scales(T1_ZJU_Cfg.rewards.scales):
