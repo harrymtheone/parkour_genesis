@@ -23,7 +23,7 @@ class Go1_ZJU_Cfg(Go1BaseCfg):
         activated = True
 
         class depth_0:
-            link_attached_to = 'Trunk'
+            link_attached_to = 'base'
             position = [0.27, 0, 0.086]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch = 28  # positive pitch down (degree)

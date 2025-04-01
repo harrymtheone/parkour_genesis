@@ -198,7 +198,7 @@ class T1ZJUEnvironment(T1BaseEnv):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
             self.draw_hmap_from_depth()
             self._draw_goals()
-            self._draw_camera()
+            # self._draw_camera()
             # self._draw_link_COM(whole_body=False)
             # self._draw_feet_at_edge()
             self._draw_foothold()
@@ -207,39 +207,37 @@ class T1ZJUEnvironment(T1BaseEnv):
             # self._draw_edge()
 
         if self.cfg.sensors.activated:
-            depth_img = self.sensors.get('depth_0')
-            depth_img = depth_img[self.lookat_id, 0].cpu().numpy()
-
-            img = np.clip((depth_img + 0.5) * 255, 0, 255).astype(np.uint8)
-            # img = np.clip(depth_img / self.cfg.sensors.depth_0.far_clip * 255, 0, 255).astype(np.uint8)
+            depth_img = self.sensors.get('depth_0', get_depth=True)[self.lookat_id].cpu().numpy()
+            depth_img = (depth_img - self.cfg.sensors.depth_0.near_clip) / self.cfg.sensors.depth_0.far_clip
+            img = np.clip(depth_img * 255, 0, 255).astype(np.uint8)
 
             cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
             cv2.waitKey(1)
 
-            # draw points cloud
-            cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
-            cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
-            pts = cloud[cloud_valid].cpu().numpy()
-
-            if len(pts) > 0:
-                pts = density_weighted_sampling(pts, 500)
-                self.sim.draw_points(pts)
+            # # draw points cloud
+            # cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
+            # cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
+            # pts = cloud[cloud_valid].cpu().numpy()
+            #
+            # if len(pts) > 0:
+            #     pts = density_weighted_sampling(pts, 500)
+            #     self.sim.draw_points(pts)
 
         super().render()
 
     def draw_hmap_from_depth(self):
-        hmap, hmap_count = self.sensors.get('depth_0', get_hmap=True)
-        hmap, hmap_count = hmap[self.lookat_id], hmap_count[self.lookat_id]
+        buf = self.sensors.get('depth_0')[self.lookat_id, -1]
+        hmap, hmap_std = buf[0], buf[1]
+
         pts = self.test_scan_points[self.lookat_id].clone()
         pts[:, 2] = hmap.flatten()
-        hmap_count = hmap_count.flatten()
-        pts = pts[hmap_count > 0]
-        hmap_count = hmap_count[hmap_count > 0]
-        pts[:, 2] /= hmap_count
+        pts = pts[hmap_std.flatten() >= 0]
 
-        pts = transform_by_trans_quat(pts,
-                                      self.sim.root_pos[[self.lookat_id]].repeat(pts.size(0), 1),
-                                      self.sim.root_quat[[self.lookat_id]].repeat(pts.size(0), 1))
+        pts = transform_by_trans_quat(
+            pts,
+            self.sim.root_pos[[self.lookat_id]].repeat(pts.size(0), 1),
+            self.sim.root_quat[[self.lookat_id]].repeat(pts.size(0), 1)
+        )
 
         self.sim.draw_points(pts.cpu().numpy(), color=(1, 0, 0))
 
