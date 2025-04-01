@@ -22,19 +22,22 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         activated = False
 
         class depth_0:
-            link_attached_to = 'Waist'
-            position = [0.1, 0, 0.]  # front camera
+            link_attached_to = 'Trunk'
+            position = [0.15, 0, 0.]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch = 30  # positive is looking down
             pitch_range = [-1, 1]
 
-            data_format = 'depth'  # depth, cloud
+            data_format = 'hmap'  # depth, cloud, hmap
             update_interval = 10  # 5 works without retraining, 8 worse
             delay_prop = (5, 1)  # Gaussian (mean, std)
 
             resolution = (106, 60)  # width, height
             resized = (87, 58)  # (87, 58)
             horizontal_fov = 87
+
+            bounding_box = (0.4, 1.2, -0.4, 0.4)  # x1, x2, y1, y2
+            hmap_shape = (16, 16)  # x dim, y dim
 
             near_clip = 0
             far_clip = 2

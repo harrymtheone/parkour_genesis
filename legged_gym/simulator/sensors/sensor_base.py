@@ -20,6 +20,8 @@ class SensorBase:
         # save ID of link attached to
         self.id_link_attached_to = sim.create_indices(
             sim.get_full_names([cfg_dict['link_attached_to']], True), True)
+        self.link_pos = self._zero_tensor(self.num_envs, 3)
+        self.link_quat = self._zero_tensor(self.num_envs, 4)
 
         # offset from link attached to
         self.sensor_offset_pos_design = torch.zeros(self.num_envs, 3, dtype=torch.float, device=device)
@@ -39,18 +41,18 @@ class SensorBase:
         raise NotImplementedError
 
     def update_sensor_pos(self, links_pos: torch.Tensor, links_quat: torch.Tensor):
-        l_pos = links_pos[:, self.id_link_attached_to].squeeze(1)
-        l_quat = links_quat[:, self.id_link_attached_to].squeeze(1)
+        self.link_pos[:] = links_pos[:, self.id_link_attached_to.item()]
+        self.link_quat[:] = links_quat[:, self.id_link_attached_to.item()]
 
-        # update depth camera and convert to voxel grid
+        # update depth camera position and pose
         self.sensor_pos_design.assign(wp.from_torch(
-            transform_by_trans_quat(self.sensor_offset_pos_design, l_pos, l_quat), dtype=wp.vec3f))
+            transform_by_trans_quat(self.sensor_offset_pos_design, self.link_pos, self.link_quat), dtype=wp.vec3f))
         self.sensor_quat_design.assign(wp.from_torch(
-            transform_quat_by_quat(self.sensor_offset_quat_design, l_quat), dtype=wp.quatf))
+            transform_quat_by_quat(self.sensor_offset_quat_design, self.link_quat), dtype=wp.quatf))
         self.sensor_pos.assign(wp.from_torch(
-            transform_by_trans_quat(self.sensor_offset_pos, l_pos, l_quat), dtype=wp.vec3f))
+            transform_by_trans_quat(self.sensor_offset_pos, self.link_pos, self.link_quat), dtype=wp.vec3f))
         self.sensor_quat.assign(wp.from_torch(
-            transform_quat_by_quat(self.sensor_offset_quat, l_quat), dtype=wp.quatf))
+            transform_quat_by_quat(self.sensor_offset_quat, self.link_quat), dtype=wp.quatf))
 
     def launch_kernel(self):
         raise NotImplementedError

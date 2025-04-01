@@ -1,6 +1,6 @@
 import numpy as np
 
-from .go1_base_config import Go1BaseCfg, Go1BaseCfgPPO
+from .go1_base_config import Go1BaseCfg
 
 
 class Go1_ZJU_Cfg(Go1BaseCfg):
@@ -23,6 +23,7 @@ class Go1_ZJU_Cfg(Go1BaseCfg):
         activated = True
 
         class depth_0:
+            link_attached_to = 'Trunk'
             position = [0.27, 0, 0.086]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch = 28  # positive pitch down (degree)
@@ -135,12 +136,6 @@ class Go1_ZJU_Cfg(Go1BaseCfg):
             dof_pos_limits = -10.0
             base_height = -1.0
 
-
-class Go1_ZJU_CfgPPO(Go1BaseCfgPPO):
-    seed = -1
-    runner_name = 'rl_dream'
-    algorithm_name = 'ppo_zju'
-
     class policy:
         # actor parameters
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
@@ -150,6 +145,7 @@ class Go1_ZJU_CfgPPO(Go1BaseCfgPPO):
         critic_hidden_dims = [512, 256, 128]
 
         use_recurrent_policy = True
+        enable_reconstructor = False
 
         obs_gru_hidden_size = 64
         recon_gru_hidden_size = 256
@@ -178,12 +174,11 @@ class Go1_ZJU_CfgPPO(Go1BaseCfgPPO):
         use_amp = True
         continue_from_last_std = True
 
-    class runner(Go1BaseCfgPPO.runner):
-        num_steps_per_env = 24  # per iteration
-        max_iterations = 10000  # number of policy updates
+    class runner(Go1BaseCfg.runner):
+        runner_name = 'rl_dream'
+        algorithm_name = 'ppo_zju'
 
-        # logging
-        save_interval = 100  # check for potential saves every this many iterations
+        max_iterations = 10000  # number of policy updates
 
 
 class Go1_ZJU_Pit_Cfg(Go1_ZJU_Cfg):
@@ -251,7 +246,8 @@ class Go1_ZJU_Pit_Cfg(Go1_ZJU_Cfg):
         randomize_joint_armature = True
         randomize_coulomb_friction = False
 
+    class runner(Go1_ZJU_Cfg.runner):
+        runner_name = 'rl_dream'
+        algorithm_name = 'ppo_zju'
 
-class Go1_ZJU_VAE_Pit_CfgPPO(Go1_ZJU_CfgPPO):
-    class runner(Go1_ZJU_CfgPPO.runner):
         max_iterations = 50000

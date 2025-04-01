@@ -4,7 +4,7 @@ import torch
 import torchvision
 import warp as wp
 
-from legged_gym.utils.math import xyz_to_quat, torch_rand_float
+from legged_gym.utils.math import xyz_to_quat, torch_rand_float, transform_by_yaw, quat_to_xyz
 from .sensor_base import SensorBase, SensorBuffer
 
 
@@ -21,11 +21,23 @@ class DepthCam(SensorBase):
         self.depth_raw = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']))
         self._depth_raw_wp = wp.from_torch(self.depth_raw, dtype=wp.float32)
 
-        if self.data_format == 'cloud':
+        if (self.data_format == 'cloud') or (self.data_format == 'hmap'):
             self.cloud = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']), 3)
             self._cloud_wp = wp.from_torch(self.cloud, dtype=wp.vec3f)
             self.cloud_valid = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']), dtype=torch.bool)
             self._cloud_valid_wp = wp.from_torch(self.cloud_valid, dtype=wp.bool)
+
+            if self.data_format == 'hmap':
+                x1, x2, y1, y2 = self.cfg_dict['bounding_box']
+                hmap_shape = self.cfg_dict['hmap_shape']
+                assert x2 > x1 and y2 > y1
+                self._bounding_box_wp = wp.vec4f(x1, x2, y1, y2)
+                self._hmap_grid_size_wp = wp.vec2f((x2 - x1) / hmap_shape[0], (y2 - y1) / hmap_shape[1])
+
+                self.hmap = self._zero_tensor(self.num_envs, *hmap_shape)
+                self._hmap_wp = wp.from_torch(self.hmap, dtype=wp.float32)
+                self.hmap_count = self._zero_tensor(self.num_envs, *hmap_shape, dtype=torch.int32)
+                self._hmap_count_wp = wp.from_torch(self.hmap_count, dtype=wp.int32)
 
         self.resize_transform = torchvision.transforms.Resize(
             (self.cfg_dict['resized'][1], self.cfg_dict['resized'][0]),
@@ -39,7 +51,10 @@ class DepthCam(SensorBase):
                                 delay_prop=cfg_dict['delay_prop'],
                                 device=device)
 
-    def get(self, get_cloud=False, get_pos=False, get_raw=False, **kwargs):
+    def get(self, get_hmap=False, get_cloud=False, get_pos=False, get_raw=False, **kwargs):
+        if get_hmap:
+            return self.hmap.clone(), self.hmap_count.clone()
+
         if get_cloud:
             return self.cloud, self.cloud_valid
 
@@ -50,6 +65,13 @@ class DepthCam(SensorBase):
             return self.depth_raw.clone()
         else:
             return self.buf.get()
+
+    def update_sensor_pos(self, links_pos: torch.Tensor, links_quat: torch.Tensor):
+        super().update_sensor_pos(links_pos, links_quat)
+
+        if self.data_format == 'hmap':
+            self.hmap[:] = 0.
+            self.hmap_count[:] = 0
 
     def step(self, reset):
         return self.buf.step(reset)
@@ -129,7 +151,7 @@ class DepthCam(SensorBase):
                 ],
                 device=wp.device_from_torch(self.device)
             )
-        elif self.data_format == 'cloud':
+        elif (self.data_format == 'cloud') or (self.data_format == 'hmap'):
             wp.launch(
                 kernel=depth_point_cloud_kernel,
                 dim=(self.num_envs, *self.cfg_dict['resolution']),
@@ -149,6 +171,24 @@ class DepthCam(SensorBase):
                 ],
                 device=wp.device_from_torch(self.device)
             )
+            if self.data_format == 'hmap':
+                wp.launch(
+                    kernel=cloud_to_height_map_kernel,
+                    dim=(self.num_envs, *self.cfg_dict['resolution']),
+                    inputs=[
+                        self._bounding_box_wp,
+                        self._hmap_grid_size_wp,
+                        self.link_pos,
+                        self.link_quat,
+                        self._cloud_wp,
+                        self._cloud_valid_wp,
+                        self._hmap_wp,
+                        self._hmap_count_wp,
+
+                    ],
+                    device=wp.device_from_torch(self.device)
+                )
+
         else:
             raise NotImplementedError
 
@@ -275,3 +315,31 @@ def depth_point_cloud_kernel(
         cloud[env_id, v, u] = pt_pos
 
     depth_image[env_id, v, u] = dist
+
+
+@wp.kernel
+def cloud_to_height_map_kernel(
+        bbox: wp.vec4f,  # x1, x2, y1, y2, base frame
+        hmap_grid_size: wp.vec2f,
+        link_pos: wp.array1d(dtype=wp.vec3f),
+        link_quat: wp.array1d(dtype=wp.quatf),
+        cloud: wp.array3d(dtype=wp.vec3f),
+        cloud_valid: wp.array3d(dtype=bool),
+        height_map: wp.array3d(dtype=wp.float32),
+        height_map_count: wp.array3d(dtype=wp.int32)
+):
+    # get the index for current pixel
+    env_id, u, v = wp.tid()
+
+    if not cloud_valid[env_id, v, u]:
+        return
+
+    pt_pos_world = cloud[env_id, v, u]
+    pt_pos_base = wp.quat_rotate_inv(link_quat[env_id], pt_pos_world - link_pos[env_id])
+
+    if (pt_pos_base[0] > bbox[0]) and (pt_pos_base[0] < bbox[1]) and (pt_pos_base[1] > bbox[2]) and (pt_pos_base[1] < bbox[3]):
+        pt_x = int(wp.floordiv(pt_pos_base[0] - bbox[0], hmap_grid_size[0]))
+        pt_y = int(wp.floordiv(pt_pos_base[1] - bbox[2], hmap_grid_size[1]))
+
+        height_map[env_id, pt_x, pt_y] += pt_pos_base[2]
+        height_map_count[env_id, pt_x, pt_y] += 1

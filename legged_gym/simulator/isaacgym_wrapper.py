@@ -11,7 +11,7 @@ from tqdm import tqdm
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.simulator.base_wrapper import BaseWrapper, DriveMode
 from legged_gym.utils.helpers import class_to_dict
-from legged_gym.utils.math import transform_by_quat
+from legged_gym.utils.math import transform_by_quat, transform_by_trans_quat
 from legged_gym.utils.terrain import Terrain
 
 

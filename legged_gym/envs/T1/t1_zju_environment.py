@@ -1,9 +1,11 @@
 import cv2
 import numpy as np
 import torch
+from sklearn.neighbors import NearestNeighbors
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
+from ...utils.math import transform_by_trans_quat
 
 
 class ActorObs(ObsBase):
@@ -78,13 +80,22 @@ class CriticObs(ObsBase):
 
 
 class T1ZJUEnvironment(T1BaseEnv):
+    def _init_buffers(self):
+        super()._init_buffers()
+
+        self.phase_increment_ratio = 1 + self._zero_tensor(self.num_envs)
+        # self.phase_increment_ratio = torch_rand_float(0.5, 1.5, (self.num_envs, 1), self.device).squeeze()
+
+        bounding_box = self.cfg.sensors.depth_0.bounding_box  # x1, x2, y1, y2
+        hmap_shape = self.cfg.sensors.depth_0.hmap_shape  # x dim, y dim
+
+        self.test_scan_points = self._init_height_points(np.linspace(*bounding_box[:2], hmap_shape[0]),
+                                                         np.linspace(*bounding_box[2:], hmap_shape[1]))
+
     def _init_robot_props(self):
         super()._init_robot_props()
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
-
-        self.phase_increment_ratio = 1 + self._zero_tensor(self.num_envs)
-        # self.phase_increment_ratio = torch_rand_float(0.5, 1.5, (self.num_envs, 1), self.device).squeeze()
 
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
@@ -185,9 +196,10 @@ class T1ZJUEnvironment(T1BaseEnv):
 
     def render(self):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+            self.draw_hmap_from_depth()
             self._draw_goals()
-            # self._draw_camera()
-            self._draw_link_COM(whole_body=False)
+            self._draw_camera()
+            # self._draw_link_COM(whole_body=False)
             # self._draw_feet_at_edge()
             self._draw_foothold()
 
@@ -204,13 +216,47 @@ class T1ZJUEnvironment(T1BaseEnv):
             cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
             cv2.waitKey(1)
 
-            # # draw points cloud
-            # cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
-            # cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
-            # pts = cloud[cloud_valid]
-            #
-            # if len(pts) > 0:
-            #     indices = torch.randperm(len(pts))[:500]
-            #     self.sim.draw_points(pts[indices])
+            # draw points cloud
+            cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
+            cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
+            pts = cloud[cloud_valid].cpu().numpy()
+
+            if len(pts) > 0:
+                pts = density_weighted_sampling(pts, 500)
+                self.sim.draw_points(pts)
 
         super().render()
+
+    def draw_hmap_from_depth(self):
+        hmap, hmap_count = self.sensors.get('depth_0', get_hmap=True)
+        hmap, hmap_count = hmap[self.lookat_id], hmap_count[self.lookat_id]
+        pts = self.test_scan_points[self.lookat_id].clone()
+        pts[:, 2] = hmap.flatten()
+        hmap_count = hmap_count.flatten()
+        pts = pts[hmap_count > 0]
+        hmap_count = hmap_count[hmap_count > 0]
+        pts[:, 2] /= hmap_count
+
+        pts = transform_by_trans_quat(pts,
+                                      self.sim.root_pos[[self.lookat_id]].repeat(pts.size(0), 1),
+                                      self.sim.root_quat[[self.lookat_id]].repeat(pts.size(0), 1))
+
+        self.sim.draw_points(pts.cpu().numpy(), color=(1, 0, 0))
+
+
+def density_weighted_sampling(points, num_samples, k=10):
+    nbrs = NearestNeighbors(n_neighbors=k).fit(points)
+    distances, _ = nbrs.kneighbors(points)
+
+    # Estimate density as the mean distance to k-nearest neighbors
+    density = np.mean(distances, axis=1)
+
+    # Higher density -> lower probability of being sampled
+    probabilities = density / np.sum(density)
+    probabilities = 1 - probabilities  # Invert probabilities for uniformity
+    probabilities /= np.sum(probabilities)
+
+    # Sample points based on computed probabilities
+    sampled_indices = np.random.choice(len(points), size=num_samples, replace=False, p=probabilities)
+
+    return points[sampled_indices]

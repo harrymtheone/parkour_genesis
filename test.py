@@ -150,3 +150,20 @@ plt.imshow(noise_2d, cmap="gray")
 plt.colorbar()
 plt.title("2D Fractal Noise")
 plt.show()
+
+
+import matplotlib.pyplot as plt
+
+x, y, z = pts_base[:, 0].cpu().numpy(), pts_base[:, 1].cpu().numpy(), pts_base[:, 2].cpu().numpy()
+
+fig = plt.figure(figsize=(8, 6))
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(x, y, z, c=z, cmap='viridis', s=1)  # Color by z values
+
+# Labels and view settings
+ax.set_xlabel('X')
+ax.set_ylabel('Y')
+ax.set_zlabel('Z')
+ax.set_title('3D Point Cloud')
+
+plt.show()
