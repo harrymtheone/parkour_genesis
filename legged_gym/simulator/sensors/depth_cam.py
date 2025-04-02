@@ -44,7 +44,7 @@ class DepthCam(SensorBase):
             antialias=True
         )
 
-        if self.data_format == 'depth':
+        if self.data_format == 'depth' or self.data_format == 'cloud':
             self.buf = SensorBuffer(self.num_envs,
                                     cfg_dict['buf_len'],
                                     (cfg_dict['resized'][1], cfg_dict['resized'][0]),
@@ -57,9 +57,15 @@ class DepthCam(SensorBase):
                                     delay_prop=cfg_dict['delay_prop'],
                                     device=device)
 
-    def get(self, get_depth=False, **kwargs):
+    def get(self, get_depth=False, get_cloud=False, get_hmap=False, **kwargs):
         if get_depth:
             return self.depth_raw.clone()
+
+        if get_cloud:
+            return self.cloud.clone(), self.cloud_valid.clone()
+
+        if get_hmap:
+            return self.hmap, self.hmap_std
 
         return self.buf.get()
 
@@ -75,7 +81,7 @@ class DepthCam(SensorBase):
         return self.buf.step(reset)
 
     def post_process(self):
-        if self.data_format == 'depth':
+        if self.data_format == 'depth' or self.data_format == 'cloud':
             # These operations are replicated on the hardware
             depth_image = self.depth_raw.clone()
 

@@ -96,7 +96,7 @@ class BaseTask:
         self.projected_gravity = self._zero_tensor(self.num_envs, 3)  # # in base frame
         self.base_COM = self._zero_tensor(self.num_envs, 3)
         self.gravity_vec = torch.tensor([[0, 0, -1]], dtype=torch.float, device=self.device).repeat(self.num_envs, 1)  # in world frame
-        self.forward_vec = torch.tensor([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
+        self.forward_vec = torch.tensor([[1, 0, 0]], dtype=torch.float, device=self.device).repeat(self.num_envs, 1)
 
         # allocate buffers
         self.actor_obs, self.critic_obs = None, None
@@ -568,7 +568,7 @@ class BaseTask:
                                                              self.cfg.domain_rand.joint_stiffness_range[1],
                                                              (len(env_ids), 1),
                                                              device=self.device).squeeze(1)
-            stiffness_all = self.joint_stiffness[env_ids].unsqueeze(1).repeat(1, self.num_dof)
+            stiffness_all = self.joint_stiffness[env_ids, None].repeat(1, self.num_dof)
             self.sim.set_dof_stiffness(stiffness_all, env_ids)
             raise NotImplementedError
 
@@ -577,7 +577,7 @@ class BaseTask:
                                                                       self.cfg.domain_rand.joint_damping_multiplier_range[1],
                                                                       (len(env_ids), 1),
                                                                       device=self.device).squeeze(1)
-            damping_multiplier_all = self.joint_damping_multiplier[env_ids].unsqueeze(1).repeat(1, self.num_dof)
+            damping_multiplier_all = self.joint_damping_multiplier[env_ids, None].repeat(1, self.num_dof)
             self.sim.set_dof_damping_coef(damping_multiplier_all, env_ids)
 
         if self.cfg.domain_rand.randomize_joint_friction:
@@ -585,7 +585,7 @@ class BaseTask:
                                                             self.cfg.domain_rand.joint_friction_range[1],
                                                             (len(env_ids), 1),
                                                             device=self.device).squeeze(1)
-            friction_all = self.joint_friction[env_ids].unsqueeze(1).repeat(1, self.num_dof)
+            friction_all = self.joint_friction[env_ids, None].repeat(1, self.num_dof)
             self.sim.set_dof_friction(friction_all, env_ids)
 
         if self.cfg.domain_rand.randomize_joint_armature:
@@ -593,7 +593,7 @@ class BaseTask:
                                                              self.cfg.domain_rand.joint_armature_range[1],
                                                              (len(env_ids), 1),
                                                              device=self.device).squeeze(1)
-            armatures = self.joint_armatures[env_ids].unsqueeze(1).repeat(1, self.num_dof)
+            armatures = self.joint_armatures[env_ids, None].repeat(1, self.num_dof)
             self.sim.set_dof_armature(armatures, env_ids)
 
         if self.cfg.domain_rand.randomize_coulomb_friction:
@@ -618,6 +618,7 @@ class BaseTask:
     def update_reward_curriculum(self, epoch):
         if self.cfg.rewards.only_positive_rewards:
             self.only_positive_rewards = epoch < self.cfg.rewards.only_positive_rewards_until_epoch
+
     def _prepare_reward_function(self):
         # prepare list of functions
         self._reward_names = []

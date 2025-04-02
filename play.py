@@ -26,28 +26,28 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = True
-    task_cfg.env.num_envs = 2
+    task_cfg.play.control = False
+    task_cfg.env.num_envs = 3
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
-    task_cfg.terrain.num_rows = 2
+    task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
     task_cfg.terrain.curriculum = True
-    task_cfg.terrain.max_difficulty = True
+    # task_cfg.terrain.max_difficulty = True
     # task_cfg.asset.disable_gravity = True
 
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
-    task_cfg.domain_rand.action_delay = False
-    # task_cfg.domain_rand.action_delay_range = [(10, 10)]
-    task_cfg.domain_rand.push_robots = False
+    # task_cfg.domain_rand.action_delay = True
+    task_cfg.domain_rand.action_delay_range = [(10, 10)]
+    # task_cfg.domain_rand.push_robots = True
     # task_cfg.domain_rand.push_interval_s = 6
-    # task_cfg.domain_rand.push_duration = [0.15]
+    task_cfg.domain_rand.push_duration = [0.15]
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
         'rough_slope': 0,
-        'stairs_up': 1,
+        'stairs_up': 0,
         'stairs_down': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -88,7 +88,7 @@ def play(args):
                     hmap_refine, edge_refine = recon_refine[:, 0], recon_refine[:, 1]
 
                 # env.draw_hmap(hmap_rough)
-                # env.draw_hmap(hmap_refine)
+                env.draw_hmap(hmap_refine)
                 # env.draw_body_edge(edge_refine)
                 # env.draw_feet_hmap(est_mu[:, -16-16:-16])  # feet height map estimation
                 # env.draw_body_hmap(est_mu[:, -16:])  # body height map estimation

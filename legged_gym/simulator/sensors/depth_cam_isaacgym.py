@@ -39,14 +39,17 @@ class DepthCamIsaacGym:
 
         self._initialize_sensors()
 
-    def get(self, get_pos=False, get_raw=False, **kwargs):
-        if get_pos:
-            return self.sensor_pos.numpy()
-
-        if get_raw:
+    def get(self, get_depth=False, get_cloud=False, get_hmap=False, **kwargs):
+        if get_depth:
             return self.depth_raw.clone()
-        else:
-            return self.buf.get()
+
+        if get_cloud:
+            raise NotImplementedError
+
+        if get_hmap:
+            raise NotImplementedError
+
+        return self.buf.get()
 
     def step(self, reset):
         return self.buf.step(reset)

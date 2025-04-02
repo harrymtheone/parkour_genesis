@@ -28,15 +28,15 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             pitch = 30  # positive is looking down
             pitch_range = [-1, 1]
 
-            data_format = 'hmap'  # depth, cloud, hmap
-            update_interval = 10  # 5 works without retraining, 8 worse
-            delay_prop = (5, 1)  # Gaussian (mean, std)
+            data_format = 'depth'  # depth, cloud, hmap
+            update_interval = 10
+            delay_prop = (10, 1)  # Gaussian (mean, std)
 
             resolution = (106, 60)  # width, height
             resized = (87, 58)  # (87, 58)
             horizontal_fov = 87
 
-            bounding_box = (0.4, 1.2, -0.4, 0.4)  # x1, x2, y1, y2
+            bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
             hmap_shape = (16, 16)  # x dim, y dim
 
             near_clip = 0
@@ -282,6 +282,9 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             'parkour_flat': 0,
         }
 
+    class policy(T1_Multi_Critic_Cfg.policy):
+        enable_reconstructor = True
+
     class runner(T1_Multi_Critic_Cfg.runner):
         max_iterations = 50000  # number of policy updates
 
@@ -340,6 +343,9 @@ class T1_Multi_Critic_Parkour_Cfg(T1_Multi_Critic_Cfg):
             'parkour_stair': 0,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
+
+    class policy(T1_Multi_Critic_Cfg.policy):
+        enable_reconstructor = True
 
     class runner(T1_Multi_Critic_Cfg.runner):
         max_iterations = 50000  # number of policy updates

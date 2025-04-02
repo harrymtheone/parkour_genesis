@@ -146,7 +146,7 @@ class HumanoidEnv(ParkourTask):
         y_range = torch.linspace(*y_prop)
         grid_x, grid_y = torch.meshgrid(x_range, y_range, indexing='xy')
         foothold_pts = torch.stack([grid_x.flatten(), grid_y.flatten(), torch.full(grid_x.flatten().shape, z_shift)], dim=-1)
-        return foothold_pts.repeat(self.num_envs, 1, 1).to(self.device)
+        return foothold_pts[None, :, :].repeat(self.num_envs, 1, 1).to(self.device)
 
     # ================================================ Rewards ================================================== #
     def _reward_joint_pos(self):

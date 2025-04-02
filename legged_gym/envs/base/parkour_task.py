@@ -155,16 +155,21 @@ class ParkourTask(BaseTask):
     def get_scan(self):
         # convert height points coordinate to world frame
         return self._get_heights(
-            transform_by_yaw(self.scan_points, self.base_euler[:, 2].repeat(1, self.num_scan)).unflatten(0, (self.num_envs, -1))
+            transform_by_yaw(
+                self.scan_points,
+                self.base_euler[:, 2:3].repeat(1, self.num_scan)
+            ).unflatten(0, (self.num_envs, -1))
             + self.sim.root_pos.unsqueeze(1)
             + self.cfg.terrain.border_size
         )
 
     def get_base_height_map(self):
         # convert height points coordinate to world frame
-        n_points = self.base_hmap_points.size(1)
         return self._get_heights(
-            transform_by_yaw(self.base_hmap_points, self.base_euler[:, 2].repeat(1, n_points)).unflatten(0, (self.num_envs, -1))
+            transform_by_yaw(
+                self.base_hmap_points,
+                self.base_euler[:, 2:3].repeat(1, self.base_hmap_points.size(1))
+            ).unflatten(0, (self.num_envs, -1))
             + self.sim.root_pos.unsqueeze(1)
             + self.cfg.terrain.border_size
         )
@@ -174,8 +179,8 @@ class ParkourTask(BaseTask):
             return self._zero_tensor(self.num_envs, points.size(1))
 
         points = (points / self.cfg.terrain.horizontal_scale).long()
-        px = points[:, :, 0].view(-1)
-        py = points[:, :, 1].view(-1)
+        px = points[:, :, 0].flatten()
+        py = points[:, :, 1].flatten()
         px = torch.clip(px, 0, self.sim.height_samples.size(0) - 2)
         py = torch.clip(py, 0, self.sim.height_samples.size(1) - 2)
 
@@ -204,13 +209,13 @@ class ParkourTask(BaseTask):
         # convert height points coordinate to world frame
         points = transform_by_yaw(
             self.scan_points,
-            self.base_euler[:, 2].repeat(1, self.scan_points.size(1))
+            self.base_euler[:, 2:3].repeat(1, self.scan_points.size(1))
         ).unflatten(0, (self.num_envs, -1))
         points = points + self.sim.root_pos[:, None, :] + self.cfg.terrain.border_size
         points = (points / self.sim.terrain.cfg.horizontal_scale).long()
 
-        px = points[:, :, 0].view(-1)
-        py = points[:, :, 1].view(-1)
+        px = points[:, :, 0].flatten()
+        py = points[:, :, 1].flatten()
         px = torch.clip(px, 0, self.sim.edge_mask.size(0) - 2)
         py = torch.clip(py, 0, self.sim.edge_mask.size(1) - 2)
         return self.sim.edge_mask[px, py].view(self.num_envs, *self.cfg.env.scan_shape)
@@ -442,8 +447,7 @@ class ParkourTask(BaseTask):
             height_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
             height_points[:, :2] += base_pos[None, :2]
 
-            # height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
-            height_points[:, 2] = base_pos[2] - hmap - self.base_height[self.lookat_id].item()
+            height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
             self.sim.draw_points(height_points, color=color)
 
         self.pending_vis_task.append((func, hmap, color))

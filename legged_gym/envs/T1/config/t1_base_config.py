@@ -71,7 +71,7 @@ class T1BaseCfg(BaseConfig):
         feet_pts_x = np.linspace(-0.1, 0.1, 2)
         feet_pts_y = np.linspace(-0.1, 0.1, 2)
 
-        height_update_interval = 10  # 1 * dt
+        height_update_interval = 1  # 1 * dt
 
         foothold_pts = [(-0.1, 0.12, 10), (-0.05, 0.05, 5), -0.03]  # (a, b, num points)
         foothold_contact_thresh = 0.01

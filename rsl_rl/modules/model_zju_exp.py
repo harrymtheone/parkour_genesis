@@ -48,12 +48,12 @@ class ObsGRU(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, input_channel):
+    def __init__(self, in_channel, out_channel):
         super().__init__()
 
         # Encoder
         self.encoder_conv1 = nn.Sequential(
-            nn.Conv2d(input_channel, 16, kernel_size=3, padding=1),
+            nn.Conv2d(in_channel, 16, kernel_size=3, padding=1),
             nn.ReLU(),
         )
 
@@ -96,7 +96,7 @@ class UNet(nn.Module):
         )
 
         # Final output layer
-        self.output_conv = nn.Conv2d(16, input_channel, kernel_size=1)  # Output a single channel (depth image)
+        self.output_conv = nn.Conv2d(16, out_channel, kernel_size=1)  # Output a single channel (depth image)
 
     def forward(self, x):
         # Encoder
@@ -121,7 +121,51 @@ class UNet(nn.Module):
         d1 = self.decoder_conv1(d1)
 
         # Final output
-        return self.output_conv(d1)
+        return self.output_conv(d1), b
+
+
+# class ReconGRU(nn.Module):
+#     def __init__(self, env_cfg, policy_cfg):
+#         super().__init__()
+#         assert policy_cfg.recon_gru_hidden_size == 512
+#
+#         self.recon_half = UNet(in_channel=4, out_channel=2)  # his_len * (mean + std)
+#
+#         self.adaptive_avg = nn.AdaptiveAvgPool2d((1, 1))
+#
+#         self.gru = nn.GRU(input_size=64 + 128, hidden_size=512, num_layers=2)
+#         self.hidden_state = None
+#
+#         self.recon_full = UNet(in_channel=2, out_channel=2)
+#
+#     def inference_forward(self, depth_scan_his, prop_latent):
+#         # inference forward
+#         recon_half, depth_scan_enc = self.recon_half(depth_scan_his.flatten(1, 2))
+#
+#         gru_input = torch.cat([prop_latent, self.adaptive_avg(depth_scan_enc).flatten(1)], dim=1)
+#         enc_gru, self.hidden_state = self.gru(gru_input.unsqueeze(0), self.hidden_state)
+#
+#         recon_full_in = torch.cat([recon_half, enc_gru.view(recon_half.shape)], dim=2)
+#         recon_full, _ = self.recon_full(recon_full_in)
+#         return recon_half, recon_full
+#
+#     def forward(self, depth_scan_his, prop_latent, hidden_state):
+#         # update forwardn_half, depth_scan_enc = gru_wrapper(self.recon_half.forward, depth_scan_his.flatten(2, 3))
+#
+#         gru_input = torch.cat([prop_latent, self.adaptive_avg(depth_scan_enc).flatten(2)], dim=2)
+#         enc_gru, hidden_state = self.gru(gru_input, hidden_state)
+#
+#         recon_full_in = torch.cat([recon_half, enc_gru.view(recon_half.shape)], dim=3)
+#         recon_full, _ = gru_wrapper(self.recon_full.forward, recon_full_in)
+#         return recon_half, recon_full, hidden_state
+#
+#     def get_hidden_state(self):
+#         if self.hidden_state is None:
+#             return None
+#         return self.hidden_state.detach()
+#
+#     def reset(self, dones):
+#         self.hidden_state[:, dones] = 0.
 
 
 class ReconGRU(nn.Module):
@@ -156,7 +200,7 @@ class ReconGRU(nn.Module):
             nn.Conv2d(4, 2, kernel_size=3, padding=1),
         )
 
-        self.recon_refine = UNet(input_channel=2)
+        self.recon_refine = UNet(in_channel=2, out_channel=2)
 
     def inference_forward(self, depth_his, prop_latent):
         # inference forward
@@ -168,7 +212,7 @@ class ReconGRU(nn.Module):
 
         # reconstruct
         hmap_rough = self.recon_rough(enc_gru.squeeze(0))
-        hmap_refine = self.recon_refine(hmap_rough)
+        hmap_refine, _ = self.recon_refine(hmap_rough)
         return hmap_rough, hmap_refine
 
     def forward(self, depth_his, prop_latent, hidden_state):
@@ -181,7 +225,7 @@ class ReconGRU(nn.Module):
 
         # reconstruct
         hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
-        hmap_refine = gru_wrapper(self.recon_refine.forward, hmap_rough)
+        hmap_refine, _ = gru_wrapper(self.recon_refine.forward, hmap_rough)
         return hmap_rough, hmap_refine, hidden_state
 
     def get_hidden_state(self):
@@ -409,7 +453,7 @@ class EstimatorGRU(nn.Module):
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine = self.reconstructor.inference_forward(obs.depth, latent_obs)
+            recon_rough, recon_refine = self.reconstructor.inference_forward(obs.depth_scan, latent_obs)
 
         # cross-model mixing using transformer
         if type(use_estimated_values) is torch.Tensor:
@@ -457,7 +501,7 @@ class EstimatorGRU(nn.Module):
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs, recon_hidden_states)
+            recon_rough, recon_refine, _ = self.reconstructor(obs.depth_scan, latent_obs, recon_hidden_states)
 
         # cross-model mixing using transformer
         recon_input = torch.where(
@@ -481,7 +525,7 @@ class EstimatorGRU(nn.Module):
     def reconstruct(self, obs, obs_enc_hidden, recon_hidden, use_estimated_values):
         # encode history proprio
         latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden)
-        recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs.detach(), recon_hidden)
+        recon_rough, recon_refine, _ = self.reconstructor(obs.depth_scan, latent_obs.detach(), recon_hidden)
 
         recon_input = torch.where(
             use_estimated_values.unsqueeze(-1).unsqueeze(-1),

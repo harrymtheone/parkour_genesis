@@ -5,15 +5,15 @@ from sklearn.neighbors import NearestNeighbors
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_trans_quat
+from ...utils.math import transform_by_trans_quat, transform_by_yaw
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, depth, priv_actor, scan):
+    def __init__(self, proprio, prop_his, depth_scan, priv_actor, scan):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
-        self.depth = depth.clone()
+        self.depth_scan = depth_scan.clone()
         self.priv_actor = priv_actor.clone()
         self.scan = scan.clone()
 
@@ -26,7 +26,7 @@ class ActorObs(ObsBase):
         return ActorObs(
             mirror_proprio_by_x(self.proprio),
             mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
-            torch.flip(self.depth, dims=[3]),
+            torch.flip(self.depth_scan, dims=[3]),
             self.priv_actor,
             torch.flip(self.scan, dims=[2]),
         )
@@ -172,7 +172,7 @@ class T1ZJUEnvironment(T1BaseEnv):
 
         # compute height map
         # scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
-        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.base_height.unsqueeze(1), -1, 1.)
+        scan = self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
         scan_edge = torch.stack([scan, self.get_edge_mask().float()], dim=1)
 
@@ -196,14 +196,15 @@ class T1ZJUEnvironment(T1BaseEnv):
 
     def render(self):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
-            self.draw_hmap_from_depth()
+            # self.draw_hmap_from_depth()
+            # self.draw_cloud_from_depth()
             self._draw_goals()
             # self._draw_camera()
             # self._draw_link_COM(whole_body=False)
             # self._draw_feet_at_edge()
             self._draw_foothold()
 
-            # self._draw_height_field(draw_guidance=True)
+            # self._draw_height_field(draw_guidance=False)
             # self._draw_edge()
 
         if self.cfg.sensors.activated:
@@ -214,20 +215,24 @@ class T1ZJUEnvironment(T1BaseEnv):
             cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
             cv2.waitKey(1)
 
-            # # draw points cloud
-            # cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
-            # cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
-            # pts = cloud[cloud_valid].cpu().numpy()
-            #
-            # if len(pts) > 0:
-            #     pts = density_weighted_sampling(pts, 500)
-            #     self.sim.draw_points(pts)
-
         super().render()
 
+    def draw_cloud_from_depth(self):
+        # draw points cloud
+        cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
+        cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
+        pts = cloud[cloud_valid].cpu().numpy()
+
+        if len(pts) > 0:
+            pts = density_weighted_sampling(pts, 500)
+            self.sim.draw_points(pts)
+
     def draw_hmap_from_depth(self):
-        buf = self.sensors.get('depth_0')[self.lookat_id, -1]
-        hmap, hmap_std = buf[0], buf[1]
+        if not self.cfg.sensors.activated:
+            return
+
+        hmap, hmap_std = self.sensors.get('depth_0', get_hmap=True)
+        hmap, hmap_std = hmap[self.lookat_id], hmap_std[self.lookat_id]
 
         pts = self.test_scan_points[self.lookat_id].clone()
         pts[:, 2] = hmap.flatten()

@@ -50,7 +50,7 @@ class PddZJUEnvironment(HumanoidEnv):
 
         # convert height points coordinate to world frame
         n_points = self.feet_hmap_points.size(1)
-        points = transform_by_yaw(self.feet_hmap_points, self.base_euler[:, 2].repeat(1, n_points)).unflatten(0, (self.num_envs, -1))
+        points = transform_by_yaw(self.feet_hmap_points, self.base_euler[:, 2:3].repeat(1, n_points)).unflatten(0, (self.num_envs, -1))
         points = feet_pos[:, :, None, :] + points[:, None, :, :]
 
         hmap = self._get_heights(points.flatten(1, 2) + self.cfg.terrain.border_size)
@@ -60,7 +60,7 @@ class PddZJUEnvironment(HumanoidEnv):
     def get_body_hmap(self):
         # convert height points coordinate to world frame
         n_points = self.body_hmap_points.size(1)
-        points = transform_by_yaw(self.body_hmap_points, self.base_euler[:, 2].repeat(1, n_points)).unflatten(0, (self.num_envs, -1))
+        points = transform_by_yaw(self.body_hmap_points, self.base_euler[:, 2:3].repeat(1, n_points)).unflatten(0, (self.num_envs, -1))
         points = self.sim.root_pos[:, None, :] + points
 
         hmap = self._get_heights(points + self.cfg.terrain.border_size)
