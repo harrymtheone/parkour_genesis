@@ -136,7 +136,6 @@ class T1DreamWaqCfg(T1BaseCfg):
             # stand_still = 2.0
 
     class policy:
-        init_noise_std = 1.0
         use_recurrent_policy = True
         actor_hidden_dims = [512, 256, 128]
         critic_hidden_dims = [512, 256, 128]
@@ -159,6 +158,7 @@ class T1DreamWaqCfg(T1BaseCfg):
 
         use_amp = True
         continue_from_last_std = True
+        init_noise_std = 1.0
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'

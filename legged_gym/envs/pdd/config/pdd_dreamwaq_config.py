@@ -139,7 +139,6 @@ class PddDreamWaqCfgPPO(PddBaseCfgPPO):
     algorithm_name = 'ppo_dreamwaq'
 
     class policy:
-        init_noise_std = 1.0
         use_recurrent_policy = False
         actor_hidden_dims = [512, 256, 128]
         critic_hidden_dims = [512, 256, 128]
@@ -162,6 +161,7 @@ class PddDreamWaqCfgPPO(PddBaseCfgPPO):
 
         use_amp = True
         continue_from_last_std = True
+        init_noise_std = 1.0
 
     class runner(PddBaseCfgPPO.runner):
         max_iterations = 50000  # number of policy updates

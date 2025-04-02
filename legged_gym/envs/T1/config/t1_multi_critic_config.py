@@ -184,7 +184,6 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
     class policy:
         # actor parameters
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
-        init_noise_std = 1.0
 
         # critic parameters
         critic_hidden_dims = [512, 256, 128]
@@ -218,6 +217,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
         use_amp = True
         continue_from_last_std = True
+        init_noise_std = 1.0
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'  # rl, distil, mixed

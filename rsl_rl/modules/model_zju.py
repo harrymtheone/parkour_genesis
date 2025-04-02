@@ -386,5 +386,5 @@ class Estimator(nn.Module):
         return self.distribution.entropy().sum(dim=-1)
 
     def reset_std(self, std, device):
-        new_log_std = torch.log(std * torch.ones_like(self.std.data, device=device))
+        new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
         self.log_std.data = new_log_std.data

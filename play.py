@@ -17,8 +17,8 @@ slowmo = 1
 
 def play(args):
     log_root = 'logs'
-    # args.simulator = SimulatorType.Genesis
-    args.simulator = SimulatorType.IsaacGym
+    args.simulator = SimulatorType.Genesis
+    # args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
 
@@ -76,7 +76,7 @@ def play(args):
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
 
             if type(rtn) is tuple:

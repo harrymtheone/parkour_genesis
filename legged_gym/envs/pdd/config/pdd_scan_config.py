@@ -148,6 +148,7 @@ class PddScanCfgPPO(PddBaseCfgPPO):
 
         use_amp = True
         continue_from_last_std = True
+        init_noise_std = 1.0
 
     class runner(PddBaseCfgPPO.runner):
         max_iterations = 10000  # number of policy updates

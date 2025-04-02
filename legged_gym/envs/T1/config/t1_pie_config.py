@@ -188,6 +188,7 @@ class T1PIECfg(T1BaseCfg):
 
         use_amp = True
         continue_from_last_std = True
+        init_noise_std = 1.0
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'  # rl, distil, mixed
