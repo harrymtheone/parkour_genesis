@@ -453,7 +453,7 @@ class EstimatorGRU(nn.Module):
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine = self.reconstructor.inference_forward(obs.depth_scan, latent_obs)
+            recon_rough, recon_refine = self.reconstructor.inference_forward(obs.depth, latent_obs)
 
         # cross-model mixing using transformer
         if type(use_estimated_values) is torch.Tensor:
@@ -501,7 +501,7 @@ class EstimatorGRU(nn.Module):
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine, _ = self.reconstructor(obs.depth_scan, latent_obs, recon_hidden_states)
+            recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs, recon_hidden_states)
 
         # cross-model mixing using transformer
         recon_input = torch.where(

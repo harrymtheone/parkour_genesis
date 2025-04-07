@@ -11,6 +11,10 @@ from legged_gym.simulator.base_wrapper import BaseWrapper, DriveMode
 from legged_gym.utils.terrain import Terrain
 
 
+def wrapper_unsafe(func, *args, **kwargs):
+    return func(*args, unsafe=True, **kwargs)
+
+
 class GenesisWrapper(BaseWrapper):
     def __init__(self, cfg, args):
         super().__init__(cfg, args)
@@ -73,7 +77,8 @@ class GenesisWrapper(BaseWrapper):
         )
 
         rigid_options = gs.options.RigidOptions(
-            batch_dofs_info=True,
+            batch_dofs_info=True,  # TODO: bug not fixed?
+
             enable_collision=True,
             enable_joint_limit=True,
             enable_self_collision=True,
@@ -87,7 +92,7 @@ class GenesisWrapper(BaseWrapper):
             refresh_rate=60,
             max_FPS=60
         )
-        vis_options = gs.options.VisOptions(n_rendered_envs=n_rendered_envs)
+        vis_options = gs.options.VisOptions(rendered_envs_idx=list(range(n_rendered_envs)))
 
         # create Scene
         self._scene = gs.Scene(
@@ -106,8 +111,8 @@ class GenesisWrapper(BaseWrapper):
             raise ValueError("Terrain description type not specified!")
 
         if terrain_desc_type in ['heightfield', 'trimesh']:
-            # TODO: maybe remove this line in future?
-            self.cfg.terrain.horizontal_scale_downsample = 0.1
+            # TODO: maybe remove this in later release of Genesis?
+            self.cfg.terrain.num_cols = sum(self.cfg.terrain.terrain_dict.values())
 
             self.terrain = Terrain(self.cfg.terrain, terrain_utils)
         else:
@@ -199,6 +204,9 @@ class GenesisWrapper(BaseWrapper):
         for n in self.cfg.init_state.default_joint_angles:
             found = False
             for joint in self._robot.joints:
+                if type(joint) is gs.datatypes.List:
+                    joint = joint[0]
+
                 if n == joint.name:
                     self._dof_names.append(n)
                     found = True
@@ -213,20 +221,20 @@ class GenesisWrapper(BaseWrapper):
         self._dof_indices = torch.tensor([self._robot.get_joint(n).dof_idx_local for n in self._dof_names], dtype=torch.long, device=self.device)
 
         # read dof properties
-        self.dof_pos_limits = torch.stack(self._robot.get_dofs_limit(self._dof_indices), dim=1)
-        self.torque_limits = self._robot.get_dofs_force_range(self._dof_indices)[1]
+        self.dof_pos_limits = torch.stack(wrapper_unsafe(self._robot.get_dofs_limit, self._dof_indices), dim=1)
+        self.torque_limits = wrapper_unsafe(self._robot.get_dofs_force_range, self._dof_indices)[1]
 
         # set joint stiffness
         joint_stiffness = self.cfg.asset.stiffness + self._zero_tensor(self.num_envs, self.num_dof)
-        self._robot.set_dofs_stiffness(joint_stiffness, self._dof_indices)
+        wrapper_unsafe(self._robot.set_dofs_stiffness, joint_stiffness, self._dof_indices)
 
         # set joint damping
         joint_damping = self.cfg.asset.angular_damping + self._zero_tensor(self.num_envs, self.num_dof)
-        self._robot.set_dofs_damping(joint_damping, self._dof_indices)
+        wrapper_unsafe(self._robot.set_dofs_damping, joint_damping, self._dof_indices)
 
         # set joint armature
         joint_armature = self.cfg.asset.armature + self._zero_tensor(self.num_envs, self.num_dof)
-        self._robot.set_dofs_armature(joint_armature, self._dof_indices)
+        wrapper_unsafe(self._robot.set_dofs_armature, joint_armature, self._dof_indices)
 
         if self.cfg.asset.friction > 0 and not self.suppress_warning:
             print(f"[bold red]⚠️ genesis has no joint friction?! [/bold red]")

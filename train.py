@@ -14,8 +14,8 @@ from legged_gym.utils.task_registry import TaskRegistry
 
 def train(args):
     args.headless = True
-    # args.simulator = SimulatorType.Genesis
-    args.simulator = SimulatorType.IsaacGym
+    args.simulator = SimulatorType.Genesis
+    # args.simulator = SimulatorType.IsaacGym
 
     # check if it is on AutoDL
     autodl_log_root = os.path.join(os.path.expanduser("~"), 'autodl-tmp')
@@ -32,7 +32,7 @@ def train(args):
     if args.debug:
         mode = "disabled"
         args.headless = False
-        task_cfg.terrain.num_rows = 10
+        task_cfg.terrain.num_rows = 2
         task_cfg.terrain.num_cols = 2
         task_cfg.env.num_envs = 256
     else:

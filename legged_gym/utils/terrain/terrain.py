@@ -1,6 +1,5 @@
 from enum import Enum
 
-import pyfqmr
 import scipy
 
 from .terrain_utils import *
@@ -72,6 +71,7 @@ class Terrain:
         print(f'Created {self.triangles.shape[0]} triangles')
 
         if cfg.description_type == "trimesh" and self.cfg.simplify_grid:
+            import pyfqmr
             mesh_simplifier = pyfqmr.Simplify()
             mesh_simplifier.setMesh(self.vertices, self.triangles)
             mesh_simplifier.simplify_mesh(target_count=int(0.05 * self.triangles.shape[0]), aggressiveness=7, preserve_border=True, verbose=10)

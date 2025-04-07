@@ -1,6 +1,9 @@
 import torch
 import torchvision
-from isaacgym import gymapi
+try:
+    from isaacgym import gymapi
+except ImportError:
+    raise ImportError("IsaacGym not found. Please change device to cuda if you are using Genesis.")
 
 from legged_gym.utils.math import xyz_to_quat, torch_rand_float
 from .sensor_base import SensorBuffer

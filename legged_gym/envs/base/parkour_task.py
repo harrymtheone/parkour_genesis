@@ -64,7 +64,9 @@ class ParkourTask(BaseTask):
             # put robots at the origins defined by the terrain
             max_init_level = self.cfg.terrain.max_init_terrain_level
             if max_init_level >= self.cfg.terrain.num_rows:
-                raise ValueError("max_init_level should be less than num_rows")
+                print(f"max_init_level should be less than num_rows! "
+                      f"Changing from {max_init_level} to {self.cfg.terrain.num_rows - 1}")
+                max_init_level = self.cfg.terrain.num_rows - 1
 
             if not self.curriculum:
                 max_init_level = self.cfg.terrain.num_rows - 1
@@ -78,7 +80,6 @@ class ParkourTask(BaseTask):
             self.env_origins = self.terrain_origins[self.env_levels, self.env_cols]  # (num_envs, 3)
             self.terrain_class = torch.from_numpy(self.sim.terrain.terrain_type).to(self.device).to(torch.float)
             self.env_class = self.terrain_class[self.env_levels, self.env_cols]  # (num_envs, )
-            print('normal terrain env number:', torch.sum(self.env_class < 4).cpu().numpy())
 
             self.terrain_goals = torch.from_numpy(self.sim.terrain.goals).to(self.device).to(torch.float)
             self.terrain_goal_num = torch.from_numpy(self.sim.terrain.num_goals).to(self.device).to(torch.long)

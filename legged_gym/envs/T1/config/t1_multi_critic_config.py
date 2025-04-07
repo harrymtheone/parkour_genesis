@@ -150,11 +150,11 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             joint_pos = 2.
             feet_contact_number = 1.2
             feet_clearance = 0.2  # 0.2
-            feet_air_time = 1.
+            # feet_air_time = 1.
             feet_slip = -1.
-            feet_distance = 0.2
-            knee_distance = 0.2
-            feet_rotation = 0.5
+            # feet_distance = 0.2
+            # knee_distance = 0.2
+            # feet_rotation = 0.5
 
             # vel tracking
             tracking_lin_vel = 2.0
@@ -184,6 +184,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
     class policy:
         # actor parameters
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
+        init_noise_std = 1.0
 
         # critic parameters
         critic_hidden_dims = [512, 256, 128]
@@ -217,7 +218,6 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
         use_amp = True
         continue_from_last_std = True
-        init_noise_std = 1.0
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'  # rl, distil, mixed
@@ -237,11 +237,9 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
     class domain_rand(T1_Multi_Critic_Cfg.domain_rand):
         push_robots = True
         push_duration = [0.15]
-        push_duration_update_steps = 1000 * 24
 
         action_delay = True
         action_delay_range = [(5, 20)]
-        action_delay_update_steps = 2000 * 24
 
     class rewards(T1_Multi_Critic_Cfg.rewards):
         class scales(T1_Multi_Critic_Cfg.rewards.scales):

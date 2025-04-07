@@ -1,6 +1,5 @@
 import noise
 import numpy as np
-from pydelatin import Delatin
 
 
 def convert_heightfield_to_trimesh(height_field_raw, horizontal_scale, vertical_scale, slope_threshold=None):
@@ -96,6 +95,7 @@ def edge_detection(height_field_raw, horizontal_scale, vertical_scale, slope_thr
 
 
 def convert_heightfield_to_trimesh_delatin(height_field_raw, horizontal_scale, vertical_scale, max_error=0.01):
+    from pydelatin import Delatin
     mesh = Delatin(np.flip(height_field_raw, axis=1).T, z_scale=vertical_scale, max_error=max_error)
     vertices = np.zeros_like(mesh.vertices)
     vertices[:, :2] = mesh.vertices[:, :2] * horizontal_scale

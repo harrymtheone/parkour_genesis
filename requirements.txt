@@ -1,7 +1,6 @@
 noise
 open3d
 opencv-python
-pyfqmr
 pygame
 rich
 torch

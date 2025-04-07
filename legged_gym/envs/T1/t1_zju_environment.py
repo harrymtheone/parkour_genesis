@@ -5,7 +5,7 @@ from sklearn.neighbors import NearestNeighbors
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_trans_quat, transform_by_yaw
+from ...utils.math import transform_by_trans_quat
 
 
 class ActorObs(ObsBase):
@@ -13,7 +13,7 @@ class ActorObs(ObsBase):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
-        self.depth_scan = depth_scan.clone()
+        self.depth = depth_scan.clone()
         self.priv_actor = priv_actor.clone()
         self.scan = scan.clone()
 
@@ -26,7 +26,7 @@ class ActorObs(ObsBase):
         return ActorObs(
             mirror_proprio_by_x(self.proprio),
             mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
-            torch.flip(self.depth_scan, dims=[3]),
+            torch.flip(self.depth, dims=[3]),
             self.priv_actor,
             torch.flip(self.scan, dims=[2]),
         )
