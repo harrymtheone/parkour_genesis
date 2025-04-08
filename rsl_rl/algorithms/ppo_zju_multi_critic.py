@@ -253,7 +253,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         return return_dict
 
-    @torch.compile
+    # @torch.compile
     def _compute_policy_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
@@ -328,7 +328,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
             return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
 
-    @torch.compile
+    # @torch.compile
     def _compute_estimation_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             batch_size = 4

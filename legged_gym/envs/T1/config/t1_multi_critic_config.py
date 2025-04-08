@@ -152,9 +152,9 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             feet_clearance = 0.2  # 0.2
             # feet_air_time = 1.
             feet_slip = -1.
-            # feet_distance = 0.2
-            # knee_distance = 0.2
-            # feet_rotation = 0.5
+            feet_distance = 0.2
+            knee_distance = 0.2
+            feet_rotation = 0.5
 
             # vel tracking
             tracking_lin_vel = 2.0

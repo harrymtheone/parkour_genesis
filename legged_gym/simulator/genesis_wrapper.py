@@ -112,7 +112,7 @@ class GenesisWrapper(BaseWrapper):
 
         if terrain_desc_type in ['heightfield', 'trimesh']:
             # TODO: maybe remove this in later release of Genesis?
-            self.cfg.terrain.num_cols = sum(self.cfg.terrain.terrain_dict.values())
+            self.cfg.terrain.num_cols = 3 * sum(self.cfg.terrain.terrain_dict.values())
 
             self.terrain = Terrain(self.cfg.terrain, terrain_utils)
         else:
