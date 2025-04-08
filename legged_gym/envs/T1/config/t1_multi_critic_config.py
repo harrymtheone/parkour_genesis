@@ -32,6 +32,9 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             scan = (32, 16)
             edge_mask = (32, 16)
 
+        class obs_next:
+            proprio = 50
+
     class sensors:
         activated = False
 
