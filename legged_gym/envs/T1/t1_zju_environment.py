@@ -8,6 +8,41 @@ from ..base.utils import ObsBase
 from ...utils.math import transform_by_trans_quat
 
 
+class ObservationFactory:
+    # def __init__(self, cfg, n_envs, device):
+    #     for k in dir(cfg):
+    #         if k.startswith('_'):
+    #             continue
+    #
+    #         tensor_shape = getattr(cfg, k)
+    #         if tensor_shape is None:
+    #             continue
+    #
+    #         tensor_shape = tensor_shape if isinstance(tensor_shape, tuple) else (tensor_shape,)
+    #         setattr(self, k, torch.empty(n_envs, *tensor_shape, dtype=torch.float32, device=device))
+
+    def __init__(self, cfg):
+        for k in dir(cfg):
+            if k.startswith('_'):
+                continue
+
+            tensor_shape = getattr(cfg, k)
+            if tensor_shape is None:
+                continue
+
+            setattr(self, k, None)
+
+    def update(self, **kwargs):
+        for k, v in kwargs.items():
+            assert hasattr(self, k)
+            setattr(self, k, v)
+
+    def clip(self, thresh):
+        for v in self.__dict__.values():
+            if v is not None:
+                torch.clip(v, -thresh, thresh, out=v)
+
+
 class ActorObs(ObsBase):
     def __init__(self, proprio, prop_his, depth_scan, priv_actor, scan):
         super().__init__()
@@ -83,17 +118,22 @@ class T1ZJUEnvironment(T1BaseEnv):
     def _init_buffers(self):
         super()._init_buffers()
 
+        if not self.cfg.sensors.activated:
+            setattr(self.cfg.env.obs, 'depth', None)
+        self.actor_obs = ObservationFactory(self.cfg.env.obs, self.num_envs, self.device)
+        self.critic_obs = ObservationFactory(self.cfg.env.critic_obs, self.num_envs, self.device)
+
         self.phase_increment_ratio = 1 + self._zero_tensor(self.num_envs)
         # self.phase_increment_ratio = torch_rand_float(0.5, 1.5, (self.num_envs, 1), self.device).squeeze()
 
         bounding_box = self.cfg.sensors.depth_0.bounding_box  # x1, x2, y1, y2
         hmap_shape = self.cfg.sensors.depth_0.hmap_shape  # x dim, y dim
-
-        self.test_scan_points = self._init_height_points(np.linspace(*bounding_box[:2], hmap_shape[0]),
-                                                         np.linspace(*bounding_box[2:], hmap_shape[1]))
+        self.depth_scan_points = self._init_height_points(np.linspace(*bounding_box[:2], hmap_shape[0]),
+                                                          np.linspace(*bounding_box[2:], hmap_shape[1]))
 
     def _init_robot_props(self):
         super()._init_robot_props()
+
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
@@ -144,8 +184,6 @@ class T1ZJUEnvironment(T1BaseEnv):
         ), dim=-1)
 
         # explicit privileged information
-        base_edge_mask = self.get_edge_mask().float()
-
         priv_obs = torch.cat((
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
@@ -167,20 +205,20 @@ class T1ZJUEnvironment(T1BaseEnv):
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
             self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
-            # self.base_height.unsqueeze(1)
         ), dim=-1)
 
         # compute height map
-        # scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
-        scan = self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias
+        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
-        scan_edge = torch.stack([scan, self.get_edge_mask().float()], dim=1)
+        base_edge_mask = self.get_edge_mask().float()
+        scan_edge = torch.stack([scan, base_edge_mask], dim=1)
 
         # compose actor observation
+        obs_dict = {'proprio': proprio, 'prop_his': self.prop_his_buf.get(), 'priv_actor': priv_actor_obs, 'scan': scan_edge}
         if self.cfg.sensors.activated:
-            self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan_edge)
-        else:
-            self.actor_obs = ActorObsNoDepth(proprio, self.prop_his_buf.get(), priv_actor_obs, scan_edge)
+            obs_dict['depth'] = self.sensors.get('depth_0').squeeze(2)
+
+        self.actor_obs.update(**obs_dict)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer
@@ -191,7 +229,7 @@ class T1ZJUEnvironment(T1BaseEnv):
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask)
+        self.critic_obs.update(priv_his=self.critic_his_buf.get(), scan=scan, edge_mask=base_edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):
@@ -234,7 +272,7 @@ class T1ZJUEnvironment(T1BaseEnv):
         hmap, hmap_std = self.sensors.get('depth_0', get_hmap=True)
         hmap, hmap_std = hmap[self.lookat_id], hmap_std[self.lookat_id]
 
-        pts = self.test_scan_points[self.lookat_id].clone()
+        pts = self.depth_scan_points[self.lookat_id].clone()
         pts[:, 2] = hmap.flatten()
         pts = pts[hmap_std.flatten() >= 0]
 

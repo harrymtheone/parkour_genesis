@@ -1,5 +1,7 @@
 from .t1_base_config import T1BaseCfg
 
+DEPTH_RESIZED = (87, 58)
+
 
 class T1_Multi_Critic_Cfg(T1BaseCfg):
     class env(T1BaseCfg.env):
@@ -18,6 +20,18 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         num_actions = 13
         episode_length_s = 40  # episode length in seconds
 
+        class obs:
+            proprio = 50
+            prop_his = (10, 50)
+            depth = (2, *reversed(DEPTH_RESIZED))
+            priv_actor = 27
+            scan = (2, 32, 16)
+
+        class critic_obs:
+            priv_his = (50, 86)
+            scan = (32, 16)
+            edge_mask = (32, 16)
+
     class sensors:
         activated = False
 
@@ -33,7 +47,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             delay_prop = (10, 1)  # Gaussian (mean, std)
 
             resolution = (106, 60)  # width, height
-            resized = (87, 58)  # (87, 58)
+            resized = DEPTH_RESIZED
             horizontal_fov = 87
 
             bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
