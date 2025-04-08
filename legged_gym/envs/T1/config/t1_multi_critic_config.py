@@ -23,7 +23,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         class obs:
             proprio = 50
             prop_his = (10, 50)
-            depth = (2, *reversed(DEPTH_RESIZED))
+            # depth = (2, *reversed(DEPTH_RESIZED))
             priv_actor = 27
             scan = (2, 32, 16)
 
@@ -36,7 +36,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             proprio = 50
 
     class sensors:
-        activated = False
+        activated = True
 
         class depth_0:
             link_attached_to = 'Trunk'
@@ -167,7 +167,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             joint_pos = 2.
             feet_contact_number = 1.2
             feet_clearance = 0.2  # 0.2
-            # feet_air_time = 1.
+            feet_air_time = 1.
             feet_slip = -1.
             feet_distance = 0.2
             knee_distance = 0.2
@@ -207,7 +207,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         critic_hidden_dims = [512, 256, 128]
 
         use_recurrent_policy = True
-        enable_reconstructor = False
+        enable_reconstructor = True
 
         obs_gru_hidden_size = 64
         recon_gru_hidden_size = 256
@@ -224,8 +224,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 4
-        num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
+        num_learning_epochs = 5
+        num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
         gamma = 0.99
@@ -248,6 +248,14 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 # -----------------------------------------------------------------------------------------------
 
 class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
+    class env(T1_Multi_Critic_Cfg.env):
+        class obs:
+            proprio = 50
+            prop_his = (10, 50)
+            depth = (2, *reversed(DEPTH_RESIZED))
+            priv_actor = 27
+            scan = (2, 32, 16)
+
     class sensors(T1_Multi_Critic_Cfg.sensors):
         activated = True
 

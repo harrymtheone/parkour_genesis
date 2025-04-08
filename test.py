@@ -89,81 +89,123 @@
 # plt.show()
 
 
-import numpy as np
-import noise
-import matplotlib.pyplot as plt
+# import numpy as np
+# import noise
+# import matplotlib.pyplot as plt
 
-from legged_gym.utils.terrain.utils import convert_heightfield_to_trimesh
-import open3d as o3d
-
-
-def generate_fractal_noise_2d(shape, scale=100, octaves=5, persistence=0.5, lacunarity=2.0, seed=None):
-    """
-    Generate 2D fractal noise using Perlin noise.
-
-    Parameters:
-        shape (tuple): (height, width) of the output noise grid.
-        scale (float): Frequency scale of the noise.
-        octaves (int): Number of noise layers.
-        persistence (float): Amplitude reduction per octave (0-1).
-        lacunarity (float): Frequency multiplier per octave (>1).
-        seed (int, optional): Random seed for noise generation.
-
-    Returns:
-        np.ndarray: 2D fractal noise array.
-    """
-    height, width = shape
-    noise_array = np.zeros((height, width))
-
-    if seed is not None:
-        np.random.seed(seed)
-
-    for y in range(height):
-        for x in range(width):
-            noise_value = 0
-            frequency = 1.0 / scale
-            amplitude = 1.0
-            for _ in range(octaves):
-                noise_value += amplitude * noise.pnoise2(x * frequency, y * frequency, repeatx=width, repeaty=height)
-                frequency *= lacunarity
-                amplitude *= persistence
-
-            noise_array[y, x] = noise_value
-
-    # Normalize noise to range [0, 1]
-    noise_array = (noise_array - noise_array.min()) / (noise_array.max() - noise_array.min())
-    return noise_array
+# from legged_gym.utils.terrain.utils import convert_heightfield_to_trimesh
+# import open3d as o3d
 
 
-# Example usage
-noise_2d = generate_fractal_noise_2d((256, 256), scale=50, octaves=6, persistence=0.5, lacunarity=2.0, seed=42)
+# def generate_fractal_noise_2d(shape, scale=100, octaves=5, persistence=0.5, lacunarity=2.0, seed=None):
+#     """
+#     Generate 2D fractal noise using Perlin noise.
 
-ver, tri = convert_heightfield_to_trimesh(noise_2d, 0.05, 0.5, 1.0)
-mesh = o3d.geometry.TriangleMesh()
-mesh.vertices = o3d.utility.Vector3dVector(ver)
-mesh.triangles = o3d.utility.Vector3iVector(tri)
-mesh.compute_vertex_normals()
-o3d.visualization.draw_geometries([mesh])
+#     Parameters:
+#         shape (tuple): (height, width) of the output noise grid.
+#         scale (float): Frequency scale of the noise.
+#         octaves (int): Number of noise layers.
+#         persistence (float): Amplitude reduction per octave (0-1).
+#         lacunarity (float): Frequency multiplier per octave (>1).
+#         seed (int, optional): Random seed for noise generation.
 
-# Visualize the fractal noise
-plt.imshow(noise_2d, cmap="gray")
-plt.colorbar()
-plt.title("2D Fractal Noise")
-plt.show()
+#     Returns:
+#         np.ndarray: 2D fractal noise array.
+#     """
+#     height, width = shape
+#     noise_array = np.zeros((height, width))
+
+#     if seed is not None:
+#         np.random.seed(seed)
+
+#     for y in range(height):
+#         for x in range(width):
+#             noise_value = 0
+#             frequency = 1.0 / scale
+#             amplitude = 1.0
+#             for _ in range(octaves):
+#                 noise_value += amplitude * noise.pnoise2(x * frequency, y * frequency, repeatx=width, repeaty=height)
+#                 frequency *= lacunarity
+#                 amplitude *= persistence
+
+#             noise_array[y, x] = noise_value
+
+#     # Normalize noise to range [0, 1]
+#     noise_array = (noise_array - noise_array.min()) / (noise_array.max() - noise_array.min())
+#     return noise_array
 
 
-import matplotlib.pyplot as plt
+# # Example usage
+# noise_2d = generate_fractal_noise_2d((256, 256), scale=50, octaves=6, persistence=0.5, lacunarity=2.0, seed=42)
 
-x, y, z = pts_base[:, 0].cpu().numpy(), pts_base[:, 1].cpu().numpy(), pts_base[:, 2].cpu().numpy()
+# ver, tri = convert_heightfield_to_trimesh(noise_2d, 0.05, 0.5, 1.0)
+# mesh = o3d.geometry.TriangleMesh()
+# mesh.vertices = o3d.utility.Vector3dVector(ver)
+# mesh.triangles = o3d.utility.Vector3iVector(tri)
+# mesh.compute_vertex_normals()
+# o3d.visualization.draw_geometries([mesh])
 
-fig = plt.figure(figsize=(8, 6))
-ax = fig.add_subplot(111, projection='3d')
-ax.scatter(x, y, z, c=z, cmap='viridis', s=1)  # Color by z values
+# # Visualize the fractal noise
+# plt.imshow(noise_2d, cmap="gray")
+# plt.colorbar()
+# plt.title("2D Fractal Noise")
+# plt.show()
 
-# Labels and view settings
-ax.set_xlabel('X')
-ax.set_ylabel('Y')
-ax.set_zlabel('Z')
-ax.set_title('3D Point Cloud')
 
-plt.show()
+# import matplotlib.pyplot as plt
+
+# x, y, z = pts_base[:, 0].cpu().numpy(), pts_base[:, 1].cpu().numpy(), pts_base[:, 2].cpu().numpy()
+
+# fig = plt.figure(figsize=(8, 6))
+# ax = fig.add_subplot(111, projection='3d')
+# ax.scatter(x, y, z, c=z, cmap='viridis', s=1)  # Color by z values
+
+# # Labels and view settings
+# ax.set_xlabel('X')
+# ax.set_ylabel('Y')
+# ax.set_zlabel('Z')
+# ax.set_title('3D Point Cloud')
+
+# plt.show()
+
+import yaml
+import os
+from copy import deepcopy
+
+def load_yaml(file_path):
+    with open(file_path, 'r') as f:
+        return yaml.safe_load(f)
+
+def deep_update(base_dict, update_dict):
+    """Recursively update a dictionary."""
+    for key, value in update_dict.items():
+        if isinstance(value, dict) and key in base_dict and isinstance(base_dict[key], dict):
+            deep_update(base_dict[key], value)
+        else:
+            base_dict[key] = value
+
+def main():
+    # Get the multi-critic config path
+    multi_critic_config_path = os.path.join('legged_gym', 'envs', 'T1', 'config', 't1_multi_critic_config.yaml')
+
+    # First load the multi-critic config
+    multi_critic_raw = load_yaml(multi_critic_config_path)
+    
+    # Get the directory of the multi-critic config and load the parent config
+    config_dir = os.path.dirname(multi_critic_config_path)
+    base_config_path = os.path.join(config_dir, multi_critic_raw.pop('parent_config'))
+    base_config = load_yaml(base_config_path)
+    
+    # Create the merged config by deep copying base and updating with multi-critic
+    merged_config = deepcopy(base_config)
+    deep_update(merged_config, multi_critic_raw)
+
+    # Test that inheritance worked by checking some values
+    print("Base env next_goal_threshold:", base_config['env']['next_goal_threshold'])
+    print("Merged env next_goal_threshold:", merged_config['env']['next_goal_threshold'])
+    print("Merged env num_envs:", merged_config['env']['num_envs'])
+    
+    print("\nAll tests passed! Configuration loading works correctly.")
+
+if __name__ == "__main__":
+    main()

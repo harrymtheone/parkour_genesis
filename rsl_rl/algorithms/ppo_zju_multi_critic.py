@@ -6,8 +6,8 @@ from torch.distributions import Normal, kl_divergence
 # from rsl_rl.modules.model_zju_gru import EstimatorNoRecon, EstimatorGRU
 from rsl_rl.modules.model_zju_exp import EstimatorNoRecon, EstimatorGRU
 from rsl_rl.modules.utils import UniversalCritic
-# from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from rsl_rl.storage import RolloutStorage
+# from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from .alg_base import BaseAlgorithm
 
 try:
@@ -25,10 +25,10 @@ class Transition:
             self.recon_hidden_states = None
             self.observations_next = None
         self.actions = None
-        self.rewards_default = None
+        self.rewards = None
         self.rewards_contact = None
         self.dones = None
-        self.values_default = None
+        self.values = None
         self.values_contact = None
         self.actions_log_prob = None
         self.action_mean = None
@@ -48,6 +48,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         self.env = env
 
         # PPO parameters
+        self.task_cfg = task_cfg
         self.cfg = task_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate
         self.device = device
@@ -72,10 +73,12 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         # Rollout Storage
         self.transition = Transition(self.enable_reconstructor)
+        # self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
         self.storage = RolloutStorage(task_cfg, self.device)
 
         self.storage.register_storage('rewards_contact', 0, (1,))
         self.storage.register_storage('values_contact', 0, (1,))
+        self.storage.register_storage('returns_contact', 0, (1,))
 
         self.storage.register_storage('obs_enc_hidden_states', 1, (1, task_cfg.policy.obs_gru_hidden_size))
         if self.enable_reconstructor:
@@ -84,7 +87,8 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         self.storage.compose_storage()
 
-    def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
+    def act(self, obs, obs_critic, use_estimated_values: torch.Tensor = None, **kwargs):
+        # act function should run within torch.inference_mode context
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             # store observations
             self.transition.observations = obs
@@ -106,11 +110,11 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
             # store
             self.transition.actions = actions
-            self.transition.values_default = self.critic['default'].evaluate(obs_critic).detach()
-            self.transition.values_contact = self.critic['contact'].evaluate(obs_critic).detach()
-            self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions).detach()
-            self.transition.action_mean = self.actor.action_mean.detach()
-            self.transition.action_sigma = self.actor.action_std.detach()
+            self.transition.values = self.critic['default'].evaluate(obs_critic)
+            self.transition.values_contact = self.critic['contact'].evaluate(obs_critic)
+            self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions)
+            self.transition.action_mean = self.actor.action_mean
+            self.transition.action_sigma = self.actor.action_std
             self.transition.use_estimated_values = use_estimated_values
             return actions
 
@@ -124,7 +128,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         # rew_contact = rew_elements['feet_edge'].clone().unsqueeze(1)
         rew_contact = (rew_elements['feet_contact_forces'] + rew_elements['feet_stumble'] + rew_elements['foothold']).clone().unsqueeze(1)
         rew_default = rewards.clone().unsqueeze(1) - rew_contact
-        self.transition.rewards_default = rew_default
+        self.transition.rewards = rew_default
         self.transition.rewards_contact = rew_contact
 
         # Bootstrapping on time-outs
@@ -134,7 +138,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             else:
                 bootstrapping = (infos['time_outs']).unsqueeze(1).to(self.device)
 
-            self.transition.rewards_default += self.cfg.gamma * self.transition.values_default * bootstrapping
+            self.transition.rewards += self.cfg.gamma * self.transition.values * bootstrapping
             self.transition.rewards_contact += self.cfg.gamma * self.transition.values_contact * bootstrapping
 
         # Record the transition
@@ -149,7 +153,10 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         self.storage.compute_returns(last_values_default, last_values_contact, self.cfg.gamma, self.cfg.lam)
 
     def update(self, cur_it=0, **kwargs):
-        update_est = cur_it % 5 == 0
+        if cur_it > 20000:
+            update_est = cur_it % 5 == 0
+        else:
+            update_est = True
 
         update_est &= self.enable_reconstructor
         mean_value_loss = 0
@@ -264,7 +271,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         return return_dict
 
-    # @torch.compile
+    @torch.compile
     def _compute_policy_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
@@ -273,10 +280,10 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             recon_hidden_states_batch = batch['recon_hidden_states'] if self.enable_reconstructor else None
             mask_batch = batch['masks'].squeeze()
             actions_batch = batch['actions']
-            default_values_batch = batch['values_default']
+            default_values_batch = batch['values']
             contact_values_batch = batch['values_contact']
             advantages_batch = batch['advantages']
-            default_returns_batch = batch['returns_default']
+            default_returns_batch = batch['returns']
             contact_returns_batch = batch['returns_contact']
             old_actions_log_prob_batch = batch['actions_log_prob']
             use_estimated_values_batch = batch['use_estimated_values']
@@ -339,7 +346,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
             return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
 
-    # @torch.compile
+    @torch.compile
     def _compute_estimation_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             batch_size = 4
@@ -352,7 +359,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             use_estimated_values_batch = batch['use_estimated_values'][:batch_size]
 
             recon_rough, recon_refine, est_latent, est, est_logvar, ot1 = self.actor.reconstruct(
-                obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch, use_estimated_values_batch)
+                obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch)
 
             # privileged information estimation loss
             estimation_loss = self.mse_loss(est[mask_batch], obs_batch.priv_actor[mask_batch])
@@ -370,6 +377,11 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss
 
     def play_act(self, obs, **kwargs):
+        if 'use_estimated_values' in kwargs:
+            use_estimated_values_bool = kwargs['use_estimated_values']
+            kwargs['use_estimated_values'] = use_estimated_values_bool & torch.ones(
+                self.task_cfg.env.num_envs, 1, dtype=torch.bool, device=self.device)
+
         return self.actor.act(obs, **kwargs)
 
     def train(self):

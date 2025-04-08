@@ -1,5 +1,3 @@
-from typing import Union
-
 import torch
 import torch.nn as nn
 
@@ -202,7 +200,7 @@ class ReconGRU(nn.Module):
 
         self.recon_refine = UNet(in_channel=2, out_channel=2)
 
-    def inference_forward(self, depth_his, prop_latent):
+    def inference_forward(self, depth_his, prop_latent, use_estimated_values):
         # inference forward
         enc_depth = self.cnn_depth(depth_his)
 
@@ -210,18 +208,25 @@ class ReconGRU(nn.Module):
         gru_input = torch.cat([enc_depth, prop_latent], dim=1)
         enc_gru, self.hidden_state = self.gru(gru_input.unsqueeze(0), self.hidden_state)
 
+        # we need to update all memory but no need to reconstruct all hmap
+        enc_gru = enc_gru.squeeze(0)[use_estimated_values]
+
         # reconstruct
-        hmap_rough = self.recon_rough(enc_gru.squeeze(0))
+        hmap_rough = self.recon_rough(enc_gru)
         hmap_refine, _ = self.recon_refine(hmap_rough)
         return hmap_rough, hmap_refine
 
-    def forward(self, depth_his, prop_latent, hidden_state):
+    def forward(self, depth_his, prop_latent, hidden_state, use_estimated_values=None):
         # update forward
         enc_depth = gru_wrapper(self.cnn_depth.forward, depth_his)
 
         # concatenate the two latent vectors
         gru_input = torch.cat([enc_depth, prop_latent], dim=2)
         enc_gru, hidden_state = self.gru(gru_input, hidden_state)
+
+        # we need to compute all memory but no need to reconstruct all hmap
+        if use_estimated_values is not None:
+            enc_gru = enc_gru[use_estimated_values].unflatten(0, (use_estimated_values.size(0), -1))
 
         # reconstruct
         hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
@@ -294,6 +299,15 @@ class Mixer(nn.Module):
             nn.Linear(predictor_hidden_dim[1], env_cfg.n_proprio)
         )
 
+    def inference_forward(self, scan, latent_obs):
+        latent_scan = self.cnn_scan(scan)  # (1, 1, 32, 16) -> (1, embed_dim, 8, 4)
+        latent_obs = self.mlp_obs(latent_obs)
+        out = self.mixer(torch.cat([latent_obs, latent_scan], dim=1))
+
+        # decode the vector
+        est_mu = self.mlp_mu(out)
+        return est_mu[..., :self.len_latent], est_mu[..., self.len_latent:]
+
     def forward(self, scan, latent_obs):
         latent_scan = self.cnn_scan(scan)  # (1, 1, 32, 16) -> (1, embed_dim, 8, 4)
         latent_obs = self.mlp_obs(latent_obs)
@@ -353,7 +367,6 @@ class EstimatorNoRecon(nn.Module):
 
     def act(self,
             obs: ActorObs,
-            use_estimated_values: Union[bool, torch.Tensor],
             eval_=False,
             **kwargs):  # <-- my mood be like
 
@@ -444,36 +457,101 @@ class EstimatorGRU(nn.Module):
 
     def act(self,
             obs: ActorObs,
-            use_estimated_values: Union[bool, torch.Tensor],
-            eval_=False,
+            use_estimated_values: torch.Tensor,
             **kwargs):  # <-- my mood be like
+        use_estimated_values = use_estimated_values.squeeze(-1)
 
         # encode history proprio
         latent_obs = self.obs_gru.inference_forward(obs.prop_his)
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine = self.reconstructor.inference_forward(obs.depth, latent_obs)
+            _, recon_refine = self.reconstructor.inference_forward(
+                obs.depth, latent_obs, use_estimated_values)
 
         # cross-model mixing using transformer
-        if type(use_estimated_values) is torch.Tensor:
-            recon_output = torch.where(
-                use_estimated_values.unsqueeze(-1).unsqueeze(-1),
-                recon_refine,
-                obs.scan
-            )
-            est_latent, est, _, _ = self.mixer(recon_output, latent_obs)
-            latent_input = torch.where(
-                use_estimated_values,
-                torch.cat([est_latent, est.detach()], dim=1),
-                torch.cat([est_latent, obs.priv_actor], dim=1)
-            )
+        recon_output = obs.scan.clone()
+        recon_output[use_estimated_values] = recon_refine.to(recon_output.dtype)
 
-        elif use_estimated_values:
-            est_latent, est, _, _ = self.mixer(recon_refine, latent_obs)
+        est_latent, est = self.mixer.inference_forward(recon_output, latent_obs)
+
+        latent_input = torch.where(
+            use_estimated_values.unsqueeze(1),
+            torch.cat([est_latent, est.detach()], dim=1),
+            torch.cat([est_latent, obs.priv_actor], dim=1)
+        )
+
+        # compute action
+        mean = self.actor(obs.proprio, latent_input)
+
+        # sample action from distribution
+        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+        return self.distribution.sample()
+
+    def train_act(
+            self,
+            obs: ActorObs,
+            hidden_states,
+            use_estimated_values: torch.Tensor,
+    ):  # <-- my mood be like
+        use_estimated_values = use_estimated_values.squeeze(-1)
+
+        # encode history proprio
+        obs_enc_hidden_states, recon_hidden_states = hidden_states
+
+        latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden_states)
+
+        # compute reconstruction
+        with torch.no_grad():
+            _, recon_refine, _ = self.reconstructor(
+                obs.depth, latent_obs, recon_hidden_states, use_estimated_values)
+
+        # cross-model mixing using transformer
+        recon_output = obs.scan.clone()
+        recon_output[use_estimated_values] = recon_refine.to(recon_output.dtype).flatten(0, 1)
+
+        est_latent, est = gru_wrapper(self.mixer.inference_forward, recon_output, latent_obs)
+        latent_input = torch.where(
+            use_estimated_values.unsqueeze(2),
+            torch.cat([est_latent, est.detach()], dim=2),
+            torch.cat([est_latent, obs.priv_actor], dim=2)
+        )
+
+        # compute action
+        mean = gru_wrapper(self.actor.forward, obs.proprio, latent_input)
+
+        # output action
+        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+
+    def reconstruct(self, obs, obs_enc_hidden, recon_hidden):
+        # encode history proprio
+        latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden)
+        recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs.detach(), recon_hidden)
+
+        est_latent, est, est_logvar, ot1 = gru_wrapper(self.mixer.forward, recon_refine, latent_obs)
+
+        return recon_rough.squeeze(2), recon_refine.squeeze(2), est_latent, est, est_logvar, ot1
+
+    def act_eval(self,
+                 obs: ActorObs,
+                 use_estimated_values: bool,
+                 eval_=False,
+                 **kwargs):  # <-- my mood be like
+
+        # encode history proprio
+        latent_obs = self.obs_gru.inference_forward(obs.prop_his)
+
+        # compute reconstruction
+        with torch.no_grad():
+            recon_rough, recon_refine = self.reconstructor.inference_forward(
+                obs.depth, latent_obs, slice(None))
+
+        # cross-model mixing using transformer
+        if use_estimated_values:
+            est_latent, est = self.mixer.inference_forward(recon_refine, latent_obs)
             latent_input = torch.cat([est_latent, est.detach()], dim=1)
         else:
-            est_latent, _, _, _ = self.mixer(obs.scan, latent_obs)
+            est_latent, est = self.mixer.inference_forward(obs.scan, latent_obs)
             latent_input = torch.cat([est_latent, obs.priv_actor], dim=1)
 
         # compute action
@@ -486,56 +564,6 @@ class EstimatorGRU(nn.Module):
             # sample action from distribution
             self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
             return self.distribution.sample()
-
-    def train_act(
-            self,
-            obs: ActorObs,
-            hidden_states,
-            use_estimated_values: torch.Tensor,
-    ):  # <-- my mood be like
-
-        # encode history proprio
-        obs_enc_hidden_states, recon_hidden_states = hidden_states
-
-        latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden_states)
-
-        # compute reconstruction
-        with torch.no_grad():
-            recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs, recon_hidden_states)
-
-        # cross-model mixing using transformer
-        recon_input = torch.where(
-            use_estimated_values.unsqueeze(-1).unsqueeze(-1),
-            recon_refine,
-            obs.scan
-        )
-        est_latent, est, _, _ = gru_wrapper(self.mixer.forward, recon_input, latent_obs)
-        latent_input = torch.where(
-            use_estimated_values,
-            torch.cat([est_latent, est.detach()], dim=2),
-            torch.cat([est_latent, obs.priv_actor], dim=2)
-        )
-
-        # compute action
-        mean = gru_wrapper(self.actor.forward, obs.proprio, latent_input)
-
-        # output action
-        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
-
-    def reconstruct(self, obs, obs_enc_hidden, recon_hidden, use_estimated_values):
-        # encode history proprio
-        latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden)
-        recon_rough, recon_refine, _ = self.reconstructor(obs.depth_scan, latent_obs.detach(), recon_hidden)
-
-        recon_input = torch.where(
-            use_estimated_values.unsqueeze(-1).unsqueeze(-1),
-            recon_refine.detach(),
-            obs.scan
-        )
-
-        est_latent, est, est_logvar, ot1 = gru_wrapper(self.mixer.forward, recon_input, latent_obs)
-
-        return recon_rough.squeeze(2), recon_refine.squeeze(2), est_latent, est, est_logvar, ot1
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
