@@ -22,7 +22,7 @@ class ObsGRU(nn.Module):
         else:
             raise NotImplementedError
 
-        self.gru = nn.GRU(input_size=64, hidden_size=policy_cfg.obs_gru_hidden_size, num_layers=1)
+        self.gru = nn.GRU(input_size=64, hidden_size=policy_cfg.obs_gru_hidden_size, num_layers=policy_cfg.obs_gru_num_layers)
         self.hidden_state = None
 
     def inference_forward(self, obs_his):
@@ -184,7 +184,7 @@ class ReconGRU(nn.Module):
 
         self.gru = nn.GRU(input_size=128 + policy_cfg.obs_gru_hidden_size,
                           hidden_size=policy_cfg.recon_gru_hidden_size,
-                          num_layers=2)
+                          num_layers=policy_cfg.recon_gru_num_layers)
         self.hidden_state = None
 
         self.recon_rough = nn.Sequential(
@@ -209,7 +209,7 @@ class ReconGRU(nn.Module):
         enc_gru, self.hidden_state = self.gru(gru_input.unsqueeze(0), self.hidden_state)
 
         # we need to update all memory but no need to reconstruct all hmap
-        enc_gru = enc_gru.squeeze(0)[use_estimated_values]
+        enc_gru = enc_gru[0, use_estimated_values]
 
         # reconstruct
         hmap_rough = self.recon_rough(enc_gru)
@@ -258,15 +258,14 @@ class Mixer(nn.Module):
 
         # patch embedding
         self.cnn_scan = nn.Sequential(  # 32, 16
-            nn.Conv2d(2, 16, 3, 2, 1),  # 16, 8
+            nn.Conv2d(in_channels=2, out_channels=16, kernel_size=3, stride=2, padding=1),  # 16, 8
             activation,
-            nn.Conv2d(16, 32, 3, 2, 1),  # 8, 4
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1),  # 8, 4
             activation,
-            nn.Conv2d(32, mixer_embed_dim, 3, 2, 1),  # 4, 2
+            nn.Conv2d(in_channels=32, out_channels=mixer_embed_dim, kernel_size=3, stride=2, padding=1),  # 4, 2
             activation,
             nn.AdaptiveAvgPool2d((1, 1)),  # 1, 1
             nn.Flatten()
-
         )
 
         # observation embedding
@@ -385,7 +384,7 @@ class EstimatorNoRecon(nn.Module):
             return mean
         else:
             # sample action from distribution
-            self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+            self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
             return self.distribution.sample()
 
     def train_act(
@@ -407,7 +406,7 @@ class EstimatorNoRecon(nn.Module):
         mean = gru_wrapper(self.actor.forward, obs.proprio, latent_input)
 
         # output action
-        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+        self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
 
     def reconstruct(self, obs, obs_enc_hidden, *args):
         # encode history proprio
@@ -470,8 +469,8 @@ class EstimatorGRU(nn.Module):
                 obs.depth, latent_obs, use_estimated_values)
 
         # cross-model mixing using transformer
-        recon_output = obs.scan.clone()
-        recon_output[use_estimated_values] = recon_refine.to(recon_output.dtype)
+        recon_output = obs.scan.clone().to(recon_refine.dtype)
+        recon_output[use_estimated_values] = recon_refine
 
         est_latent, est = self.mixer.inference_forward(recon_output, latent_obs)
 
@@ -485,7 +484,7 @@ class EstimatorGRU(nn.Module):
         mean = self.actor(obs.proprio, latent_input)
 
         # sample action from distribution
-        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+        self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
         return self.distribution.sample()
 
     def train_act(
@@ -507,10 +506,11 @@ class EstimatorGRU(nn.Module):
                 obs.depth, latent_obs, recon_hidden_states, use_estimated_values)
 
         # cross-model mixing using transformer
-        recon_output = obs.scan.clone()
-        recon_output[use_estimated_values] = recon_refine.to(recon_output.dtype).flatten(0, 1)
+        recon_output = obs.scan.clone().to(recon_refine.dtype)
+        recon_output[use_estimated_values] = recon_refine.flatten(0, 1)
 
         est_latent, est = gru_wrapper(self.mixer.inference_forward, recon_output, latent_obs)
+
         latent_input = torch.where(
             use_estimated_values.unsqueeze(2),
             torch.cat([est_latent, est.detach()], dim=2),
@@ -521,7 +521,7 @@ class EstimatorGRU(nn.Module):
         mean = gru_wrapper(self.actor.forward, obs.proprio, latent_input)
 
         # output action
-        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+        self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
 
     def reconstruct(self, obs, obs_enc_hidden, recon_hidden):
         # encode history proprio
@@ -531,39 +531,6 @@ class EstimatorGRU(nn.Module):
         est_latent, est, est_logvar, ot1 = gru_wrapper(self.mixer.forward, recon_refine, latent_obs)
 
         return recon_rough.squeeze(2), recon_refine.squeeze(2), est_latent, est, est_logvar, ot1
-
-    def act_eval(self,
-                 obs: ActorObs,
-                 use_estimated_values: bool,
-                 eval_=False,
-                 **kwargs):  # <-- my mood be like
-
-        # encode history proprio
-        latent_obs = self.obs_gru.inference_forward(obs.prop_his)
-
-        # compute reconstruction
-        with torch.no_grad():
-            recon_rough, recon_refine = self.reconstructor.inference_forward(
-                obs.depth, latent_obs, slice(None))
-
-        # cross-model mixing using transformer
-        if use_estimated_values:
-            est_latent, est = self.mixer.inference_forward(recon_refine, latent_obs)
-            latent_input = torch.cat([est_latent, est.detach()], dim=1)
-        else:
-            est_latent, est = self.mixer.inference_forward(obs.scan, latent_obs)
-            latent_input = torch.cat([est_latent, obs.priv_actor], dim=1)
-
-        # compute action
-        mean = self.actor(obs.proprio, latent_input)
-
-        # output action
-        if eval_:
-            return mean, recon_rough.squeeze(1), recon_refine.squeeze(1)
-        else:
-            # sample action from distribution
-            self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
-            return self.distribution.sample()
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)

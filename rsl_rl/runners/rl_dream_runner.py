@@ -10,13 +10,6 @@ from legged_gym.utils.terrain import Terrain
 from rsl_rl.algorithms import BaseAlgorithm, algorithm_dict
 
 
-def linear_change(start, end, span, start_it, cur_it):
-    cur_value = start + (end - start) * (cur_it - start_it) / span
-    cur_value = max(cur_value, min(start, end))
-    cur_value = min(cur_value, max(start, end))
-    return cur_value
-
-
 class RLDreamRunner:
     def __init__(self, task_cfg, log_dir=None, device=torch.device('cpu')):
         self.task_cfg = task_cfg
@@ -92,8 +85,8 @@ class RLDreamRunner:
                             episode_length.extend(cur_episode_length[new_ids].cpu().numpy().tolist())
 
                             # # Do AdaSmpl for envs reset
-                            if self.cur_it > 12000:
-                                if self.cur_it == 12000:
+                            if self.cur_it > 2000:
+                                if self.cur_it == 2000:
                                     p_smpl = 1.0
 
                                 use_estimated_values[new_ids] = torch.rand(len(new_ids[0]), device=self.device) > p_smpl

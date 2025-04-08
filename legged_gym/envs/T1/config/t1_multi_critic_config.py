@@ -23,7 +23,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         class obs:
             proprio = 50
             prop_his = (10, 50)
-            # depth = (2, *reversed(DEPTH_RESIZED))
+            depth = (2, *reversed(DEPTH_RESIZED))
             priv_actor = 27
             scan = (2, 32, 16)
 
@@ -167,7 +167,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             joint_pos = 2.
             feet_contact_number = 1.2
             feet_clearance = 0.2  # 0.2
-            feet_air_time = 1.
+            # feet_air_time = 1.
             feet_slip = -1.
             feet_distance = 0.2
             knee_distance = 0.2
@@ -180,13 +180,13 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             vel_mismatch_exp = 0.5
 
             # contact
-            feet_contact_forces = -0.005
+            feet_contact_forces = -0.01
             feet_stumble = -1.0
             # feet_edge = -0.5
             foothold = -1.
 
             # base pos
-            default_joint_pos = 1.0
+            default_joint_pos = 2.0
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
@@ -210,7 +210,9 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         enable_reconstructor = True
 
         obs_gru_hidden_size = 64
+        obs_gru_num_layers = 1
         recon_gru_hidden_size = 256
+        recon_gru_num_layers = 2
 
         len_latent = 16
         len_base_vel = 3

@@ -1,34 +1,10 @@
 import cv2
 import numpy as np
 import torch
-from sklearn.neighbors import NearestNeighbors
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
 from ...utils.math import transform_by_trans_quat
-
-
-# class ObservationFactory:
-#     def __init__(self, cfg):
-#         for k in dir(cfg):
-#             if k.startswith('_'):
-#                 continue
-#
-#             tensor_shape = getattr(cfg, k)
-#             if tensor_shape is None:
-#                 continue
-#
-#             setattr(self, k, None)
-#
-#     def update(self, **kwargs):
-#         for k, v in kwargs.items():
-#             assert hasattr(self, k)
-#             setattr(self, k, v)
-#
-#     def clip(self, thresh):
-#         for v in self.__dict__.values():
-#             if v is not None:
-#                 torch.clip(v, -thresh, thresh, out=v)
 
 
 class ActorObs(ObsBase):
@@ -108,9 +84,6 @@ class T1ZJUEnvironment(T1BaseEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
-
-        if not self.cfg.sensors.activated:
-            setattr(self.cfg.env.obs, 'depth', None)
 
         self.phase_increment_ratio = 1 + self._zero_tensor(self.num_envs)
         # self.phase_increment_ratio = torch_rand_float(0.5, 1.5, (self.num_envs, 1), self.device).squeeze()
@@ -273,6 +246,7 @@ class T1ZJUEnvironment(T1BaseEnv):
 
 
 def density_weighted_sampling(points, num_samples, k=10):
+    from sklearn.neighbors import NearestNeighbors
     nbrs = NearestNeighbors(n_neighbors=k).fit(points)
     distances, _ = nbrs.kneighbors(points)
 
