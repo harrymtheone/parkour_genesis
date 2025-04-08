@@ -61,7 +61,16 @@ class ObsTransBuf:
         self.device = device
 
         self.storage = {}
-        self.obs_class = None
+
+        if hasattr(self.cfg, 'depth'):
+            from legged_gym.envs.T1.t1_zju_environment import ActorObs
+            self.obs_class = ActorObs
+        elif hasattr(self.cfg, 'priv_his'):
+            from legged_gym.envs.T1.t1_zju_environment import CriticObs
+            self.obs_class = CriticObs
+        else:
+            from legged_gym.envs.T1.t1_zju_environment import ObsNext
+            self.obs_class = ObsNext
 
     def numel(self):
         return sum([math.prod(s) for s in self.cfg2dict(self.cfg).values()])
@@ -156,6 +165,12 @@ class RolloutStorage:
         for k, s in self.storage.items():
             s.init_buf(self._storage_tensor[:, cur_idx:cur_idx + storage_numel[k]])
             cur_idx += storage_numel[k]
+
+    def get_data(self):
+        return self._storage_tensor.clone()
+
+    def load_data(self, data):
+        self._storage_tensor[:] = data.to(self.device)
 
     def add_transitions(self, transition):
         if self._step >= self.n_trans_per_env:

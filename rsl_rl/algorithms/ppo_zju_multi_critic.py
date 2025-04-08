@@ -271,7 +271,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         return return_dict
 
-    @torch.compile
+    # @torch.compile
     def _compute_policy_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
@@ -346,7 +346,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
             return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
 
-    @torch.compile
+    # @torch.compile
     def _compute_estimation_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             batch_size = 4
@@ -356,7 +356,6 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             recon_hidden_states_batch = batch['recon_hidden_states'][:batch_size].contiguous()
             obs_next_batch = batch['observations_next'][:batch_size]
             mask_batch = batch['masks'][:batch_size, :, 0]
-            use_estimated_values_batch = batch['use_estimated_values'][:batch_size]
 
             recon_rough, recon_refine, est_latent, est, est_logvar, ot1 = self.actor.reconstruct(
                 obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch)
@@ -390,44 +389,14 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
     def load(self, loaded_dict, load_optimizer=True):
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
-        self.critic.load_state_dict(loaded_dict['critic_state_dict'])
-
-        # try:
-        #     self.actor.load_state_dict(loaded_dict['actor_state_dict'])
-        # except RuntimeError:
-        #     actor_dict = {k: v for k, v in loaded_dict['actor_state_dict'].items() if not k.startswith('reconstructor')}
-        #
-        #     for k, v in self.actor.state_dict().items():
-        #         if k.startswith('reconstructor'):
-        #             actor_dict[k] = v
-        #
-        #     self.actor.load_state_dict(actor_dict)
-
-        # try:
-        #     self.critic.load_state_dict(loaded_dict['critic_state_dict'])
-        # except RuntimeError:
-        #     # No, I changed the name of a critic. hahahahaha.
-        #     critic_dict = {}
-        #
-        #     for k, v in loaded_dict['critic_state_dict'].items():
-        #         if k.startswith('feet_edge'):
-        #             critic_dict['contact' + k[len('feet_edge'):]] = v
-        #         else:
-        #             critic_dict[k] = v
-        #
-        #     self.critic.load_state_dict(critic_dict)
-
-        # if load_optimizer:
-        #     self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+        # self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
 
-        return loaded_dict['infos']
-
     def save(self):
         return {
             'actor_state_dict': self.actor.state_dict(),
-            'critic_state_dict': self.critic.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
+            # 'critic_state_dict': self.critic.state_dict(),
+            # 'optimizer_state_dict': self.optimizer.state_dict(),
         }

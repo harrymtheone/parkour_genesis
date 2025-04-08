@@ -180,7 +180,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             vel_mismatch_exp = 0.5
 
             # contact
-            feet_contact_forces = -0.01
+            feet_contact_forces = -0.005
             feet_stumble = -1.0
             # feet_edge = -0.5
             foothold = -1.
@@ -239,7 +239,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         continue_from_last_std = True
 
     class runner(T1BaseCfg.runner):
-        runner_name = 'rl_dream'  # rl, distil, mixed
+        runner_name = 'rl_async'  # rl, distil, mixed
         algorithm_name = 'ppo_zju_mc'
 
         max_iterations = 10000  # number of policy updates

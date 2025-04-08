@@ -32,10 +32,12 @@ from .rl_runner import RLRunner
 from .rl_deep_runner import RLDeepRunner
 
 from .rl_dream_runner import RLDreamRunner
+from .rl_async_runner import RLAsyncRunner
 
 runner_list = {
     'rl_scan': RLRunner,
     'rl_deep': RLDeepRunner,
 
     'rl_dream': RLDreamRunner,
+    'rl_async': RLAsyncRunner,
 }
