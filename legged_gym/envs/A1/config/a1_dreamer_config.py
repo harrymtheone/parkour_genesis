@@ -1,9 +1,9 @@
 import numpy as np
 
-from .a1_base_config import A1BaseCfg, A1BaseCfgPPO
+from .a1_base_config import A1BaseCfg
 
 
-class A1_ZJU_Cfg(A1BaseCfg):
+class A1_Dreamer_Cfg(A1BaseCfg):
     class env(A1BaseCfg.env):
         num_envs = 2048  # 6144
         n_proprio = 3 + 3 + 3 + 12 + 12 + 12
@@ -135,12 +135,6 @@ class A1_ZJU_Cfg(A1BaseCfg):
             dof_pos_limits = -10.0
             base_height = -1.0
 
-
-class A1_ZJU_CfgPPO(A1BaseCfgPPO):
-    seed = -1
-    runner_name = 'rl_dream'
-    algorithm_name = 'ppo_dreamer'
-
     class world_model:
         pass
 
@@ -168,7 +162,7 @@ class A1_ZJU_CfgPPO(A1BaseCfgPPO):
         value_loss_coef = 1.0
         use_clipped_value_loss = True
         clip_param = 0.2
-        entropy_coef = 0.005
+        entropy_coef = 0.01
         num_learning_epochs = 5
         num_mini_batches = 4
         learning_rate = 2.e-4  # 5.e-4
@@ -181,9 +175,8 @@ class A1_ZJU_CfgPPO(A1BaseCfgPPO):
         use_amp = True
         continue_from_last_std = True
 
-    class runner(A1BaseCfgPPO.runner):
-        num_steps_per_env = 24  # per iteration
-        max_iterations = 10000  # number of policy updates
+    class runner(A1BaseCfg.runner):
+        runner_name = 'rl_wmp'
+        algorithm_name = 'ppo_wmp'
 
-        # logging
-        save_interval = 100  # check for potential saves every this many iterations
+        max_iterations = 10000  # number of policy updates

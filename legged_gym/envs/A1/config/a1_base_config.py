@@ -5,6 +5,8 @@ from legged_gym.envs.base.base_config import BaseConfig
 
 
 class A1BaseCfg(BaseConfig):
+    seed = -1
+
     class play:
         control = False  # manually control or automatically
 
@@ -276,10 +278,11 @@ class A1BaseCfg(BaseConfig):
             default_buffer_size_multiplier = 5
             contact_collection = 2  # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
-
-class A1BaseCfgPPO(BaseConfig):
-    seed = -1
-
     class runner:
         resume = False
         checkpoint = -1  # -1 = last saved model
+
+        num_steps_per_env = 24  # per iteration
+
+        # logging
+        save_interval = 100  # check for potential saves every this many iterations

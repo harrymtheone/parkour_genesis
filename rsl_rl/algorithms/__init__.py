@@ -5,7 +5,7 @@ from .ppo_pie import PPO_PIE
 from .ppo_priv import PPO_Priv
 from .ppo_dream_waq import PPODreamWaQ
 from .ppo_zju_multi_critic import PPO_ZJU_Multi_Critic
-from .ppo_dreamer import PPODreamer
+from .ppo_wmp import PPO_WMP
 
 
 algorithm_dict = {
@@ -14,5 +14,5 @@ algorithm_dict = {
     'ppo_pie': PPO_PIE,
     'ppo_zju': PPO_ZJU,
     'ppo_zju_mc': PPO_ZJU_Multi_Critic,
-    'ppo_dreamer': PPODreamer,
+    'ppo_wmp': PPO_WMP,
 }

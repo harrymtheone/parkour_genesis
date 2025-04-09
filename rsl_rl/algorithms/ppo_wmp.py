@@ -3,10 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import kl_divergence, Normal
 
-from rsl_rl.modules.dreamer import WorldModel
-
-from rsl_rl.modules.model_dreamwaq import Actor, ActorGRU, Critic
-from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
+from rsl_rl.datasets.motion_loader import AMPLoader
+from rsl_rl.modules.wmp import WorldModel, ActorWMP, CriticWMP, AMPDiscriminator, Normalizer
+from rsl_rl.storage import RolloutStorage
 from .alg_base import BaseAlgorithm
 
 try:
@@ -16,11 +15,10 @@ except ImportError:
 
 
 class Transition:
-    def __init__(self, is_recurrent):
+    def __init__(self):
         self.observations = None
         self.critic_observations = None
-        if is_recurrent:
-            self.hidden_states = None
+        self.hidden_states = None
         self.observations_next = None
         self.actions = None
         self.rewards = None
@@ -39,30 +37,41 @@ class Transition:
             setattr(self, key, None)
 
 
-class PPODreamer(BaseAlgorithm):
-    def __init__(self, env_cfg, train_cfg, device=torch.device('cpu'), **kwargs):
-        # PPO parameters
-        self.cfg = train_cfg.algorithm
+class PPO_WMP(BaseAlgorithm):
+    def __init__(self, task_cfg, device, **kwargs):
+        self.cfg = task_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate
         self.device = device
-
-        self.world_model = WorldModel(env_cfg, train_cfg, self.device)
-
-        # PPO components
-        if train_cfg.policy.use_recurrent_policy:
-            self.actor = ActorGRU(env_cfg, train_cfg.policy).to(self.device)
-        else:
-            self.actor = Actor(env_cfg, train_cfg.policy).to(self.device)
-        self.critic = Critic(env_cfg, train_cfg.policy).to(self.device)
-        self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
-        self.scaler = GradScaler(enabled=self.cfg.use_amp)
-
-        # reconstructor
         self.mse_loss = nn.MSELoss()
 
         # Rollout Storage
-        self.transition = Transition(self.actor.is_recurrent)
-        self.storage = RolloutStorage(env_cfg.num_envs, train_cfg.runner.num_steps_per_env, self.device)
+        self.transition = Transition()
+        self.storage = RolloutStorage(task_cfg, self.device)
+
+        # world model
+        self.world_model = WorldModel(task_cfg.env, task_cfg)
+        self.optimizer_world_model = optim.Adam(self.world_model.parameters(), lr=1e-4)
+        self.scaler_world_model = GradScaler(enabled=self.cfg.use_amp)
+
+        # PPO components
+        self.actor = ActorWMP(task_cfg, task_cfg.policy).to(self.device)
+        self.critic = CriticWMP(task_cfg, task_cfg.policy).to(self.device)
+        self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
+        self.scaler = GradScaler(enabled=self.cfg.use_amp)
+
+        # AMP components
+        self.amp_loader = AMPLoader(
+            device,
+            time_between_frames=task_cfg.control.decimation * task_cfg.sim.dt,
+            preload_transitions=True,
+            num_preload_transitions=2000000,
+            motion_files=['/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/hop1.txt',
+                          '/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/hop2.txt',
+                          '/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/trot1.txt',
+                          '/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/trot2.txt', ]
+        )
+        self.amp_normalizer = Normalizer(30)
+        self.amp_discriminator = AMPDiscriminator(task_cfg.env, task_cfg)
 
     def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
         # store observations

@@ -1,65 +1,22 @@
 import torch
 from torch import nn
 
-from .wm_encoder import WMEncoder
+from .encoder import WMEncoder
+from .decoder import WMDecoder
 from .rssm import RSSM
 
 
 class WorldModel(nn.Module):
-    def __init__(self, env_cfg, train_cfg, device):
+    def __init__(self, env_cfg, train_cfg):
         super().__init__()
         self.cfg = train_cfg.world_model
 
         self.use_amp = train_cfg.algorithm.use_amp
-        self.device = device
 
         self.encoder = WMEncoder(env_cfg, train_cfg)
         self.dynamics = RSSM(env_cfg, train_cfg)
 
-        self.decoder = WMDecoder()
-
-        self.heads = nn.ModuleDict()
-        feat_size = config.dyn_stoch * config.dyn_discrete + config.dyn_deter
-
-        self.heads["decoder"] = networks.MultiDecoder(
-            feat_size, obs_shape, **config.decoder, use_camera=use_camera
-        )
-        self.heads["reward"] = networks.MLP(
-            feat_size,
-            (255,) if config.reward_head["dist"] == "symlog_disc" else (),
-            config.reward_head["layers"],
-            config.units,
-            config.act,
-            config.norm,
-            dist=config.reward_head["dist"],
-            outscale=config.reward_head["outscale"],
-            device=config.device,
-            name="Reward",
-        )
-
-        for name in config.grad_heads:
-            assert name in self.heads, name
-        self._model_opt = tools.Optimizer(
-            "model",
-            self.parameters(),
-            config.model_lr,
-            config.opt_eps,
-            config.grad_clip,
-            config.weight_decay,
-            opt=config.opt,
-            use_amp=self.use_amp,
-        )
-        print(
-            f"Optimizer model_opt has {sum(param.numel() for param in self.parameters())} variables."
-        )
-        # other losses are scaled by 1.0.
-        # can set different scale for terms in decoder here
-        self._scales = dict(
-            reward=config.reward_head["loss_scale"],
-            image=1.0,
-            # clean_prop = 0,
-            # cont=config.cont_head["loss_scale"],
-        )
+        self.decoder = WMDecoder(env_cfg, train_cfg)
 
     def _train(self, data):
         # action (batch_size, batch_length, act_dim)
