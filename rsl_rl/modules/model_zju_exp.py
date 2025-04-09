@@ -226,12 +226,13 @@ class ReconGRU(nn.Module):
 
         # we need to compute all memory but no need to reconstruct all hmap
         if use_estimated_values is not None:
-            enc_gru = enc_gru[use_estimated_values].unflatten(0, (use_estimated_values.size(0), -1))
-
-        # reconstruct
-        hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
-        hmap_refine, _ = gru_wrapper(self.recon_refine.forward, hmap_rough)
-        return hmap_rough, hmap_refine, hidden_state
+            hmap_rough = self.recon_rough(enc_gru[use_estimated_values])
+            hmap_refine, _ = self.recon_refine(hmap_rough)
+            return hmap_rough, hmap_refine, hidden_state
+        else:
+            hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
+            hmap_refine, _ = gru_wrapper(self.recon_refine.forward, hmap_rough)
+            return hmap_rough, hmap_refine, hidden_state
 
     def get_hidden_state(self):
         if self.hidden_state is None:
@@ -507,7 +508,7 @@ class EstimatorGRU(nn.Module):
 
         # cross-model mixing using transformer
         recon_output = obs.scan.clone().to(recon_refine.dtype)
-        recon_output[use_estimated_values] = recon_refine.flatten(0, 1)
+        recon_output[use_estimated_values] = recon_refine
 
         est_latent, est = gru_wrapper(self.mixer.inference_forward, recon_output, latent_obs)
 

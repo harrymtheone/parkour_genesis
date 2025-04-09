@@ -31,7 +31,7 @@ def train(args):
 
     if args.debug:
         mode = "disabled"
-        args.headless = False
+        # args.headless = False
         task_cfg.terrain.num_rows = 2
         task_cfg.terrain.num_cols = 2
         task_cfg.env.num_envs = 256

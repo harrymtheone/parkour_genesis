@@ -41,8 +41,8 @@ def play(args):
     task_cfg.domain_rand.action_delay = True
     task_cfg.domain_rand.action_delay_range = [(10, 10)]
     task_cfg.domain_rand.push_robots = True
-    # task_cfg.domain_rand.push_interval_s = 6
     task_cfg.domain_rand.push_duration = [0.15]
+    # task_cfg.domain_rand.push_interval_s = 6
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
@@ -76,7 +76,7 @@ def play(args):
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
 
             if type(rtn) is tuple:

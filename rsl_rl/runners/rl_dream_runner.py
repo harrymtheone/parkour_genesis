@@ -63,7 +63,6 @@ class RLDreamRunner(RunnerLogger):
         terrain_coefficient_variation = {}
 
         # adaptive sampling probability (prob to use ground truth)
-        p_smpl = 1.0
         use_estimated_values = torch.zeros(n_envs, dtype=torch.bool, device=self.device)
 
         for self.cur_it in range(self.start_it, self.start_it + self.cfg.max_iterations):
