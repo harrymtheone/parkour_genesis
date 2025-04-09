@@ -239,7 +239,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         continue_from_last_std = True
 
     class runner(T1BaseCfg.runner):
-        runner_name = 'rl_async'  # rl, distil, mixed
+        runner_name = 'rl_dream'  # rl, distil, mixed
         algorithm_name = 'ppo_zju_mc'
 
         max_iterations = 10000  # number of policy updates
