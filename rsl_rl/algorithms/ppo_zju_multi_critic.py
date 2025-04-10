@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
-# from rsl_rl.modules.model_zju_gru import EstimatorNoRecon, EstimatorGRU
 from rsl_rl.modules.model_zju_exp import EstimatorNoRecon, EstimatorGRU
 from rsl_rl.modules.utils import UniversalCritic
 from rsl_rl.storage import RolloutStorage
@@ -58,12 +56,13 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             self.actor = EstimatorGRU(task_cfg.env, task_cfg.policy).to(self.device)
         else:
             self.actor = EstimatorNoRecon(task_cfg.env, task_cfg.policy).to(self.device)
+        self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
 
         self.critic = nn.ModuleDict({
             'default': UniversalCritic(task_cfg.env, task_cfg.policy),
             'contact': UniversalCritic(task_cfg.env, task_cfg.policy),
         }).to(self.device)
-        self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
+        self.optimizer = torch.optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
         # reconstructor
@@ -389,14 +388,25 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         self.critic.train()
 
     def load(self, loaded_dict, load_optimizer=True):
-        self.actor.load_state_dict(loaded_dict['actor_state_dict'])
-        self.critic.load_state_dict(loaded_dict['critic_state_dict'])
+        try:
+            self.actor.load_state_dict(loaded_dict['actor_state_dict'])
+            self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
-        if load_optimizer:
-            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+            if load_optimizer:
+                self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
-        if not self.cfg.continue_from_last_std:
-            self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
+            if not self.cfg.continue_from_last_std:
+                self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
+
+        except RuntimeError:
+            from rsl_rl.modules.model_zju_gru import EstimatorNoRecon, EstimatorGRU
+
+            if self.enable_reconstructor:
+                self.actor = EstimatorGRU(self.task_cfg.env, self.task_cfg.policy).to(self.device)
+            else:
+                self.actor = EstimatorNoRecon(self.task_cfg.env, self.task_cfg.policy).to(self.device)
+
+            self.actor.load_state_dict(loaded_dict['actor_state_dict'])
 
     def save(self):
         return {

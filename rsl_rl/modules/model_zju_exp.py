@@ -1,125 +1,8 @@
 import torch
 import torch.nn as nn
 
+from .model_zju_gru import ObsGRU, ReconGRU
 from .utils import make_linear_layers, gru_wrapper
-
-
-class ObsGRU(nn.Module):
-    def __init__(self, env_cfg, policy_cfg):
-        super().__init__()
-        activation = nn.ReLU(inplace=True)
-
-        if env_cfg.len_prop_his == 10:
-            self.conv_layers = nn.Sequential(
-                nn.Conv1d(in_channels=env_cfg.n_proprio, out_channels=64, kernel_size=4),
-                activation,
-                nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4),
-                activation,
-                nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4),  # (64, 1)
-                activation,
-                nn.Flatten()
-            )
-        else:
-            raise NotImplementedError
-
-        self.gru = nn.GRU(input_size=64, hidden_size=policy_cfg.obs_gru_hidden_size, num_layers=policy_cfg.obs_gru_num_layers)
-        self.hidden_state = None
-
-    def inference_forward(self, obs_his):
-        # inference forward
-        out = self.conv_layers(obs_his.transpose(1, 2))
-        out, self.hidden_state = self.gru(out.unsqueeze(0), self.hidden_state)
-        return out.squeeze(0)
-
-    def forward(self, obs_his, hidden_state):
-        # update forward
-        out = gru_wrapper(self.conv_layers.forward, obs_his.transpose(2, 3))
-        return self.gru(out, hidden_state)
-
-    def get_hidden_state(self):
-        if self.hidden_state is None:
-            return None
-        return self.hidden_state.detach()
-
-    def reset(self, dones):
-        self.hidden_state[:, dones] = 0.
-
-
-class UNet(nn.Module):
-    def __init__(self, in_channel, out_channel):
-        super().__init__()
-
-        # Encoder
-        self.encoder_conv1 = nn.Sequential(
-            nn.Conv2d(in_channel, 16, kernel_size=3, padding=1),
-            nn.ReLU(),
-        )
-
-        self.encoder_conv2 = nn.Sequential(
-            nn.MaxPool2d(2),  # Downsample (32x16 -> 16x8)
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-        )
-
-        self.encoder_conv3 = nn.Sequential(
-            nn.MaxPool2d(2),  # Downsample (16x8 -> 8x4)
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-        )
-
-        # Bottleneck
-        self.bottleneck_conv = nn.Sequential(
-            nn.MaxPool2d(2),  # Downsample (8x4 -> 4x2)
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-        )
-
-        # Decoder
-        self.upconv3 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)  # Upsample (4x2 -> 8x4)
-        self.decoder_conv3 = nn.Sequential(
-            nn.Conv2d(128, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-        )
-
-        self.upconv2 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)  # Upsample (8x4 -> 16x8)
-        self.decoder_conv2 = nn.Sequential(
-            nn.Conv2d(64, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-        )
-
-        self.upconv1 = nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2)  # Upsample (16x8 -> 32x16)
-        self.decoder_conv1 = nn.Sequential(
-            nn.Conv2d(32, 16, kernel_size=3, padding=1),
-            nn.ReLU(),
-        )
-
-        # Final output layer
-        self.output_conv = nn.Conv2d(16, out_channel, kernel_size=1)  # Output a single channel (depth image)
-
-    def forward(self, x):
-        # Encoder
-        e1 = self.encoder_conv1(x)
-        e2 = self.encoder_conv2(e1)
-        e3 = self.encoder_conv3(e2)
-
-        # Bottleneck
-        b = self.bottleneck_conv(e3)
-
-        # Decoder
-        u3 = self.upconv3(b)
-        d3 = torch.cat([u3, e3], dim=1)  # Skip connection
-        d3 = self.decoder_conv3(d3)
-
-        u2 = self.upconv2(d3)
-        d2 = torch.cat([u2, e2], dim=1)  # Skip connection
-        d2 = self.decoder_conv2(d2)
-
-        u1 = self.upconv1(d2)
-        d1 = torch.cat([u1, e1], dim=1)  # Skip connection
-        d1 = self.decoder_conv1(d1)
-
-        # Final output
-        return self.output_conv(d1), b
 
 
 # class ReconGRU(nn.Module):
@@ -164,83 +47,6 @@ class UNet(nn.Module):
 #
 #     def reset(self, dones):
 #         self.hidden_state[:, dones] = 0.
-
-
-class ReconGRU(nn.Module):
-    def __init__(self, env_cfg, policy_cfg):
-        super().__init__()
-        activation = nn.LeakyReLU()
-
-        self.cnn_depth = nn.Sequential(
-            nn.Conv2d(in_channels=env_cfg.len_depth_his, out_channels=16, kernel_size=5, stride=4, padding=2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channels=16, out_channels=64, kernel_size=5, stride=4, padding=2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(inplace=True),
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten()
-        )
-
-        self.gru = nn.GRU(input_size=128 + policy_cfg.obs_gru_hidden_size,
-                          hidden_size=policy_cfg.recon_gru_hidden_size,
-                          num_layers=policy_cfg.recon_gru_num_layers)
-        self.hidden_state = None
-
-        self.recon_rough = nn.Sequential(
-            nn.Unflatten(1, (8, 8, 4)),
-            nn.Conv2d(8, 8, kernel_size=3, padding=1),
-            activation,
-            nn.Upsample(scale_factor=2),
-            nn.Conv2d(8, 4, kernel_size=3, padding=1),
-            activation,
-            nn.Upsample(scale_factor=2),
-            nn.Conv2d(4, 2, kernel_size=3, padding=1),
-        )
-
-        self.recon_refine = UNet(in_channel=2, out_channel=2)
-
-    def inference_forward(self, depth_his, prop_latent, use_estimated_values):
-        # inference forward
-        enc_depth = self.cnn_depth(depth_his)
-
-        # concatenate the two latent vectors
-        gru_input = torch.cat([enc_depth, prop_latent], dim=1)
-        enc_gru, self.hidden_state = self.gru(gru_input.unsqueeze(0), self.hidden_state)
-
-        # we need to update all memory but no need to reconstruct all hmap
-        enc_gru = enc_gru[0, use_estimated_values]
-
-        # reconstruct
-        hmap_rough = self.recon_rough(enc_gru)
-        hmap_refine, _ = self.recon_refine(hmap_rough)
-        return hmap_rough, hmap_refine
-
-    def forward(self, depth_his, prop_latent, hidden_state, use_estimated_values=None):
-        # update forward
-        enc_depth = gru_wrapper(self.cnn_depth.forward, depth_his)
-
-        # concatenate the two latent vectors
-        gru_input = torch.cat([enc_depth, prop_latent], dim=2)
-        enc_gru, hidden_state = self.gru(gru_input, hidden_state)
-
-        # we need to compute all memory but no need to reconstruct all hmap
-        if use_estimated_values is not None:
-            hmap_rough = self.recon_rough(enc_gru[use_estimated_values])
-            hmap_refine, _ = self.recon_refine(hmap_rough)
-            return hmap_rough, hmap_refine, hidden_state
-        else:
-            hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
-            hmap_refine, _ = gru_wrapper(self.recon_refine.forward, hmap_rough)
-            return hmap_rough, hmap_refine, hidden_state
-
-    def get_hidden_state(self):
-        if self.hidden_state is None:
-            return None
-        return self.hidden_state.detach()
-
-    def reset(self, dones):
-        self.hidden_state[:, dones] = 0.
 
 
 class Mixer(nn.Module):
@@ -458,6 +264,7 @@ class EstimatorGRU(nn.Module):
     def act(self,
             obs: ActorObs,
             use_estimated_values: torch.Tensor,
+            eval_=False,
             **kwargs):  # <-- my mood be like
         use_estimated_values = use_estimated_values.squeeze(-1)
 
@@ -466,7 +273,7 @@ class EstimatorGRU(nn.Module):
 
         # compute reconstruction
         with torch.no_grad():
-            _, recon_refine = self.reconstructor.inference_forward(
+            recon_rough, recon_refine = self.reconstructor.inference_forward(
                 obs.depth, latent_obs, use_estimated_values)
 
         # cross-model mixing using transformer
@@ -483,6 +290,9 @@ class EstimatorGRU(nn.Module):
 
         # compute action
         mean = self.actor(obs.proprio, latent_input)
+
+        if eval_:
+            return mean, recon_rough.squeeze(1), recon_refine.squeeze(1)
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
@@ -529,7 +339,7 @@ class EstimatorGRU(nn.Module):
         latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden)
         recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs.detach(), recon_hidden)
 
-        est_latent, est, est_logvar, ot1 = gru_wrapper(self.mixer.forward, recon_refine, latent_obs)
+        est_latent, est, est_logvar, ot1 = gru_wrapper(self.mixer.forward, recon_refine.detach(), latent_obs)
 
         return recon_rough.squeeze(2), recon_refine.squeeze(2), est_latent, est, est_logvar, ot1
 

@@ -186,7 +186,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             foothold = -1.
 
             # base pos
-            default_joint_pos = 2.0
+            default_joint_pos = 1.0
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
@@ -201,7 +201,6 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
     class policy:
         # actor parameters
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
-        init_noise_std = 1.0
 
         # critic parameters
         critic_hidden_dims = [512, 256, 128]
@@ -235,8 +234,10 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         desired_kl = 0.01
         max_grad_norm = 1.
 
-        use_amp = True
         continue_from_last_std = True
+        init_noise_std = 1.0
+
+        use_amp = True
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'  # rl, distil, mixed
@@ -278,7 +279,7 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             feet_rotation = 0.5
 
             # contact
-            feet_contact_forces = -0.01
+            feet_contact_forces = -0.005
             feet_stumble = -1.0
             # feet_edge = -0.5
             foothold = -1.
@@ -309,6 +310,12 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
 
     class policy(T1_Multi_Critic_Cfg.policy):
         enable_reconstructor = True
+
+    class algorithm(T1_Multi_Critic_Cfg.algorithm):
+        entropy_coef = 0.008
+
+        continue_from_last_std = False
+        init_noise_std = 0.6
 
     class runner(T1_Multi_Critic_Cfg.runner):
         max_iterations = 50000  # number of policy updates

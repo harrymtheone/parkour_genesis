@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.model_zju_gru import EstimatorNoRecon, EstimatorGRU
@@ -59,7 +58,7 @@ class PPO_ZJU(BaseAlgorithm):
         #     self.actor = Estimator(env_cfg, train_cfg).to(self.device)
 
         self.critic = UniversalCritic(task_cfg.env, task_cfg.policy).to(self.device)
-        self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
+        self.optimizer = torch.optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
         # reconstructor

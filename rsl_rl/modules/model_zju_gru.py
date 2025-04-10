@@ -24,7 +24,7 @@ class ObsGRU(nn.Module):
         else:
             raise NotImplementedError
 
-        self.gru = nn.GRU(input_size=64, hidden_size=policy_cfg.obs_gru_hidden_size, num_layers=1)
+        self.gru = nn.GRU(input_size=64, hidden_size=policy_cfg.obs_gru_hidden_size, num_layers=policy_cfg.obs_gru_num_layers)
         self.hidden_state = None
 
     def inference_forward(self, obs_his):
@@ -48,12 +48,12 @@ class ObsGRU(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, input_channel):
+    def __init__(self, in_channel, out_channel):
         super().__init__()
 
         # Encoder
         self.encoder_conv1 = nn.Sequential(
-            nn.Conv2d(input_channel, 16, kernel_size=3, padding=1),
+            nn.Conv2d(in_channel, 16, kernel_size=3, padding=1),
             nn.ReLU(),
         )
 
@@ -96,7 +96,7 @@ class UNet(nn.Module):
         )
 
         # Final output layer
-        self.output_conv = nn.Conv2d(16, input_channel, kernel_size=1)  # Output a single channel (depth image)
+        self.output_conv = nn.Conv2d(16, out_channel, kernel_size=1)  # Output a single channel (depth image)
 
     def forward(self, x):
         # Encoder
@@ -121,7 +121,7 @@ class UNet(nn.Module):
         d1 = self.decoder_conv1(d1)
 
         # Final output
-        return self.output_conv(d1)
+        return self.output_conv(d1), b
 
 
 class ReconGRU(nn.Module):
@@ -142,7 +142,7 @@ class ReconGRU(nn.Module):
 
         self.gru = nn.GRU(input_size=128 + policy_cfg.obs_gru_hidden_size,
                           hidden_size=policy_cfg.recon_gru_hidden_size,
-                          num_layers=2)
+                          num_layers=policy_cfg.recon_gru_num_layers)
         self.hidden_state = None
 
         self.recon_rough = nn.Sequential(
@@ -156,9 +156,9 @@ class ReconGRU(nn.Module):
             nn.Conv2d(4, 2, kernel_size=3, padding=1),
         )
 
-        self.recon_refine = UNet(input_channel=2)
+        self.recon_refine = UNet(in_channel=2, out_channel=2)
 
-    def inference_forward(self, depth_his, prop_latent):
+    def inference_forward(self, depth_his, prop_latent, use_estimated_values):
         # inference forward
         enc_depth = self.cnn_depth(depth_his)
 
@@ -166,12 +166,15 @@ class ReconGRU(nn.Module):
         gru_input = torch.cat([enc_depth, prop_latent], dim=1)
         enc_gru, self.hidden_state = self.gru(gru_input.unsqueeze(0), self.hidden_state)
 
+        # we need to update all memory but no need to reconstruct all hmap
+        enc_gru = enc_gru[0, use_estimated_values]
+
         # reconstruct
-        hmap_rough = self.recon_rough(enc_gru.squeeze(0))
-        hmap_refine = self.recon_refine(hmap_rough)
+        hmap_rough = self.recon_rough(enc_gru)
+        hmap_refine, _ = self.recon_refine(hmap_rough)
         return hmap_rough, hmap_refine
 
-    def forward(self, depth_his, prop_latent, hidden_state):
+    def forward(self, depth_his, prop_latent, hidden_state, use_estimated_values=None):
         # update forward
         enc_depth = gru_wrapper(self.cnn_depth.forward, depth_his)
 
@@ -179,10 +182,15 @@ class ReconGRU(nn.Module):
         gru_input = torch.cat([enc_depth, prop_latent], dim=2)
         enc_gru, hidden_state = self.gru(gru_input, hidden_state)
 
-        # reconstruct
-        hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
-        hmap_refine = gru_wrapper(self.recon_refine.forward, hmap_rough)
-        return hmap_rough, hmap_refine, hidden_state
+        # we need to compute all memory but no need to reconstruct all hmap
+        if use_estimated_values is not None:
+            hmap_rough = self.recon_rough(enc_gru[use_estimated_values])
+            hmap_refine, _ = self.recon_refine(hmap_rough)
+            return hmap_rough, hmap_refine, hidden_state
+        else:
+            hmap_rough = gru_wrapper(self.recon_rough.forward, enc_gru)
+            hmap_refine, _ = gru_wrapper(self.recon_refine.forward, hmap_rough)
+            return hmap_rough, hmap_refine, hidden_state
 
     def get_hidden_state(self):
         if self.hidden_state is None:
@@ -342,7 +350,7 @@ class EstimatorNoRecon(nn.Module):
             return mean
         else:
             # sample action from distribution
-            self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+            self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
             return self.distribution.sample()
 
     def train_act(
@@ -364,7 +372,7 @@ class EstimatorNoRecon(nn.Module):
         mean = gru_wrapper(self.actor.forward, obs.proprio, latent_input)
 
         # output action
-        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+        self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
 
     def reconstruct(self, obs, obs_enc_hidden, *args):
         # encode history proprio
@@ -414,37 +422,30 @@ class EstimatorGRU(nn.Module):
 
     def act(self,
             obs: ActorObs,
-            use_estimated_values: Union[bool, torch.Tensor],
+            use_estimated_values: torch.Tensor,
             eval_=False,
             **kwargs):  # <-- my mood be like
+        use_estimated_values = use_estimated_values.squeeze(-1)
 
         # encode history proprio
         latent_obs = self.obs_gru.inference_forward(obs.prop_his)
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine = self.reconstructor.inference_forward(obs.depth, latent_obs)
+            recon_rough, recon_refine = self.reconstructor.inference_forward(
+                obs.depth, latent_obs, use_estimated_values)
 
         # cross-model mixing using transformer
-        if type(use_estimated_values) is torch.Tensor:
-            recon_output = torch.where(
-                use_estimated_values.unsqueeze(-1).unsqueeze(-1),
-                recon_refine,
-                obs.scan
-            )
-            est_latent, est, _, _ = self.transformer(recon_output, latent_obs)
-            latent_input = torch.where(
-                use_estimated_values,
-                torch.cat([est_latent, est.detach()], dim=1),
-                torch.cat([est_latent, obs.priv_actor], dim=1)
-            )
+        recon_output = obs.scan.clone().to(recon_refine.dtype)
+        recon_output[use_estimated_values] = recon_refine
 
-        elif use_estimated_values:
-            est_latent, est, _, _ = self.transformer(recon_refine, latent_obs)
-            latent_input = torch.cat([est_latent, est.detach()], dim=1)
-        else:
-            est_latent, _, _, _ = self.transformer(obs.scan, latent_obs)
-            latent_input = torch.cat([est_latent, obs.priv_actor], dim=1)
+        est_latent, est, _, _ = self.transformer(recon_output, latent_obs)
+
+        latent_input = torch.where(
+            use_estimated_values.unsqueeze(1),
+            torch.cat([est_latent, est.detach()], dim=1),
+            torch.cat([est_latent, obs.priv_actor], dim=1)
+        )
 
         # compute action
         mean = self.actor(obs.proprio, latent_input)
@@ -454,7 +455,7 @@ class EstimatorGRU(nn.Module):
             return mean, recon_rough.squeeze(1), recon_refine.squeeze(1)
         else:
             # sample action from distribution
-            self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+            self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
             return self.distribution.sample()
 
     def train_act(
@@ -463,6 +464,7 @@ class EstimatorGRU(nn.Module):
             hidden_states,
             use_estimated_values: torch.Tensor,
     ):  # <-- my mood be like
+        use_estimated_values = use_estimated_values.squeeze(-1)
 
         # encode history proprio
         obs_enc_hidden_states, recon_hidden_states = hidden_states
@@ -471,17 +473,17 @@ class EstimatorGRU(nn.Module):
 
         # compute reconstruction
         with torch.no_grad():
-            recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs, recon_hidden_states)
+            _, recon_refine, _ = self.reconstructor(
+                obs.depth, latent_obs, recon_hidden_states, use_estimated_values)
 
         # cross-model mixing using transformer
-        recon_input = torch.where(
-            use_estimated_values.unsqueeze(-1).unsqueeze(-1),
-            recon_refine,
-            obs.scan
-        )
-        est_latent, est, _, _ = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
+        recon_output = obs.scan.clone().to(recon_refine.dtype)
+        recon_output[use_estimated_values] = recon_refine
+
+        est_latent, est, _, _ = gru_wrapper(self.transformer.forward, recon_output, latent_obs)
+
         latent_input = torch.where(
-            use_estimated_values,
+            use_estimated_values.unsqueeze(2),
             torch.cat([est_latent, est.detach()], dim=2),
             torch.cat([est_latent, obs.priv_actor], dim=2)
         )
@@ -490,20 +492,14 @@ class EstimatorGRU(nn.Module):
         mean = gru_wrapper(self.actor.forward, obs.proprio, latent_input)
 
         # output action
-        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+        self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
 
-    def reconstruct(self, obs, obs_enc_hidden, recon_hidden, use_estimated_values):
+    def reconstruct(self, obs, obs_enc_hidden, recon_hidden):
         # encode history proprio
         latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden)
         recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs.detach(), recon_hidden)
 
-        recon_input = torch.where(
-            use_estimated_values.unsqueeze(-1).unsqueeze(-1),
-            recon_refine.detach(),
-            obs.scan
-        )
-
-        est_latent, est, est_logvar, ot1 = gru_wrapper(self.transformer.forward, recon_input, latent_obs)
+        est_latent, est, est_logvar, ot1 = gru_wrapper(self.transformer.forward, recon_refine.detach(), latent_obs)
 
         return recon_rough.squeeze(2), recon_refine.squeeze(2), est_latent, est, est_logvar, ot1
 
