@@ -33,11 +33,37 @@ class ActorWMP(nn.Module):
             nn.Linear(64, 12),
         )
 
-        self.log_std = nn.Parameter(torch.log(train_cfg.policy.init_noise_std * torch.ones(env_cfg.num_actions)))
+        self.log_std = nn.Parameter(torch.log(torch.ones(env_cfg.num_actions)))
         self.distribution = None
 
         # disable args validation for speedup
         torch.distributions.Normal.set_default_validate_args = False
+
+    def get_actions_log_prob(self, actions):
+        return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
+
+    @property
+    def action_mean(self):
+        return self.distribution.mean
+
+    @property
+    def action_std(self):
+        return self.distribution.stddev
+
+    @property
+    def entropy(self):
+        return self.distribution.entropy().sum(dim=-1)
+
+    def reset_std(self, std, device):
+        new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
+        self.log_std.data = new_log_std.data
+
+    def get_hidden_state(self):
+        return self.obs_gru.get_hidden_state(), self.reconstructor.get_hidden_state()
+
+    def reset(self, dones):
+        self.obs_gru.reset(dones)
+        self.reconstructor.reset(dones)
 
 
 class CriticWMP(nn.Module):

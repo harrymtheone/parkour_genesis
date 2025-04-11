@@ -3,13 +3,14 @@ import numpy as np
 from .a1_base_config import A1BaseCfg
 
 
-class A1_Dreamer_Cfg(A1BaseCfg):
+class A1_WMP_Cfg(A1BaseCfg):
     class env(A1BaseCfg.env):
         num_envs = 2048  # 6144
-        n_proprio = 3 + 3 + 3 + 12 + 12 + 12
-        len_prop_his = 10
 
-        len_depth_his = 2
+        n_proprio = 45  # 3 + 3 + 3 + 3 * 12
+        len_prop_his = 5
+
+        len_depth_his = 1
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
@@ -23,17 +24,19 @@ class A1_Dreamer_Cfg(A1BaseCfg):
         activated = True
 
         class depth_0:
+            link_attached_to = 'base'
             position = [0.27, 0, 0.086]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch = 28  # positive pitch down (degree)
             pitch_range = [-1, 1]  # positive pitch down (degree)
 
+            data_format = 'depth'  # depth, cloud, hmap
             update_interval = 5  # 5 works without retraining, 8 worse
             delay_prop = (5, 1)  # Gaussian (mean, std)
 
-            resolution = (106, 60)  # width, height
-            resized = (87, 58)  # (87, 58)
-            horizontal_fov = 87
+            resolution = (64, 64)  # width, height
+            resized = (64, 64)
+            horizontal_fov = 58
 
             near_clip = 0
             far_clip = 2

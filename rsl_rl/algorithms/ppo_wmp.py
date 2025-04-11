@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.distributions import kl_divergence, Normal
 
+from legged_gym.envs.base.utils import HistoryBuffer
 from rsl_rl.datasets.motion_loader import AMPLoader
-from rsl_rl.modules.wmp import WorldModel, ActorWMP, CriticWMP, AMPDiscriminator, Normalizer
-from rsl_rl.storage import RolloutStorage
+from rsl_rl.modules.wmp import RSSM, ActorWMP, CriticWMP, AMPDiscriminator, Normalizer
+from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from .alg_base import BaseAlgorithm
 
 try:
@@ -18,7 +18,7 @@ class Transition:
     def __init__(self):
         self.observations = None
         self.critic_observations = None
-        self.hidden_states = None
+        self.world_model_hidden_states = None
         self.observations_next = None
         self.actions = None
         self.rewards = None
@@ -44,20 +44,14 @@ class PPO_WMP(BaseAlgorithm):
         self.device = device
         self.mse_loss = nn.MSELoss()
 
-        # Rollout Storage
-        self.transition = Transition()
-        self.storage = RolloutStorage(task_cfg, self.device)
-
         # world model
-        self.world_model = WorldModel(task_cfg.env, task_cfg)
-        self.optimizer_world_model = optim.Adam(self.world_model.parameters(), lr=1e-4)
-        self.scaler_world_model = GradScaler(enabled=self.cfg.use_amp)
+        self.world_model = RSSM(task_cfg.env, task_cfg).to(self.device)
+        self.optimizer_wm = torch.optim.Adam(self.world_model.parameters(), lr=1e-4)
+        self.scaler_wm = GradScaler(enabled=self.cfg.use_amp)
 
         # PPO components
-        self.actor = ActorWMP(task_cfg, task_cfg.policy).to(self.device)
-        self.critic = CriticWMP(task_cfg, task_cfg.policy).to(self.device)
-        self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
-        self.scaler = GradScaler(enabled=self.cfg.use_amp)
+        self.actor = ActorWMP(task_cfg.env, task_cfg.policy).to(self.device)
+        self.critic = CriticWMP(task_cfg.env, task_cfg.policy).to(self.device)
 
         # AMP components
         self.amp_loader = AMPLoader(
@@ -71,9 +65,34 @@ class PPO_WMP(BaseAlgorithm):
                           '/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/trot2.txt', ]
         )
         self.amp_normalizer = Normalizer(30)
-        self.amp_discriminator = AMPDiscriminator(task_cfg.env, task_cfg)
+        self.amp_discriminator = AMPDiscriminator(task_cfg.env, task_cfg).to(self.device)
 
-    def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
+        # storage and optimizer
+        params = [
+            {'params': [*self.actor.parameters(), *self.critic.parameters()], 'name': 'actor_critic'},
+            {'params': self.amp_discriminator.trunk.parameters(), 'weight_decay': 10e-4, 'name': 'amp_trunk'},
+            {'params': self.amp_discriminator.linear.parameters(), 'weight_decay': 10e-2, 'name': 'amp_head'}
+        ]
+
+        self.optimizer = torch.optim.Adam(params, lr=self.learning_rate)
+        self.scaler = GradScaler(enabled=self.cfg.use_amp)
+        self.transition = Transition()
+        self.transition_amp = Transition()
+        self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
+
+        wm_step_interval = 5
+        # self.wm_history_buf = HistoryBuffer(task_cfg.env.num_envs, wm_step_interval, task_cfg.env.n_proprio - 3, )
+        self.wm_action_his = HistoryBuffer(task_cfg.env.num_envs, wm_step_interval, task_cfg.env.num_actions, device=device)
+
+    def act(self, obs, obs_critic, step_world_model=True, **kwargs):
+        if step_world_model:
+            wm_obs = {
+                'proprio': obs.proprio[:, :-12]  # no last_actions
+            }
+
+            self.world_model.encode(obs.as_wm_obs())
+            self.world_model.step()
+
         # store observations
         self.transition.observations = obs
         self.transition.critic_observations = obs_critic

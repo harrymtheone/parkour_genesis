@@ -24,8 +24,8 @@ from .pdd.pdd_zju_environment import PddZJUEnvironment
 from .go1.go1_zju_environment import Go1ZJUEnvironment
 from .go1.config.go1_zju_config import Go1_ZJU_Cfg, Go1_ZJU_Pit_Cfg
 
-from .A1.a1_dreamer_environment import A1DreamerEnvironment
-from .A1.config.a1_dreamer_config import A1_Dreamer_Cfg
+from .A1.a1_wmp_environment import A1WMPEnvironment
+from .A1.config.a1_wmp_config import A1_WMP_Cfg
 
 task_list = [
     # ['pdd_scan', PddScanEnvironment, PddScanCfg(), PddScanCfgPPO()],  # TODO: not finished yet
@@ -51,7 +51,7 @@ task_list = [
 
     # ['a1_zju', Go1ZJUEnvironment, Go1_ZJU_Cfg(), Go1_ZJU_CfgPPO()],  # TODO: not finished yet
     # ['a1_zju_pit', Go1ZJUEnvironment, Go1_ZJU_Pit_Cfg(), Go1_ZJU_VAE_Pit_CfgPPO()],  # TODO: not finished yet
-    ['a1_wmp', Go1ZJUEnvironment, A1_Dreamer_Cfg()],  # TODO: not finished yet
+    ['a1_wmp', A1WMPEnvironment, A1_WMP_Cfg()],  # TODO: not finished yet
 
 
 ]

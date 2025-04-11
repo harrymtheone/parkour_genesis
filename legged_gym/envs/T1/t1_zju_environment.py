@@ -68,6 +68,8 @@ class ActorObsNoDepth(ObsBase):
 class ObsNext(ObsBase):
     def __init__(self, proprio):
         self.proprio = proprio.clone()
+        self.proprio[:, 6: 6 + 5] = 0.
+        self.proprio[:, -12:] = 0.
 
 
 class CriticObs(ObsBase):
@@ -184,7 +186,7 @@ class T1ZJUEnvironment(T1BaseEnv):
         # update history buffer
         reset_flag = self.episode_length_buf <= 1
         prop_no_cmd = proprio.clone()
-        prop_no_cmd[:, 3 + 3: 3 + 3 + 5] = 0.
+        prop_no_cmd[:, 6: 6 + 5] = 0.
         self.prop_his_buf.append(prop_no_cmd, reset_flag)
 
         # compose critic observation

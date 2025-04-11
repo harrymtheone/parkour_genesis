@@ -49,7 +49,7 @@ class A1BaseCfg(BaseConfig):
         vertical_scale = 0.005  # [m]
         border_size = 5  # [m]
         roughness_height = [0.02, 0.04]
-        simplify_grid = True
+        simplify_grid = False
         downsampled_scale = 0.075
 
         curriculum = True

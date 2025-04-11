@@ -8,20 +8,48 @@ class WMEncoder(nn.Module):
         super().__init__()
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(1, 32, 4, stride=2, padding=2, bias=False),
+            nn.Conv2d(1, 32, 4, stride=2, padding=1, bias=False),
             ChannelLayerNorm(32),
             nn.SiLU(),
-            nn.Conv2d(32, 64, 4, stride=2, padding=2, bias=False),
+            nn.Conv2d(32, 64, 4, stride=2, padding=1, bias=False),
             ChannelLayerNorm(64),
             nn.SiLU(),
-            nn.Conv2d(64, 128, 4, stride=2, padding=2, bias=False),
+            nn.Conv2d(64, 128, 4, stride=2, padding=1, bias=False),
             ChannelLayerNorm(128),
             nn.SiLU(),
-            nn.Conv2d(128, 256, 4, stride=2, padding=2, bias=False),
+            nn.Conv2d(128, 256, 4, stride=2, padding=1, bias=False),
             ChannelLayerNorm(256),
             nn.SiLU(),
             nn.Flatten()
         )
+
+        """
+        ConvEncoder(
+  (layers): Sequential(
+    (0): Conv2dSamePad(1, 32, kernel_size=(4, 4), stride=(2, 2), bias=False)
+    (1): ImgChLayerNorm(
+      (norm): LayerNorm((32,), eps=0.001, elementwise_affine=True)
+    )
+    (2): SiLU()
+    (3): Conv2dSamePad(32, 64, kernel_size=(4, 4), stride=(2, 2), bias=False)
+    (4): ImgChLayerNorm(
+      (norm): LayerNorm((64,), eps=0.001, elementwise_affine=True)
+    )
+    (5): SiLU()
+    (6): Conv2dSamePad(64, 128, kernel_size=(4, 4), stride=(2, 2), bias=False)
+    (7): ImgChLayerNorm(
+      (norm): LayerNorm((128,), eps=0.001, elementwise_affine=True)
+    )
+    (8): SiLU()
+    (9): Conv2dSamePad(128, 256, kernel_size=(4, 4), stride=(2, 2), bias=False)
+    (10): ImgChLayerNorm(
+      (norm): LayerNorm((256,), eps=0.001, elementwise_affine=True)
+    )
+    (11): SiLU()
+  )
+)
+        
+        """
 
         self.mlp = nn.Sequential(
             nn.Linear(33, 1024, bias=False),

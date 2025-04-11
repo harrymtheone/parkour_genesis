@@ -104,7 +104,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 0,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 2,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 
@@ -129,7 +129,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         randomize_com = switch
 
         push_robots = switch
-        action_delay = switch
+        action_delay = False
         add_dof_lag = False
         add_imu_lag = False
 

@@ -20,21 +20,31 @@ class ActorObs(ObsBase):
         # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
 
+    def as_wm_obs(self):
+        return WorldModelObs(self.proprio, self.depth)
+
 
 class ObsNext(ObsBase):
     def __init__(self, proprio):
         self.proprio = proprio.clone()
 
 
+class WorldModelObs(ObsBase):
+    def __init__(self, proprio, depth):
+        self.proprio = proprio[:, :-12]  # no last_actions
+        self.depth = depth
+
+
 class CriticObs(ObsBase):
-    def __init__(self, priv_his, scan, base_edge_mask):
+    def __init__(self, priv_his, scan, base_edge_mask, amp_obs):
         super().__init__()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
         self.base_edge_mask = base_edge_mask.clone()
+        self.amp_obs = amp_obs.clone()
 
 
-class A1DreamerEnvironment(QuadrupedEnv):
+class A1WMPEnvironment(QuadrupedEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -96,10 +106,10 @@ class A1DreamerEnvironment(QuadrupedEnv):
         proprio = torch.cat((
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
-            self.commands[:, :3] * self.commands_scale,  # 5
-            (dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
-            dof_vel * self.obs_scales.dof_vel,  # 10D
-            self.last_action_output,  # 10D
+            self.commands[:, :3] * self.commands_scale,  # 3
+            (dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 12D
+            dof_vel * self.obs_scales.dof_vel,  # 12D
+            self.last_action_output,  # 12D
         ), dim=-1)
 
         # explicit privileged information
@@ -137,11 +147,16 @@ class A1DreamerEnvironment(QuadrupedEnv):
 
         # update history buffer
         reset_flag = self.episode_length_buf <= 1
-        self.prop_his_buf.append(proprio, reset_flag)
+        prop_no_cmd = proprio.clone()
+        prop_no_cmd[:, 6: 6 + 3] = 0.
+        self.prop_his_buf.append(prop_no_cmd, reset_flag)
+
+        # AMP observation
+        amp_obs = torch.cat([self.sim.dof_pos, self.sim.dof_vel, self.base_lin_vel, self.base_ang_vel], dim=1)
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask)
+        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask, amp_obs)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):

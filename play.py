@@ -1,3 +1,5 @@
+import random
+
 try:
     import isaacgym, torch
 except ImportError:
@@ -38,9 +40,9 @@ def play(args):
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
-    task_cfg.domain_rand.action_delay = True
+    task_cfg.domain_rand.action_delay = False
     task_cfg.domain_rand.action_delay_range = [(10, 10)]
-    task_cfg.domain_rand.push_robots = True
+    task_cfg.domain_rand.push_robots = False
     task_cfg.domain_rand.push_duration = [0.15]
     # task_cfg.domain_rand.push_interval_s = 6
 
@@ -87,11 +89,12 @@ def play(args):
                     hmap_rough, edge_rough = recon_rough[:, 0], recon_rough[:, 1]
                     hmap_refine, edge_refine = recon_refine[:, 0], recon_refine[:, 1]
 
-                # env.draw_hmap(hmap_rough)
-                env.draw_hmap(hmap_refine)
-                # env.draw_body_edge(edge_refine)
-                # env.draw_feet_hmap(est_mu[:, -16-16:-16])  # feet height map estimation
-                # env.draw_body_hmap(est_mu[:, -16:])  # body height map estimation
+                    if len(hmap_rough) > 0:
+                        # env.draw_hmap(hmap_rough)
+                        env.draw_hmap(hmap_refine)
+                        # env.draw_body_edge(edge_refine)
+                        # env.draw_feet_hmap(est_mu[:, -16-16:-16])  # feet height map estimation
+                        # env.draw_body_hmap(est_mu[:, -16:])  # body height map estimation
             else:
                 actions = rtn
 
