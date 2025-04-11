@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .model_zju_gru import ObsGRU, ReconGRU
+from .model_zju_gru import ObsGRU, ReconGRU, Actor
 from .utils import make_linear_layers, gru_wrapper
 
 
@@ -137,24 +137,6 @@ class Mixer(nn.Module):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return eps * std + mu
-
-
-class Actor(nn.Module):
-    def __init__(self, env_cfg, policy_cfg):
-        super().__init__()
-        vae_output_dim = (policy_cfg.len_latent
-                          + policy_cfg.len_base_vel
-                          + policy_cfg.len_latent_feet
-                          + policy_cfg.len_latent_body)
-
-        self.actor = make_linear_layers(env_cfg.n_proprio + vae_output_dim,
-                                        *policy_cfg.actor_hidden_dims,
-                                        env_cfg.num_actions,
-                                        activation_func=nn.ELU(),
-                                        output_activation=False)
-
-    def forward(self, obs, priv):
-        return self.actor(torch.cat([obs, priv], dim=1))
 
 
 class EstimatorNoRecon(nn.Module):

@@ -342,12 +342,12 @@ class BaseTask:
                 self.action_delay_buf.update_delay_range(self.cfg.domain_rand.action_delay_range.pop(0))
 
     def _post_physics_mid_step(self):
+        self._update_command()
+
         if self.cfg.play.control:
             # overwrite commands
             self.commands[:] = 0.
             self.commands[self.lookat_id, :3] = torch.Tensor(self.joystick_handler.get_control_input())
-        else:
-            self._update_command()
 
         # push robot
         if self.cfg.domain_rand.push_robots:

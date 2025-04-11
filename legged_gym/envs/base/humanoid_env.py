@@ -267,7 +267,8 @@ class HumanoidEnv(ParkourTask):
         # return rew
 
         cmd_vel_norm = torch.norm(self.commands[:, :2], dim=1)
-        root_lin_vel_projection = torch.norm(self.sim.root_lin_vel[:, :2], dim=1) * torch.cos(self.delta_yaw)
+        target_unit_vec = self.target_pos_rel / (torch.norm(self.target_pos_rel, dim=1, keepdim=True) + 1e-5)
+        root_lin_vel_projection = torch.sum(self.sim.root_lin_vel[:, :2] * target_unit_vec, dim=1)
 
         lin_vel_error = torch.where(
             self.env_class < 4,
