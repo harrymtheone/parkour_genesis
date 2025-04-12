@@ -12,7 +12,7 @@ from legged_gym.utils.helpers import get_args
 from legged_gym.utils.task_registry import TaskRegistry
 from vis import gen_info_panel
 
-slowmo = 1
+slowmo = 10
 
 
 def play(args):
@@ -67,7 +67,7 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
     env = task_registry.make_env(args=args, task_cfg=task_cfg)
     obs, obs_critic = env.get_observations(), env.get_critic_observations()
-    env.sim.clear_lines = False
+    env.sim.clear_lines = True
 
     # load policy
     task_cfg.runner.resume = True
@@ -93,6 +93,8 @@ def play(args):
                         # env.draw_hmap(hmap_refine)
                         # env.draw_body_edge(edge_refine)
                         env.draw_est_hmap(est)
+
+                        args.est = est[env.lookat_id, :3] / 2
             else:
                 actions = rtn
 

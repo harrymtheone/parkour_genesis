@@ -253,8 +253,8 @@ class T1ZJUEnvironment(T1BaseEnv):
         feet_hmap = est[self.lookat_id, -16 - 8:-16]
         self._draw_feet_hmap(feet_hmap)
 
-        # body_hmap = est[self.lookat_id, -16:]
-        # self._draw_body_hmap(body_hmap)
+        body_hmap = est[self.lookat_id, -16:]
+        self._draw_body_hmap(body_hmap)
 
     def _draw_feet_hmap(self, estimation=None):
         num_feet = len(self.feet_indices)

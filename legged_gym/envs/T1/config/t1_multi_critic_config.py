@@ -147,7 +147,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         feet_height_target = 0.04
         feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
         only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
@@ -186,7 +186,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             foothold = -1.
 
             # base pos
-            default_joint_pos = 1.0
+            default_joint_pos = 2.0
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
@@ -213,7 +213,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         recon_gru_hidden_size = 256
         recon_gru_num_layers = 2
 
-        len_latent = 64  # 16
+        len_latent = 128  # 16
         len_base_vel = 3
         len_latent_feet = 0  # 8
         len_latent_body = 0  # 16
