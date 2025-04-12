@@ -165,11 +165,14 @@ class T1ZJUEnvironment(T1BaseEnv):
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
-        priv_actor_obs = torch.cat((
-            self.base_lin_vel * self.obs_scales.lin_vel,  # 3
-            self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
-            self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
-        ), dim=-1)
+        if self.cfg.env.obs.priv_actor == 3:
+            priv_actor_obs = self.base_lin_vel * self.obs_scales.lin_vel  # 3
+        else:
+            priv_actor_obs = torch.cat((
+                self.base_lin_vel * self.obs_scales.lin_vel,  # 3
+                self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
+                self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
+            ), dim=-1)
 
         # compute height map
         scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)

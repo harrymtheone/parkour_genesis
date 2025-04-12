@@ -24,7 +24,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             proprio = 50
             prop_his = (10, 50)
             depth = (2, *reversed(DEPTH_RESIZED))
-            priv_actor = 27
+            priv_actor = 3  # 27
             scan = (2, 32, 16)
 
         class critic_obs:
@@ -213,10 +213,10 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         recon_gru_hidden_size = 256
         recon_gru_num_layers = 2
 
-        len_latent = 16
+        len_latent = 64  # 16
         len_base_vel = 3
-        len_latent_feet = 8
-        len_latent_body = 16
+        len_latent_feet = 0  # 8
+        len_latent_body = 0  # 16
         transformer_embed_dim = 64
 
     class algorithm:
