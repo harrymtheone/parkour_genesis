@@ -4,7 +4,7 @@ import torch
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_trans_quat
+from ...utils.math import transform_by_trans_quat, transform_by_yaw
 
 
 class ActorObs(ObsBase):
@@ -202,7 +202,7 @@ class T1ZJUEnvironment(T1BaseEnv):
             # self._draw_camera()
             # self._draw_link_COM(whole_body=False)
             # self._draw_feet_at_edge()
-            self._draw_foothold()
+            # self._draw_foothold()
 
             # self._draw_height_field(draw_guidance=False)
             # self._draw_edge()
@@ -245,6 +245,56 @@ class T1ZJUEnvironment(T1BaseEnv):
         )
 
         self.sim.draw_points(pts.cpu().numpy(), color=(1, 0, 0))
+
+    def draw_est_hmap(self, est):
+        feet_hmap = est[self.lookat_id, -16 - 8:-16]
+        self._draw_feet_hmap(feet_hmap)
+
+        # body_hmap = est[self.lookat_id, -16:]
+        # self._draw_body_hmap(body_hmap)
+
+    def _draw_feet_hmap(self, estimation=None):
+        num_feet = len(self.feet_indices)
+        num_feet_pts = self.feet_hmap_points.size(1)
+
+        # compute points position
+        height_points = transform_by_yaw(
+            self.feet_hmap_points[None, self.lookat_id, :, :].repeat(num_feet, 1, 1),
+            self.feet_euler_xyz[self.lookat_id, :, None, 2].repeat(1, num_feet_pts)
+        ).view(num_feet, num_feet_pts, 3)
+
+        height_points = height_points + self.sim.link_pos[self.lookat_id, self.feet_indices, None, :]
+
+        # compute points height
+        if estimation is None:
+            hmap = self.get_feet_hmap()[self.lookat_id]
+        else:
+            hmap = estimation + self.cfg.normalization.feet_height_correction
+
+        height_points[:, :, 2] -= hmap.view(num_feet, -1)
+
+        height_points = height_points.flatten(0, 1).cpu().numpy()
+        self.pending_vis_task.append(dict(points=height_points, color=(1, 1, 0)))
+
+    def _draw_body_hmap(self, estimation=None):
+        # compute points position
+        height_points = transform_by_yaw(
+            self.body_hmap_points[self.lookat_id],
+            self.base_euler[self.lookat_id, 2].repeat(self.body_hmap_points.size(1))
+        )
+
+        height_points[:] += self.sim.root_pos[self.lookat_id, None, :]
+
+        # compute points height
+        if estimation is None:
+            hmap = self.get_body_hmap()[self.lookat_id]
+        else:
+            hmap = estimation + self.cfg.normalization.scan_norm_bias
+
+        height_points[:, 2] -= hmap
+
+        height_points = height_points.cpu().numpy()
+        self.pending_vis_task.append(dict(points=height_points))
 
 
 def density_weighted_sampling(points, num_samples, k=10):

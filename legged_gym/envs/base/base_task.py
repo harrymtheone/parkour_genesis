@@ -419,10 +419,15 @@ class BaseTask:
 
     def render(self):
         while len(self.pending_vis_task) > 0:
-            t = self.pending_vis_task.pop(0)
-            t[0](*t[1:])
+            self.sim.draw_points(**self.pending_vis_task.pop(0))
 
         self.sim.render()
+
+    def refresh_graphics(self, clear_lines):
+        self.sim.render()
+
+        if clear_lines:
+            self.sim.clear_debug_lines()
 
     # ---------------------------------------------- Robots Reset ----------------------------------------------
 

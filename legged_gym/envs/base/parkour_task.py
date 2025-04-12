@@ -441,36 +441,32 @@ class ParkourTask(BaseTask):
 
     # ----------------------------------------- Graphics -------------------------------------------
     def draw_hmap(self, hmap, color=(0, 1, 0)):
-        def func(hmap, color):
-            hmap = hmap[self.lookat_id].flatten().cpu().numpy()
-            base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
-            yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
-            height_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
-            height_points[:, :2] += base_pos[None, :2]
+        hmap = hmap[self.lookat_id].flatten().cpu().numpy()
+        base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
+        yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
+        height_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
+        height_points[:, :2] += base_pos[None, :2]
 
-            height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
-            self.sim.draw_points(height_points, color=color)
+        height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
+        self.pending_vis_task.append(dict(points=height_points, color=color))
 
-        self.pending_vis_task.append((func, hmap, color))
-
-    def draw_body_edge(self, edge_mask):
-        def func(edge_mask):
-            base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
-            yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
-            edge_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
-            edge_points[:, :2] += base_pos[None, :2]
-            edge_points[:, 2] = self.scan_hmap[self.lookat_id]
-
-            edge_mask = edge_mask[self.lookat_id].flatten().cpu().numpy()
-            edge_pts = edge_points[edge_mask == 1]
-            non_edge_pts = edge_points[edge_mask == 0]
-            self.sim.draw_points(edge_pts, color=(1, 0, 0))
-            self.sim.draw_points(non_edge_pts, color=(0, 1, 0))
-
+    def draw_edge_mask(self, edge_mask):
         edge_mask = edge_mask.clone()
         edge_mask[edge_mask < 0.5] = 0
         edge_mask[edge_mask >= 0.5] = 1
-        self.pending_vis_task.append((func, edge_mask))
+
+        base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
+        yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
+        edge_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
+        edge_points[:, :2] += base_pos[None, :2]
+        edge_points[:, 2] = self.scan_hmap[self.lookat_id]
+
+        edge_mask = edge_mask[self.lookat_id].flatten().cpu().numpy()
+        edge_pts = edge_points[edge_mask == 1]
+        non_edge_pts = edge_points[edge_mask == 0]
+
+        self.pending_vis_task.append(dict(points=edge_pts, color=(1, 0, 0)))
+        self.pending_vis_task.append(dict(points=non_edge_pts, color=(0, 1, 0)))
 
     def _draw_feet_at_edge(self):
         if hasattr(self, 'feet_at_edge'):

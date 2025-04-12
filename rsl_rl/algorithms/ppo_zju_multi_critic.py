@@ -151,12 +151,12 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         self.storage.compute_returns(last_values_default, last_values_contact, self.cfg.gamma, self.cfg.lam)
 
     def update(self, cur_it=0, **kwargs):
-        if cur_it < 10000:
-            update_est = cur_it % 10 == 0
-        elif cur_it < 20000:
+        if cur_it < 5000:
             update_est = True
-        else:
+        elif cur_it < 20000:
             update_est = cur_it % 5 == 0
+        else:
+            update_est = cur_it % 10 == 0
 
         update_est &= self.enable_reconstructor
         mean_value_loss = 0

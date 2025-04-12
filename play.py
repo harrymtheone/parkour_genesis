@@ -1,5 +1,3 @@
-import random
-
 try:
     import isaacgym, torch
 except ImportError:
@@ -69,12 +67,13 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
     env = task_registry.make_env(args=args, task_cfg=task_cfg)
     obs, obs_critic = env.get_observations(), env.get_critic_observations()
+    env.sim.clear_lines = False
 
     # load policy
     task_cfg.runner.resume = True
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    with Live(gen_info_panel(args, env), refresh_per_second=60) as live:
+    with Live(gen_info_panel(args, env)) as live:
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
@@ -84,17 +83,16 @@ def play(args):
             if type(rtn) is tuple:
                 if len(rtn) == 2:
                     actions, _ = rtn
-                elif len(rtn) == 3:
-                    actions, recon_rough, recon_refine = rtn
+                elif len(rtn) == 4:
+                    actions, recon_rough, recon_refine, est = rtn
                     hmap_rough, edge_rough = recon_rough[:, 0], recon_rough[:, 1]
                     hmap_refine, edge_refine = recon_refine[:, 0], recon_refine[:, 1]
 
                     if len(hmap_rough) > 0:
                         # env.draw_hmap(hmap_rough)
-                        env.draw_hmap(hmap_refine)
+                        # env.draw_hmap(hmap_refine)
                         # env.draw_body_edge(edge_refine)
-                        # env.draw_feet_hmap(est_mu[:, -16-16:-16])  # feet height map estimation
-                        # env.draw_body_hmap(est_mu[:, -16:])  # body height map estimation
+                        env.draw_est_hmap(est)
             else:
                 actions = rtn
 
@@ -118,6 +116,8 @@ def play(args):
 
             while time.time() - time_start < env.dt * slowmo:
                 env.render()
+                env.refresh_graphics(clear_lines=False)
+            env.refresh_graphics(clear_lines=True)
 
 
 if __name__ == '__main__':

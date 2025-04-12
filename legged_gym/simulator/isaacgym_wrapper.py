@@ -40,8 +40,7 @@ class IsaacGymWrapper(BaseWrapper):
     # ---------------------------------------------- Sim Creation ----------------------------------------------
 
     def _create_sim(self):
-        """ Creates simulation, terrain and evironments
-        """
+        """ Creates simulation, terrain and environments """
         # graphics device for rendering, -1 for no rendering
         sim_device, sim_device_id = gymutil.parse_device_str(self.device.type)
 
@@ -504,14 +503,15 @@ class IsaacGymWrapper(BaseWrapper):
         else:
             self.gym.poll_viewer_events(self.viewer)
 
-        if self.clear_lines:
-            self.gym.clear_lines(self.viewer)
-
         if not self.free_cam:
             p = self.gym.get_viewer_camera_transform(self.viewer, None).p
             cam_trans = torch.tensor([p.x, p.y, p.z], requires_grad=False, device=self.device)
             look_at_pos = self._root_state[self.lookat_id, :3].clone()
             self.lookat_vec = cam_trans - look_at_pos
+
+    def clear_debug_lines(self):
+        if self.clear_lines:
+            self.gym.clear_lines(self.viewer)
 
     def lookat(self, i):
         self.lookat_id = i % self.num_envs
