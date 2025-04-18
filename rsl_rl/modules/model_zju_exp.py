@@ -54,6 +54,7 @@ class Mixer(nn.Module):
         super().__init__()
         predictor_hidden_dim = [128, 64]
         activation = nn.ReLU(inplace=True)
+        self.enable_VAE = policy_cfg.enable_VAE
 
         obs_gru_hidden_size = policy_cfg.obs_gru_hidden_size
         mixer_embed_dim = policy_cfg.transformer_embed_dim
@@ -90,20 +91,21 @@ class Mixer(nn.Module):
             activation,
             nn.Linear(mixer_embed_dim, vae_output_dim),
         )
-        self.mlp_logvar = nn.Sequential(
-            nn.Linear(mixer_embed_dim * 2, mixer_embed_dim),
-            activation,
-            nn.Linear(mixer_embed_dim, self.len_latent)
-        )
+        if self.enable_VAE:
+            self.mlp_logvar = nn.Sequential(
+                nn.Linear(mixer_embed_dim * 2, mixer_embed_dim),
+                activation,
+                nn.Linear(mixer_embed_dim, self.len_latent)
+            )
 
-        # Ot+1 predictor
-        self.predictor = nn.Sequential(
-            nn.Linear(vae_output_dim, predictor_hidden_dim[0]),
-            activation,
-            nn.Linear(predictor_hidden_dim[0], predictor_hidden_dim[1]),
-            activation,
-            nn.Linear(predictor_hidden_dim[1], env_cfg.n_proprio)
-        )
+            # Ot+1 predictor
+            self.predictor = nn.Sequential(
+                nn.Linear(vae_output_dim, predictor_hidden_dim[0]),
+                activation,
+                nn.Linear(predictor_hidden_dim[0], predictor_hidden_dim[1]),
+                activation,
+                nn.Linear(predictor_hidden_dim[1], env_cfg.n_proprio)
+            )
 
     def inference_forward(self, scan, latent_obs):
         latent_scan = self.cnn_scan(scan)  # (1, 1, 32, 16) -> (1, embed_dim, 8, 4)
@@ -112,7 +114,9 @@ class Mixer(nn.Module):
 
         # decode the vector
         est_mu = self.mlp_mu(out)
-        return est_mu[..., :self.len_latent], est_mu[..., self.len_latent:]
+        est_latent = est_mu[..., :self.len_latent]
+        est = est_mu[..., self.len_latent:]
+        return est_latent, est
 
     def forward(self, scan, latent_obs):
         latent_scan = self.cnn_scan(scan)  # (1, 1, 32, 16) -> (1, embed_dim, 8, 4)
@@ -123,6 +127,9 @@ class Mixer(nn.Module):
         est_mu = self.mlp_mu(out)
         est_latent = est_mu[..., :self.len_latent]
         est = est_mu[..., self.len_latent:]
+
+        if not self.enable_VAE:
+            return est_latent, est
 
         est_logvar = self.mlp_logvar(out)
 
@@ -235,6 +242,8 @@ class EstimatorGRU(nn.Module):
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
+        self.enable_VAE = policy_cfg.enable_VAE
+
         self.obs_gru = ObsGRU(env_cfg, policy_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
         self.mixer = Mixer(env_cfg, policy_cfg)
@@ -321,9 +330,13 @@ class EstimatorGRU(nn.Module):
         latent_obs, _ = self.obs_gru(obs.prop_his, obs_enc_hidden)
         recon_rough, recon_refine, _ = self.reconstructor(obs.depth, latent_obs.detach(), recon_hidden)
 
-        est_latent, est, est_logvar, ot1 = gru_wrapper(self.mixer.forward, recon_refine.detach(), latent_obs)
+        if self.enable_VAE:
+            est_latent, est, est_logvar, ot1 = gru_wrapper(self.mixer.forward, recon_refine.detach(), latent_obs)
+            return recon_rough.squeeze(2), recon_refine.squeeze(2), est_latent, est, est_logvar, ot1
+        else:
+            _, est = gru_wrapper(self.mixer.forward, recon_refine.detach(), latent_obs)
+            return recon_rough.squeeze(2), recon_refine.squeeze(2), est
 
-        return recon_rough.squeeze(2), recon_refine.squeeze(2), est_latent, est, est_logvar, ot1
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)

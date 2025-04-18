@@ -129,7 +129,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         randomize_com = switch
 
         push_robots = switch
-        action_delay = False
+        action_delay = True
         add_dof_lag = False
         add_imu_lag = False
 
@@ -207,13 +207,14 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
         use_recurrent_policy = True
         enable_reconstructor = True
+        enable_VAE = True
 
         obs_gru_hidden_size = 64
         obs_gru_num_layers = 1
         recon_gru_hidden_size = 256
         recon_gru_num_layers = 2
 
-        len_latent = 128  # 16
+        len_latent = 64  # 16
         len_base_vel = 3
         len_latent_feet = 0  # 8
         len_latent_body = 0  # 16
@@ -243,7 +244,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         runner_name = 'rl_dream'  # rl, distil, mixed
         algorithm_name = 'ppo_zju_mc'
 
-        max_iterations = 10000  # number of policy updates
+        max_iterations = 100000  # number of policy updates
 
 
 # -----------------------------------------------------------------------------------------------

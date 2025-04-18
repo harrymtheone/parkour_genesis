@@ -12,13 +12,13 @@ from legged_gym.utils.helpers import get_args
 from legged_gym.utils.task_registry import TaskRegistry
 from vis import gen_info_panel
 
-slowmo = 10
+slowmo = 1
 
 
 def play(args):
     log_root = 'logs'
-    # args.simulator = SimulatorType.Genesis
-    args.simulator = SimulatorType.IsaacGym
+    args.simulator = SimulatorType.Genesis
+    # args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
 
@@ -26,7 +26,7 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = False
+    task_cfg.play.control = True
     task_cfg.env.num_envs = 3
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
@@ -89,12 +89,13 @@ def play(args):
                     hmap_refine, edge_refine = recon_refine[:, 0], recon_refine[:, 1]
 
                     if len(hmap_rough) > 0:
-                        # env.draw_hmap(hmap_rough)
-                        # env.draw_hmap(hmap_refine)
-                        # env.draw_body_edge(edge_refine)
-                        env.draw_est_hmap(est)
-
                         args.est = est[env.lookat_id, :3] / 2
+
+                        # env.draw_hmap(hmap_rough)
+                        env.draw_hmap(hmap_refine)
+                        # env.draw_body_edge(edge_refine)
+                        # env.draw_est_hmap(est)
+
             else:
                 actions = rtn
 

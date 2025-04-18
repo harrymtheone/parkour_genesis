@@ -50,6 +50,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         self.learning_rate = self.cfg.learning_rate
         self.device = device
         self.enable_reconstructor = task_cfg.policy.enable_reconstructor
+        self.enable_VAE = task_cfg.policy.enable_VAE
 
         # PPO component
         if self.enable_reconstructor:
@@ -199,13 +200,18 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             # ########################## estimation loss ##########################
             loss_est = 0
             if update_est:
-                estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss = self._compute_estimation_loss(batch)
-                loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss
+                if self.enable_VAE:
+                    estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss = self._compute_estimation_loss(batch)
+                    loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss
+                else:
+                    estimation_loss, recon_rough_loss, recon_refine_loss = self._compute_estimation_loss(batch)
+                    loss_est = estimation_loss + recon_rough_loss + recon_refine_loss
 
                 # estimation statistics
                 mean_estimation_loss += estimation_loss.item()
-                mean_prediction_loss += prediction_loss.item()
-                mean_vae_loss += vae_loss.item()
+                if self.enable_VAE:
+                    mean_prediction_loss += prediction_loss.item()
+                    mean_vae_loss += vae_loss.item()
                 mean_recon_rough_loss += recon_rough_loss.item()
                 mean_recon_refine_loss += recon_refine_loss.item()
 
@@ -357,23 +363,31 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             obs_next_batch = batch['observations_next'][:batch_size]
             mask_batch = batch['masks'][:batch_size, :, 0]
 
-            recon_rough, recon_refine, est_latent, est, est_logvar, ot1 = self.actor.reconstruct(
-                obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch)
+            if self.enable_VAE:
+                recon_rough, recon_refine, est_latent, est, est_logvar, ot1 = self.actor.reconstruct(
+                    obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch)
+
+                # Ot+1 prediction and VAE loss
+                prediction_loss = self.mse_loss(ot1[mask_batch], obs_next_batch.proprio[mask_batch])
+                vae_loss = 1 + est_logvar - est_latent.pow(2) - est_logvar.exp()
+                vae_loss = -0.5 * vae_loss[mask_batch].sum(dim=1).mean()
+
+            else:
+                recon_rough, recon_refine, est = self.actor.reconstruct(
+                    obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch)
 
             # privileged information estimation loss
             estimation_loss = self.mse_loss(est[mask_batch], obs_batch.priv_actor[mask_batch])
-
-            # Ot+1 prediction and VAE loss
-            prediction_loss = self.mse_loss(ot1[mask_batch], obs_next_batch.proprio[mask_batch])
-            vae_loss = 1 + est_logvar - est_latent.pow(2) - est_logvar.exp()
-            vae_loss = -0.5 * vae_loss[mask_batch].sum(dim=1).mean()
 
             # reconstructor loss
             scan = obs_batch.scan[mask_batch]
             recon_rough_loss = self.mse_loss(recon_rough[mask_batch], scan)
             recon_refine_loss = self.l1_loss(recon_refine[mask_batch], scan)
 
-        return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss
+        if self.enable_VAE:
+            return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss
+        else:
+            return estimation_loss, recon_rough_loss, recon_refine_loss
 
     def play_act(self, obs, **kwargs):
         if 'use_estimated_values' in kwargs:
@@ -388,25 +402,25 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         self.critic.train()
 
     def load(self, loaded_dict, load_optimizer=True):
-        try:
-            self.actor.load_state_dict(loaded_dict['actor_state_dict'])
-            self.critic.load_state_dict(loaded_dict['critic_state_dict'])
+        # try:
+        self.actor.load_state_dict(loaded_dict['actor_state_dict'])
+        self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
-            if load_optimizer:
-                self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+        if load_optimizer:
+            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
-            if not self.cfg.continue_from_last_std:
-                self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
+        if not self.cfg.continue_from_last_std:
+            self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
 
-        except RuntimeError:
-            from rsl_rl.modules.model_zju_gru import EstimatorNoRecon, EstimatorGRU
-
-            if self.enable_reconstructor:
-                self.actor = EstimatorGRU(self.task_cfg.env, self.task_cfg.policy).to(self.device)
-            else:
-                self.actor = EstimatorNoRecon(self.task_cfg.env, self.task_cfg.policy).to(self.device)
-
-            self.actor.load_state_dict(loaded_dict['actor_state_dict'])
+        # except RuntimeError:
+        #     from rsl_rl.modules.model_zju_gru import EstimatorNoRecon, EstimatorGRU
+        #
+        #     if self.enable_reconstructor:
+        #         self.actor = EstimatorGRU(self.task_cfg.env, self.task_cfg.policy).to(self.device)
+        #     else:
+        #         self.actor = EstimatorNoRecon(self.task_cfg.env, self.task_cfg.policy).to(self.device)
+        #
+        #     self.actor.load_state_dict(loaded_dict['actor_state_dict'])
 
     def save(self):
         return {
