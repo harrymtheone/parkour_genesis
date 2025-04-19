@@ -17,8 +17,8 @@ slowmo = 1
 
 def play(args):
     log_root = 'logs'
-    args.simulator = SimulatorType.Genesis
-    # args.simulator = SimulatorType.IsaacGym
+    # args.simulator = SimulatorType.Genesis
+    args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
 
@@ -26,7 +26,7 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = True
+    task_cfg.play.control = False
     task_cfg.env.num_envs = 3
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5

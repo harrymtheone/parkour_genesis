@@ -223,7 +223,7 @@ class EstimatorNoRecon(nn.Module):
 
     @property
     def entropy(self):
-        return self.distribution.entropy().sum(dim=-1)
+        return self.distribution.entropy().sum(dim=-1, keepdims=True)
 
     def reset_std(self, std, device):
         new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
@@ -351,7 +351,7 @@ class EstimatorGRU(nn.Module):
 
     @property
     def entropy(self):
-        return self.distribution.entropy().sum(dim=-1)
+        return self.distribution.entropy().sum(dim=-1, keepdim=True)
 
     def reset_std(self, std, device):
         new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
