@@ -3,6 +3,10 @@ from torch import nn
 
 
 class RecurrentModel(nn.Module):
+    state_logit: torch.Tensor
+    state_stoch: torch.Tensor
+    state_deter: torch.Tensor
+
     def __init__(self, env_cfg, train_cfg):
         super().__init__()
         self.n_stoch = 32
@@ -21,7 +25,8 @@ class RecurrentModel(nn.Module):
             nn.SiLU()
         )
 
-        self.cell = nn.GRUCell(hidden_size, n_deter)
+        # self.cell = nn.GRUCell(hidden_size, n_deter)
+        self.cell = GRUCell(hidden_size, n_deter)
 
         self.imag_out_layers = nn.Sequential(
             nn.Linear(n_deter, hidden_size, bias=False),
@@ -38,34 +43,49 @@ class RecurrentModel(nn.Module):
         self.obs_stats_layer = nn.Linear(hidden_size, self.n_stoch * self.n_discrete)
 
         # recurrent and stochastic state of world model
-        self.register_buffer('_logit', torch.zeros(env_cfg.num_envs, self.n_stoch, self.n_discrete))
-        self.register_buffer('_stoch', torch.zeros(env_cfg.num_envs, self.n_stoch, self.n_discrete))
-        self.register_buffer('_deter', torch.zeros(env_cfg.num_envs, n_deter))
-        self.model_state = {'logit': self._logit, 'stoch': self._stoch, 'deter': self._deter}
+        self.register_buffer('state_logit', torch.zeros(env_cfg.num_envs, self.n_stoch, self.n_discrete))
+        self.register_buffer('state_stoch', torch.zeros(env_cfg.num_envs, self.n_stoch, self.n_discrete))
+        self.register_buffer('state_deter', torch.zeros(env_cfg.num_envs, n_deter))
 
         if self._initial == "learned":
             self.W = nn.Parameter(torch.zeros(1, n_deter))
 
-        self.init_model_state(torch.ones(env_cfg.num_envs, dtype=torch.bool))
+        # self.init_model_state(torch.ones(env_cfg.num_envs, dtype=torch.bool))
 
-    def observation_step(self, prev_actions, ):
-        if self.wm_state is None:
-            # initialize all prev_state
-            self.wm_state = self._init_wm_state(len(is_first))
-            prev_action = torch.zeros((len(is_first), self._num_actions)).to(
-                self._device
-            )
+    def imagination_step(self, prev_actions, sample=True):
+        x = torch.cat([self.state_stoch.flatten(1), prev_actions.flatten(1)], dim=1)
+        x = self.imag_in_layers(x)
 
-        prev_state = self._init_wm_state(len(is_first))
-        prev_action = torch.zeros((len(is_first), self._num_actions)).to(
-            self._device
-        )
+        x, deter = self.cell(x, [self.state_deter])
+        self.state_deter[:] = deter[0]
+
+        x = self.imag_out_layers(x)
+
+        logits = self._suff_stats_layer("imag", x)
+
+        if sample:
+            self.state_stoch[:] = self.get_dist(logits).sample()
+        else:
+            self.state_stoch[:] = self.get_dist(logits).mode
+
+    def observation_step(self, obs_enc, sample=True):
+        x = torch.cat([self.state_deter, obs_enc], dim=-1)
+        x = self.obs_out_layers(x)
+
+        self.state_logit[:] = self._suff_stats_layer("obs", x)
+
+        if sample:
+            self.state_stoch[:] = self.get_dist(self.state_logit).sample()
+        else:
+            self.state_stoch[:] = self.get_dist(self.state_logit).mode
+
+        return self.state_deter
 
     def init_model_state(self, dones):
         if self._initial == "zeros":
-            self.model_state['logit'][dones] = 0.
-            self.model_state['stoch'][dones] = 0.
-            self.model_state['deter'][dones] = 0.
+            self.state_logit[dones] = 0.
+            self.state_stoch[dones] = 0.
+            self.state_deter[dones] = 0.
 
         elif self._initial == "learned":
             # self.model_state['deter'][dones] = torch.tanh(self.W)
@@ -75,23 +95,24 @@ class RecurrentModel(nn.Module):
             logit = x.repeat(dones.sum(), 1).unflatten(1, (self.n_stoch, self.n_discrete))
             stoch = self.get_dist(logit).mode
 
-            self.model_state['deter'][dones] = deter
-            self.model_state['stoch'][dones] = stoch
+            self.state_deter[dones] = deter
+            self.state_stoch[dones] = stoch
         else:
             raise NotImplementedError(self._initial)
 
     def get_dist(self, logit):
-        return torch.distributions.Independent(OneHotDist(logits=logit, unimix_ratio=self._unimix_ratio), 1)
+        return torch.distributions.Independent(
+            OneHotDist(logits=logit, unimix_ratio=self._unimix_ratio), 1)
 
     def _suff_stats_layer(self, name, x):
         if name == "imag":
-            x = 1
+            x = self.imag_stats_layer(x)
         elif name == "obs":
-            x = self._obs_stat_layer(x)
+            x = self.obs_stats_layer(x)
         else:
             raise NotImplementedError
-        logit = x.reshape(list(x.shape[:-1]) + [self._stoch, self._discrete])
-        return {"logit": logit}
+
+        return x.unflatten(1, (self.n_stoch, self.n_discrete))
 
 
 class OneHotDist(torch.distributions.OneHotCategorical):
@@ -121,3 +142,32 @@ class OneHotDist(torch.distributions.OneHotCategorical):
             probs = probs[None]
         sample += probs - probs.detach()
         return sample
+
+
+class GRUCell(nn.Module):
+    def __init__(self, inp_size, size, norm=True, act=torch.tanh, update_bias=-1):
+        super(GRUCell, self).__init__()
+        self._inp_size = inp_size
+        self._size = size
+        self._act = act
+        self._update_bias = update_bias
+        self.layers = nn.Sequential()
+        self.layers.add_module(
+            "GRU_linear", nn.Linear(inp_size + size, 3 * size, bias=False)
+        )
+        if norm:
+            self.layers.add_module("GRU_norm", nn.LayerNorm(3 * size, eps=1e-03))
+
+    @property
+    def state_size(self):
+        return self._size
+
+    def forward(self, inputs, state):
+        state = state[0]  # Keras wraps the state in a list.
+        parts = self.layers(torch.cat([inputs, state], -1))
+        reset, cand, update = torch.split(parts, [self._size] * 3, -1)
+        reset = torch.sigmoid(reset)
+        cand = self._act(reset * cand)
+        update = torch.sigmoid(update + self._update_bias)
+        output = update * cand + (1 - update) * state
+        return output, [output]

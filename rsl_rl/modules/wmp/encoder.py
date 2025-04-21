@@ -23,34 +23,6 @@ class WMEncoder(nn.Module):
             nn.Flatten()
         )
 
-        """
-        ConvEncoder(
-  (layers): Sequential(
-    (0): Conv2dSamePad(1, 32, kernel_size=(4, 4), stride=(2, 2), bias=False)
-    (1): ImgChLayerNorm(
-      (norm): LayerNorm((32,), eps=0.001, elementwise_affine=True)
-    )
-    (2): SiLU()
-    (3): Conv2dSamePad(32, 64, kernel_size=(4, 4), stride=(2, 2), bias=False)
-    (4): ImgChLayerNorm(
-      (norm): LayerNorm((64,), eps=0.001, elementwise_affine=True)
-    )
-    (5): SiLU()
-    (6): Conv2dSamePad(64, 128, kernel_size=(4, 4), stride=(2, 2), bias=False)
-    (7): ImgChLayerNorm(
-      (norm): LayerNorm((128,), eps=0.001, elementwise_affine=True)
-    )
-    (8): SiLU()
-    (9): Conv2dSamePad(128, 256, kernel_size=(4, 4), stride=(2, 2), bias=False)
-    (10): ImgChLayerNorm(
-      (norm): LayerNorm((256,), eps=0.001, elementwise_affine=True)
-    )
-    (11): SiLU()
-  )
-)
-        
-        """
-
         self.mlp = nn.Sequential(
             nn.Linear(33, 1024, bias=False),
             nn.LayerNorm(1024),
@@ -69,7 +41,5 @@ class WMEncoder(nn.Module):
             nn.SiLU()
         )
 
-    def forward(self, obs):
-        cnn_out = self.cnn(obs.depth)
-        mlp_out = self.mlp(obs.proprio)
-        return torch.cat([cnn_out, mlp_out], dim=-1)
+    def forward(self, depth, proprio):
+        return torch.cat([self.cnn(depth), self.mlp(proprio)], dim=-1)

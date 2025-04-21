@@ -16,19 +16,26 @@ class RSSM(nn.Module):
         self.decoder = WMDecoder(env_cfg, train_cfg)
         self.recurrent_model = RecurrentModel(env_cfg, train_cfg)
 
-        self.obs_enc = None  # features encoded by encoder
+        self.obs_enc = None  # features encoded by encoder  TODO: wm_embed
 
-    def encode(self, obs):
-        self.obs_enc = self.encoder(obs)
+    def encode(self, depth, proprio):
+        self.obs_enc = self.encoder(depth, proprio)
 
     def decode(self):
         raise NotImplementedError
 
-    def step(self):
-        pass
+    def step(self, prev_actions, dones):
+        if torch.any(dones):
+            self.recurrent_model.init_model_state(dones)
+
+        self.recurrent_model.imagination_step(prev_actions)
+        return self.recurrent_model.observation_step(self.obs_enc)
 
     def reset(self, dones):
         self.recurrent_model.init_wm_state(dones)
+
+    def get_feature(self):
+        return self.recurrent_model.state_deter
 
     def _train(self, data):
         # action (batch_size, batch_length, act_dim)

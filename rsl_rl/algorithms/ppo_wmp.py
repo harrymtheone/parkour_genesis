@@ -81,17 +81,18 @@ class PPO_WMP(BaseAlgorithm):
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
         wm_step_interval = 5
+
+        self.wm_dones = torch.ones(task_cfg.env.num_envs, dtype=torch.bool, device=self.device)
+
         # self.wm_history_buf = HistoryBuffer(task_cfg.env.num_envs, wm_step_interval, task_cfg.env.n_proprio - 3, )
+
         self.wm_action_his = HistoryBuffer(task_cfg.env.num_envs, wm_step_interval, task_cfg.env.num_actions, device=device)
 
     def act(self, obs, obs_critic, step_world_model=True, **kwargs):
         if step_world_model:
-            wm_obs = {
-                'proprio': obs.proprio[:, :-12]  # no last_actions
-            }
-
-            self.world_model.encode(obs.as_wm_obs())
-            self.world_model.step()
+            self.world_model.encode(obs.depth, obs.proprio[:, :-12])  # no last_actions
+            self.world_model.step(self.wm_action_his.get(), self.wm_dones)
+            self.wm_dones[:] = False
 
         # store observations
         self.transition.observations = obs
@@ -133,6 +134,8 @@ class PPO_WMP(BaseAlgorithm):
         self.transition.clear()
         if self.actor.is_recurrent:
             self.actor.reset(dones)
+
+        self.wm_dones[dones] = True
 
     def compute_returns(self, last_critic_obs):
         last_values = self.critic.evaluate(last_critic_obs).detach()
