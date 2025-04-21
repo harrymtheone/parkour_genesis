@@ -13,12 +13,16 @@ except ImportError:
     from torch.cuda.amp import GradScaler
 
 
-def masked_MSE(input, target, mask):
-    return ((input - target) * mask).square().mean()
+def masked_MSE(input_, target, mask):
+    return ((input_ - target) * mask).square().sum() / (input_.numel() / mask.numel() * mask.sum())
 
 
-def masked_L1(input, target, mask):
-    return ((input - target) * mask).abs().mean()
+def masked_L1(input_, target, mask):
+    return ((input_ - target) * mask).abs().sum() / (input_.numel() / mask.numel() * mask.sum())
+
+
+def masked_mean(input_, mask):
+    return (input_ * mask).sum() / (input_.numel() / mask.numel() * mask.sum())
 
 
 class Transition:
@@ -312,8 +316,8 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
                 kl_mean = kl_divergence(
                     Normal(batch['action_mean'], batch['action_sigma']),
                     Normal(self.actor.action_mean, self.actor.action_std)
-                )
-                kl_mean = (kl_mean * mask_batch).sum(dim=2).mean()
+                ).sum(dim=2, keepdim=True)
+                kl_mean = masked_mean(kl_mean, mask_batch)
 
             actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
             evaluation_default = self.critic['default'].evaluate(critic_obs_batch)
@@ -323,7 +327,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
             surrogate = -advantages_batch * ratio
             surrogate_clipped = -advantages_batch * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
-            surrogate_loss = (torch.maximum(surrogate, surrogate_clipped) * mask_batch).mean()
+            surrogate_loss = masked_mean(torch.maximum(surrogate, surrogate_clipped), mask_batch)
 
             # Value function loss
             if self.cfg.use_clipped_value_loss:
@@ -331,19 +335,19 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
                         evaluation_default - default_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
                 value_losses_default = (evaluation_default - default_returns_batch).square()
                 value_losses_clipped_default = (value_clipped_default - default_returns_batch).square()
-                value_losses_default = (torch.max(value_losses_default, value_losses_clipped_default) * mask_batch).mean()
+                value_losses_default = masked_mean(torch.maximum(value_losses_default, value_losses_clipped_default), mask_batch)
 
                 value_clipped_contact = contact_values_batch + (
                         evaluation_contact - contact_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
                 value_losses_contact = (evaluation_contact - contact_returns_batch).square()
                 value_losses_clipped_contact = (value_clipped_contact - contact_returns_batch).square()
-                value_losses_contact = (torch.max(value_losses_contact, value_losses_clipped_contact) * mask_batch).mean()
+                value_losses_contact = masked_mean(torch.max(value_losses_contact, value_losses_clipped_contact), mask_batch)
             else:
                 value_losses_default = masked_MSE(evaluation_default, default_returns_batch, mask_batch)
                 value_losses_contact = masked_MSE(evaluation_contact, contact_returns_batch, mask_batch)
 
             # Entropy loss
-            entropy_loss = self.cfg.entropy_coef * (self.actor.entropy * mask_batch).mean()
+            entropy_loss = self.cfg.entropy_coef * masked_mean(self.actor.entropy, mask_batch)
 
             # Symmetry loss
             batch_size = 4
@@ -370,7 +374,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'][:batch_size].contiguous()
             recon_hidden_states_batch = batch['recon_hidden_states'][:batch_size].contiguous()
             obs_next_batch = batch['observations_next'][:batch_size]
-            mask_batch = batch['masks'][:batch_size, :]
+            mask_batch = batch['masks'][:batch_size]
 
             if self.enable_VAE:
                 recon_rough, recon_refine, est_latent, est, est_logvar, ot1 = self.actor.reconstruct(
@@ -378,8 +382,8 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
                 # Ot+1 prediction and VAE loss
                 prediction_loss = masked_MSE(ot1, obs_next_batch.proprio, mask_batch)
-                vae_loss = 1 + est_logvar - est_latent.pow(2) - est_logvar.exp()
-                vae_loss = -0.5 * (vae_loss * mask_batch).sum(dim=1).mean()
+                vae_loss = (1 + est_logvar - est_latent.pow(2) - est_logvar.exp()).sum(dim=2, keepdims=True)
+                vae_loss = -0.5 * masked_mean(vae_loss, mask_batch)
 
             else:
                 recon_rough, recon_refine, est = self.actor.reconstruct(
