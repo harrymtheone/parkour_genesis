@@ -98,9 +98,6 @@ class BaseWrapper:
     def create_indices(self, names, is_link):
         raise NotImplementedError
 
-    def render(self):
-        raise NotImplementedError
-
     @property
     def dof_names(self):
         return self._dof_names
@@ -152,6 +149,22 @@ class BaseWrapper:
 
     @property
     def contact_forces(self):
+        raise NotImplementedError
+
+    # ------------------------------------------------- Graphics Interface -------------------------------------------------
+    def render(self):
+        raise NotImplementedError
+
+    def clear_debug_lines(self):
+        raise NotImplementedError
+
+    def lookat(self, i):
+        raise NotImplementedError
+
+    def draw_points(self, points, radius=0.02, color=(0, 1, 0), sphere_lines=4, z_shift=0.02):
+        raise NotImplementedError
+
+    def render_camera(self, depth_tensor):
         raise NotImplementedError
 
     # ------------------------------------------------- Utils -------------------------------------------------

@@ -11,7 +11,7 @@ from tqdm import tqdm
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.simulator.base_wrapper import BaseWrapper, DriveMode
 from legged_gym.utils.helpers import class_to_dict
-from legged_gym.utils.math import transform_by_quat, transform_by_trans_quat
+from legged_gym.utils.math import transform_by_quat
 from legged_gym.utils.terrain import Terrain
 
 
@@ -509,8 +509,10 @@ class IsaacGymWrapper(BaseWrapper):
             look_at_pos = self._root_state[self.lookat_id, :3].clone()
             self.lookat_vec = cam_trans - look_at_pos
 
-    def clear_debug_lines(self):
-        if self.clear_lines:
+    def refresh_graphics(self, clear_lines):
+        self.render()
+
+        if clear_lines and self.clear_lines:
             self.gym.clear_lines(self.viewer)
 
     def lookat(self, i):

@@ -207,7 +207,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
         use_recurrent_policy = True
         enable_reconstructor = True
-        enable_VAE = False
+        enable_VAE = True
 
         obs_gru_hidden_size = 64
         obs_gru_num_layers = 1

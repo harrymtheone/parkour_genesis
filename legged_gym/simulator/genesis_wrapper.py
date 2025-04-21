@@ -37,6 +37,7 @@ class GenesisWrapper(BaseWrapper):
             self.lookat_vec = np.array([-0, 2, 1])
             self.last_lookat_pos = np.array([0, 0, 0])
             self.vis_tasks = []
+            self.clear_lines = True
 
         self.lookat_id = 0
 
@@ -400,9 +401,6 @@ class GenesisWrapper(BaseWrapper):
 
     # ------------------------------------------------ Graphics ------------------------------------------------
 
-    def _visualization(self):
-        pass
-
     def render(self):
         if not self.free_cam:
             self.lookat(self.lookat_id)
@@ -414,6 +412,9 @@ class GenesisWrapper(BaseWrapper):
             self.viewer.update()
 
         self.last_lookat_pos = self._robot.get_pos()[self.lookat_id].cpu().numpy()
+
+    def refresh_graphics(self, clear_lines):
+        pass
 
     def lookat(self, i):
         self.lookat_id = i % self.num_envs
@@ -438,9 +439,8 @@ class GenesisWrapper(BaseWrapper):
 
         points[:, 2] += z_shift
 
-        self.vis_tasks.append((self._scene.draw_debug_spheres, points, radius, (*color, 0.5)))
+        self.vis_tasks.append((points, radius, (*color, 0.5)))
 
     def _render_vis_tasks(self):
         while len(self.vis_tasks) > 0:
-            vis_task = self.vis_tasks.pop(0)
-            vis_task[0](*vis_task[1:])
+            self._scene.draw_debug_spheres(*self.vis_tasks.pop(0))

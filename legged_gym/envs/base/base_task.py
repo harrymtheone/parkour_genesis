@@ -424,10 +424,7 @@ class BaseTask:
         self.sim.render()
 
     def refresh_graphics(self, clear_lines):
-        self.sim.render()
-
-        if clear_lines:
-            self.sim.clear_debug_lines()
+        self.sim.refresh_graphics(clear_lines)
 
     # ---------------------------------------------- Robots Reset ----------------------------------------------
 
