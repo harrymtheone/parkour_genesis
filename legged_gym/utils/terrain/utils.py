@@ -1,4 +1,3 @@
-import noise
 import numpy as np
 
 
@@ -118,6 +117,7 @@ def generate_fractal_noise_2d(terrain_shape, horizontal_scale, difficulty, scale
     Returns:
         np.ndarray: The generated fractal noise array.
     """
+    import noise
     height, width = terrain_shape
     x, y = np.meshgrid(np.arange(width), np.arange(height))
     noise_array = np.zeros((height, width))

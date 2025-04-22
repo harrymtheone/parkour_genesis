@@ -4,6 +4,7 @@ from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.model_zju_exp import EstimatorNoRecon, EstimatorGRU
 from rsl_rl.modules.utils import UniversalCritic
+# from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from rsl_rl.storage import RolloutStorage
 from .alg_base import BaseAlgorithm
 
@@ -289,7 +290,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         return return_dict
 
-    @torch.compile
+    # @torch.compile
     def _compute_policy_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
@@ -365,16 +366,16 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
             return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
 
-    @torch.compile
+    # @torch.compile
     def _compute_estimation_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            batch_size = 4
+            batch_size = 128
 
-            obs_batch = batch['observations'][:batch_size]
-            obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'][:batch_size].contiguous()
-            recon_hidden_states_batch = batch['recon_hidden_states'][:batch_size].contiguous()
-            obs_next_batch = batch['observations_next'][:batch_size]
-            mask_batch = batch['masks'][:batch_size]
+            obs_batch = batch['observations'][:, :batch_size]
+            obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'][:, :batch_size].contiguous()
+            recon_hidden_states_batch = batch['recon_hidden_states'][:, :batch_size].contiguous()
+            obs_next_batch = batch['observations_next'][:, :batch_size]
+            mask_batch = batch['masks'][:, :batch_size]
 
             if self.enable_VAE:
                 recon_rough, recon_refine, est_latent, est, est_logvar, ot1 = self.actor.reconstruct(

@@ -78,7 +78,7 @@ class RolloutStorageMultiCritic:
         self.num_envs = num_envs
 
         self.storage = {}
-        self.returns_default = torch.zeros(n_trans_per_env, num_envs, 1, device=self.device)
+        self.returns = torch.zeros(n_trans_per_env, num_envs, 1, device=self.device)
         self.returns_contact = torch.zeros(n_trans_per_env, num_envs, 1, device=self.device)
         self.advantages = torch.zeros(n_trans_per_env, num_envs, 1, device=self.device)
 
@@ -126,41 +126,41 @@ class RolloutStorageMultiCritic:
     def clear(self):
         self.step = 0
 
-    def compute_returns(self, last_values_default, last_values_contact, gamma, lam):
-        advantage_default = advantage_contact = 0
+    def compute_returns(self, last_values, last_values_contact, gamma, lam):
+        advantage = advantage_contact = 0
         dones_buf = self.storage['dones'].buf.float()
-        rewards_default_buf = self.storage['rewards_default'].buf
+        rewards_buf = self.storage['rewards'].buf
         rewards_contact_buf = self.storage['rewards_contact'].buf
 
-        values_default_buf = self.storage['values_default'].buf
+        values_buf = self.storage['values'].buf
         values_contact_buf = self.storage['values_contact'].buf
-        w_default, w_contact = 1., 0.25
+        w, w_contact = 1., 0.25
 
         for step in reversed(range(self.num_transitions_per_env)):
             if step == self.num_transitions_per_env - 1:
-                next_values_default = last_values_default
+                next_values = last_values
                 next_values_contact = last_values_contact
             else:
-                next_values_default = self.storage['values_default'].get(step + 1)
+                next_values = self.storage['values'].get(step + 1)
                 next_values_contact = self.storage['values_contact'].get(step + 1)
 
             next_is_not_terminal = 1.0 - dones_buf[step]
-            delta_default = rewards_default_buf[step] + next_is_not_terminal * gamma * next_values_default - values_default_buf[step]
-            advantage_default = delta_default + next_is_not_terminal * gamma * lam * advantage_default
-            self.returns_default[step] = advantage_default + values_default_buf[step]
+            delta = rewards_buf[step] + next_is_not_terminal * gamma * next_values - values_buf[step]
+            advantage = delta + next_is_not_terminal * gamma * lam * advantage
+            self.returns[step] = advantage + values_buf[step]
 
             delta_contact = rewards_contact_buf[step] + next_is_not_terminal * gamma * next_values_contact - values_contact_buf[step]
             advantage_contact = delta_contact + next_is_not_terminal * gamma * lam * advantage_contact
             self.returns_contact[step] = advantage_contact + values_contact_buf[step]
 
         # Compute and normalize the advantages
-        advantages_default = self.returns_default - values_default_buf
-        advantages_default[:] = (advantages_default - advantages_default.mean()) / (advantages_default.std() + 1e-8)
+        advantages = self.returns - values_buf
+        advantages[:] = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         advantages_contact = self.returns_contact - values_contact_buf
         advantages_contact[:] = (advantages_contact - advantages_contact.mean()) / (advantages_contact.std() + 1e-8)
 
-        self.advantages[:] = w_default * advantages_default + w_contact * advantages_contact
+        self.advantages[:] = w * advantages + w_contact * advantages_contact
 
     def mini_batch_generator(self, num_mini_batches, num_epochs=8):
         if self.step < self.num_transitions_per_env - 1:
@@ -170,7 +170,7 @@ class RolloutStorageMultiCritic:
         mini_batch_size = batch_size // num_mini_batches
         indices = torch.randperm(batch_size)
 
-        returns_default = self.returns_default.flatten(0, 1)
+        returns = self.returns.flatten(0, 1)
         returns_contact = self.returns_contact.flatten(0, 1)
         advantages = self.advantages.flatten(0, 1)
 
@@ -181,7 +181,7 @@ class RolloutStorageMultiCritic:
                 batch_idx = indices[start:end]
 
                 batch_dict = {n: v.flatten_get(batch_idx) for n, v in self.storage.items()}
-                batch_dict['returns_default'] = returns_default[batch_idx]
+                batch_dict['returns'] = returns[batch_idx]
                 batch_dict['returns_contact'] = returns_contact[batch_idx]
                 batch_dict['advantages'] = advantages[batch_idx]
 
@@ -201,7 +201,7 @@ class RolloutStorageMultiCritic:
                 for n, v in self.storage.items():
                     batch_dict[n] = v.get((slice(None), slice(start, stop)))
 
-                batch_dict['returns_default'] = self.returns_default[:, start: stop]
+                batch_dict['returns'] = self.returns[:, start: stop]
                 batch_dict['returns_contact'] = self.returns_contact[:, start: stop]
                 batch_dict['advantages'] = self.advantages[:, start: stop]
 

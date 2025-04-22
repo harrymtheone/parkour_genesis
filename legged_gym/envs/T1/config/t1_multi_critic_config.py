@@ -226,8 +226,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 4
-        num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
+        num_learning_epochs = 5
+        num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
         gamma = 0.99
@@ -313,7 +313,7 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
         enable_reconstructor = True
 
     class algorithm(T1_Multi_Critic_Cfg.algorithm):
-        entropy_coef = 0.008
+        entropy_coef = 0.01
 
         continue_from_last_std = False
         init_noise_std = 0.6

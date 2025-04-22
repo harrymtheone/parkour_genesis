@@ -16,7 +16,7 @@ class RSSM(nn.Module):
         self.decoder = WMDecoder(env_cfg, train_cfg)
         self.recurrent_model = RecurrentModel(env_cfg, train_cfg)
 
-        self.obs_enc = None  # features encoded by encoder  TODO: wm_embed
+        self.obs_enc = None  # features encoded by encoder
 
     def encode(self, depth, proprio):
         self.obs_enc = self.encoder(depth, proprio)

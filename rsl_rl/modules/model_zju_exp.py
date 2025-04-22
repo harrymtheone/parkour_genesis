@@ -337,7 +337,6 @@ class EstimatorGRU(nn.Module):
             _, est = gru_wrapper(self.mixer.forward, recon_refine.detach(), latent_obs)
             return recon_rough.squeeze(2), recon_refine.squeeze(2), est
 
-
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
 
