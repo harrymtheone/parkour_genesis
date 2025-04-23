@@ -450,20 +450,23 @@ class ParkourTask(BaseTask):
         height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
         self.pending_vis_task.append(dict(points=height_points, color=color))
 
-    def draw_edge_mask(self, edge_mask):
-        edge_mask = edge_mask.clone()
-        edge_mask[edge_mask < 0.5] = 0
-        edge_mask[edge_mask >= 0.5] = 1
+    def draw_recon(self, recon, edge_thresh=0.999):
+        if recon.size(1) == 2:
+            hmap, edge_mask = recon[:, 0], recon[:, 1]
+        else:
+            self.draw_hmap(recon)
+            return
 
+        hmap = hmap[self.lookat_id].flatten().cpu().numpy()
         base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
         yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
-        edge_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
-        edge_points[:, :2] += base_pos[None, :2]
-        edge_points[:, 2] = self.scan_hmap[self.lookat_id]
+        height_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
+        height_points[:, :2] += base_pos[None, :2]
+        height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
 
         edge_mask = edge_mask[self.lookat_id].flatten().cpu().numpy()
-        edge_pts = edge_points[edge_mask == 1]
-        non_edge_pts = edge_points[edge_mask == 0]
+        edge_pts = height_points[edge_mask >= 0.5]
+        non_edge_pts = height_points[edge_mask < 0.5]
 
         self.pending_vis_task.append(dict(points=edge_pts, color=(1, 0, 0)))
         self.pending_vis_task.append(dict(points=non_edge_pts, color=(0, 1, 0)))

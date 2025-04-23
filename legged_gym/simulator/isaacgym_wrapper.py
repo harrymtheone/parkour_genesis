@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 import torch
-from isaacgym import gymapi, gymutil, gymtorch, terrain_utils
+from isaacgym import gymapi, gymutil, gymtorch
 from tqdm import tqdm
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
@@ -80,7 +80,7 @@ class IsaacGymWrapper(BaseWrapper):
         print("*" * 80)
         print("Start creating ground...")
         if mesh_type in ['heightfield', 'trimesh']:
-            self.terrain = Terrain(self.cfg.terrain, terrain_utils)
+            self.terrain = Terrain(self.cfg.terrain)
         else:
             self.terrain = None
 

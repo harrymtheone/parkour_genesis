@@ -26,7 +26,7 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = False
+    task_cfg.play.control = True
     task_cfg.env.num_envs = 3
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
@@ -38,9 +38,9 @@ def play(args):
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
-    task_cfg.domain_rand.action_delay = False
+    task_cfg.domain_rand.action_delay = True
     task_cfg.domain_rand.action_delay_range = [(10, 10)]
-    task_cfg.domain_rand.push_robots = False
+    task_cfg.domain_rand.push_robots = True
     task_cfg.domain_rand.push_duration = [0.15]
     # task_cfg.domain_rand.push_interval_s = 6
 
@@ -85,14 +85,12 @@ def play(args):
                     actions, _ = rtn
                 elif len(rtn) == 4:
                     actions, recon_rough, recon_refine, est = rtn
-                    hmap_rough, edge_rough = recon_rough[:, 0], recon_rough[:, 1]
-                    hmap_refine, edge_refine = recon_refine[:, 0], recon_refine[:, 1]
 
-                    if len(hmap_rough) > 0:
+                    if len(recon_rough) > 0:
                         args.est = est[env.lookat_id, :3] / 2
 
-                        # env.draw_hmap(hmap_rough)
-                        env.draw_hmap(hmap_refine)
+                        # env.draw_recon(recon_refine)
+                        env.draw_recon(recon_refine)
                         # env.draw_body_edge(edge_refine)
                         # env.draw_est_hmap(est)
 

@@ -70,7 +70,7 @@ def get_load_path(root, checkpoint, model_name_starts_with="model"):
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description="RL Policy")
+    parser = argparse.ArgumentParser(description="BridgeDP RL framework")
     parser.add_argument("--proj_name", type=str, required=True)
 
     parser.add_argument("--task", type=str, required=True)

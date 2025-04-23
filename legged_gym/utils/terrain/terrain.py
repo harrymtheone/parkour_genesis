@@ -23,9 +23,8 @@ class Terrain:
         parkour_stair = 12
         parkour_flat = 13
 
-    def __init__(self, cfg, terrain_utils):
+    def __init__(self, cfg):
         self.cfg = cfg
-        self.terrain_utils = terrain_utils
 
         if cfg.description_type in ["none", 'plane']:
             return
@@ -203,11 +202,13 @@ class Terrain:
             num_rectangles = 20
             rectangle_min_size = 1.
             rectangle_max_size = 2.
+            raise NotImplementedError
             self.terrain_utils.discrete_obstacles_terrain(terrain, discrete_obstacles_height, rectangle_min_size,
                                                           rectangle_max_size, num_rectangles, platform_size=3.)
 
         elif choice < self.proportions[5]:
             terrain.terrain_type = Terrain.terrain_type.stepping_stone
+            raise NotImplementedError
             self.terrain_utils.stepping_stones_terrain(terrain, stone_size=stepping_stones_size,
                                                        stone_distance=stone_distance, max_height=0., platform_size=4.)
 

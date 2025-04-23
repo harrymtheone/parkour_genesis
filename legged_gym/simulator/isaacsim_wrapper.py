@@ -1,7 +1,10 @@
 import os
 
+import torch
+
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from .base_wrapper import BaseWrapper, DriveMode
+from ..utils.terrain import Terrain
 
 
 class IsaacSimWrapper(BaseWrapper):
@@ -74,47 +77,158 @@ class IsaacSimWrapper(BaseWrapper):
 
         # generate scene
         with utils.Timer("[INFO]: Time taken for scene creation", "scene_creation"):
-            self.scene = scene.InteractiveScene(scene.InteractiveSceneCfg(
+            scene_cfg = scene.InteractiveSceneCfg(
                 num_envs=self.cfg.env.num_envs,
                 env_spacing=self.cfg.env.env_spacing,
                 lazy_sensor_update=True,
                 replicate_physics=True,
                 filter_collisions=True,
-            ))
-            self._setup_scene()
+            )
+
+            self._setup_scene(scene_cfg)
+            self._setup_robot(scene_cfg)
+            self.scene = scene.InteractiveScene(scene_cfg)
+
+            print("[INFO]: Setup complete...")
+            self.sim.reset()
+
+            sim_dt = self.sim.get_physics_dt()
+            import time
+            robot = self.scene["robot"]
+            while self.simulation_app.is_running():
+                time_start = time.time()
+
+                efforts = torch.randn_like(robot.data.joint_pos) * 5.0
+                robot.set_joint_effort_target(efforts)
+                robot.write_data_to_sim()
+
+                self.sim.step()
+                self.scene.update(sim_dt)
+
+                while time.time() - time_start < sim_dt * 1:
+                    self.sim.render()
+
         print("[INFO]: Scene manager: ", self.scene)
 
-    def _setup_scene(self):
+    def _setup_scene(self, scene_cfg):
+        from isaaclab import sim as sim_utils
+        from isaaclab import assets
+
+        # add lights
+        scene_cfg.dome_light = assets.AssetBaseCfg(
+            prim_path="/World/DomeLight",
+            spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
+        )
+
+        # add terrain
+        mesh_type = self.cfg.terrain.description_type
+        print("*" * 80)
+        if mesh_type in ['heightfield', 'trimesh']:
+            self.terrain = Terrain(self.cfg.terrain)
+        else:
+            self.terrain = None
+
+        # if mesh_type == 'plane':
+        scene_cfg.ground = self._create_ground_plane()  # TODO: fix here
+        # elif mesh_type == 'heightfield':
+        #     self._create_heightfield()
+        # elif mesh_type == 'trimesh':
+        #     self._create_trimesh()
+        # elif mesh_type is not None:
+        #     raise ValueError("Terrain mesh type not recognised. Allowed types are [None, plane, heightfield, trimesh]")
+        print("*" * 80)
+
+    def _create_ground_plane(self):
+        from isaaclab import sim as sim_utils
+        from isaaclab import assets
+        terrain_cfg = self.cfg.terrain
+
+        # Ground-plane
+        cfg_ground = sim_utils.GroundPlaneCfg(
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                static_friction=terrain_cfg.static_friction,
+                dynamic_friction=terrain_cfg.dynamic_friction,
+                restitution=terrain_cfg.restitution,
+            )
+        )
+        return assets.AssetBaseCfg(prim_path="/World/GroundPlane", spawn=cfg_ground)
+
+    def _setup_robot(self, scene_cfg):
+        from isaaclab import sim as sim_utils
+        from isaaclab import assets
+        from isaaclab import actuators
+
         asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
         asset_root = os.path.dirname(asset_path)
 
-        spawn = sim_utils.UsdFileCfg(
-            usd_path=os.path.join(asset_root, asset_path),
-            activate_contact_sensors=True,
+        # If the provide asset_path is a URDF file, find the USD file under the asset_root directory
+        if asset_path.endswith('.urdf'):
+            asset_root = os.path.join(asset_root, 'usd')
+
+            if os.path.exists(asset_root):
+                import carb
+                carb.log_warn(f'URDF asset is not supported by IsaacSim, loading USD files from {asset_root}')
+            else:
+                raise NotImplementedError('URDF asset is not supported by IsaacSim, please convert it to USD first!')
+
+            from pathlib import Path
+            directory = Path(asset_root)  # Replace with your actual directory path
+            asset_path = next(directory.glob('*.usd'), None).as_posix()
+
+        asset_cfg = self.cfg.asset
+        physx_cfg = self.cfg.sim.physx
+        robot_usd_cfg = sim_utils.UsdFileCfg(
+            usd_path=asset_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                disable_gravity=False,
-                retain_accelerations=False,
-                linear_damping=0.0,
-                angular_damping=0.0,
-                max_linear_velocity=1000.0,
-                max_angular_velocity=1000.0,
-                max_depenetration_velocity=1.0,
+                disable_gravity=asset_cfg.disable_gravity,
+                linear_damping=asset_cfg.linear_damping,
+                angular_damping=asset_cfg.angular_damping,
+                max_linear_velocity=asset_cfg.max_linear_velocity,
+                max_angular_velocity=asset_cfg.max_angular_velocity,
+                max_depenetration_velocity=physx_cfg.max_depenetration_velocity,
+                retain_accelerations=False,  # TODO: what does this do?
             ),
+            activate_contact_sensors=True,  # TODO: Do we need it here? "Activate contact reporting on all rigid bodies. Defaults to False."
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=False, solver_position_iteration_count=4, solver_velocity_iteration_count=0
+                enabled_self_collisions=asset_cfg.self_collisions == 0,
+                solver_position_iteration_count=physx_cfg.num_position_iterations,
+                solver_velocity_iteration_count=physx_cfg.num_velocity_iterations
             ),
+        )
+        default_joint_angles = self.cfg.init_state.default_joint_angles
+        init_state = assets.ArticulationCfg.InitialStateCfg(
+            lin_vel=tuple(self.cfg.init_state.lin_vel),
+            ang_vel=tuple(self.cfg.init_state.ang_vel),
+            joint_pos={j_name: j_angle for j_name, j_angle in default_joint_angles.items()},
+            joint_vel={".*": 0.0},
+            pos=tuple(self.cfg.init_state.pos),
+            rot=tuple([self.cfg.init_state.rot[3], *self.cfg.init_state.rot[:3]]),  # (x,y,z,w) to (w,x,y,z)
         )
 
-        # prepare to override the articulation configuration in RoboVerse/humanoidverse/simulator/isaacsim_articulation_cfg.py
-        default_joint_angles = copy.deepcopy(self.robot_config.init_state.default_joint_angles)
-        # import ipdb; ipdb.set_trace()
-        init_state = ArticulationCfg.InitialStateCfg(
-            pos=tuple(self.robot_config.init_state.pos),
-            joint_pos={
-                joint_name: joint_angle for joint_name, joint_angle in default_joint_angles.items()
-            },
-            joint_vel={".*": 0.0},
+        """
+        See the following link for details
+        https://isaac-sim.github.io/IsaacLab/main/source/how-to/write_articulation_cfg.html#howto-write-articulation-config
+        """
+        actuators = {
+            f'all_actuator': actuators.IdealPDActuatorCfg(
+                joint_names_expr=['.*'],
+                # effort_limit=?,  # load from USD file
+                # velocity_limit=?,  # load from USD file
+                stiffness=self.cfg.asset.stiffness,
+                damping=self.cfg.asset.angular_damping,  # TODO: what about prismatic joint?
+                armature=self.cfg.asset.armature,
+                friction=self.cfg.asset.friction,
+            )
+        }
+
+        scene_cfg.robot = assets.ArticulationCfg(
+            prim_path="/World/envs/env_.*/Robot",
+            spawn=robot_usd_cfg,
+            init_state=init_state,
+            actuators=actuators,
         )
+
+        return
 
         dof_names_list = copy.deepcopy(self.robot_config.dof_names)
         # for i, name in enumerate(dof_names_list):
@@ -139,17 +253,6 @@ class IsaacSimWrapper(BaseWrapper):
                     print(f"key: {key}, kp: {stiffness_dict[key]}, kd: {damping_dict[key]}")
 
         # ImplicitActuatorCfg IdealPDActuatorCfg
-        actuators = {
-            dof_names_list[i]: IdealPDActuatorCfg(
-                joint_names_expr=[dof_names_list[i]],
-                effort_limit=dof_effort_limit_list[i],
-                velocity_limit=dof_vel_limit_list[i],
-                stiffness=0,
-                damping=0,
-                armature=dof_armature_list[i],
-                friction=dof_joint_friction_list[i],
-            ) for i in range(len(dof_names_list))
-        }
 
         robot_articulation_config = ARTICULATION_CFG.replace(prim_path="/World/envs/env_.*/Robot", spawn=spawn, init_state=init_state,
                                                              actuators=actuators)

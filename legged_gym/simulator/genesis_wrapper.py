@@ -3,7 +3,6 @@ import os
 import genesis as gs
 import numpy as np
 import torch
-from genesis.ext.isaacgym import terrain_utils
 from rich import print
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
@@ -115,7 +114,7 @@ class GenesisWrapper(BaseWrapper):
             # TODO: maybe remove this in later release of Genesis?
             self.cfg.terrain.num_cols = 3 * sum(self.cfg.terrain.terrain_dict.values())
 
-            self.terrain = Terrain(self.cfg.terrain, terrain_utils)
+            self.terrain = Terrain(self.cfg.terrain)
         else:
             self.terrain = None
 

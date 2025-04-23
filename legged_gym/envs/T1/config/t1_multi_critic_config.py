@@ -252,41 +252,12 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 # -----------------------------------------------------------------------------------------------
 
 class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
-    class env(T1_Multi_Critic_Cfg.env):
-        class obs:
-            proprio = 50
-            prop_his = (10, 50)
-            depth = (2, *reversed(DEPTH_RESIZED))
-            priv_actor = 27
-            scan = (2, 32, 16)
-
-    class sensors(T1_Multi_Critic_Cfg.sensors):
-        activated = True
-
     class domain_rand(T1_Multi_Critic_Cfg.domain_rand):
         push_robots = True
         push_duration = [0.15]
 
         action_delay = True
-        action_delay_range = [(5, 20)]
-
-    class rewards(T1_Multi_Critic_Cfg.rewards):
-        class scales(T1_Multi_Critic_Cfg.rewards.scales):
-            # gait
-            joint_pos = 2.
-
-            feet_distance = 0.2
-            knee_distance = 0.2
-            feet_rotation = 0.5
-
-            # contact
-            feet_contact_forces = -0.005
-            feet_stumble = -1.0
-            # feet_edge = -0.5
-            foothold = -1.
-
-            # base pos
-            default_joint_pos = 1.0
+        action_delay_range = [(5, 5)]
 
     class terrain(T1_Multi_Critic_Cfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
@@ -309,9 +280,6 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             'parkour_flat': 0,
         }
 
-    class policy(T1_Multi_Critic_Cfg.policy):
-        enable_reconstructor = True
-
     class algorithm(T1_Multi_Critic_Cfg.algorithm):
         entropy_coef = 0.01
 
@@ -319,7 +287,7 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
         init_noise_std = 0.6
 
     class runner(T1_Multi_Critic_Cfg.runner):
-        max_iterations = 50000  # number of policy updates
+        max_iterations = 100000  # number of policy updates
 
 
 # -----------------------------------------------------------------------------------------------
