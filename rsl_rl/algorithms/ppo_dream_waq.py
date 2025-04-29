@@ -49,6 +49,7 @@ class PPODreamWaQ(BaseAlgorithm):
             self.actor = ActorGRU(task_cfg.env, task_cfg.policy).to(self.device)
         else:
             self.actor = Actor(task_cfg.env, task_cfg.policy).to(self.device)
+        self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
 
         self.critic = Critic(task_cfg.env, task_cfg.policy).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)

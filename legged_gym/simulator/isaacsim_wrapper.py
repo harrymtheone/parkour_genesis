@@ -19,8 +19,9 @@ class IsaacSimWrapper(BaseWrapper):
         self.simulation_app = app_launcher.app
 
         self._create_sim()
+        self._process_robot_props()
+        self._domain_rand()
 
-        raise NotImplementedError
         self.init_done = True
 
     def _create_sim(self):
@@ -87,28 +88,27 @@ class IsaacSimWrapper(BaseWrapper):
 
             self._setup_scene(scene_cfg)
             self._setup_robot(scene_cfg)
-            self.scene = scene.InteractiveScene(scene_cfg)
-
-            print("[INFO]: Setup complete...")
+            self._scene = scene.InteractiveScene(scene_cfg)
+            self._robot = self._scene["robot"]
+            self._contact_sensor = self._scene["contact_sensor"]
             self.sim.reset()
+            print("[INFO]: Setup complete...")
 
-            sim_dt = self.sim.get_physics_dt()
-            import time
-            robot = self.scene["robot"]
-            while self.simulation_app.is_running():
-                time_start = time.time()
+            # self.sim.reset()
+            # sim_dt = self.sim.get_physics_dt()
+            # import time
+            # while self.simulation_app.is_running():
+            #     time_start = time.time()
+            #
+            #     efforts = torch.randn_like(robot.data.joint_pos) * 5.0
+            #     robot.set_joint_effort_target(efforts)
+            #     robot.write_data_to_sim()
+            #     self.sim.step()
+            #     self.scene.update(sim_dt)
+            #     while time.time() - time_start < sim_dt * 1:
+            #         self.sim.render()
 
-                efforts = torch.randn_like(robot.data.joint_pos) * 5.0
-                robot.set_joint_effort_target(efforts)
-                robot.write_data_to_sim()
-
-                self.sim.step()
-                self.scene.update(sim_dt)
-
-                while time.time() - time_start < sim_dt * 1:
-                    self.sim.render()
-
-        print("[INFO]: Scene manager: ", self.scene)
+        print("[INFO]: Scene manager: ", self._scene)
 
     def _setup_scene(self, scene_cfg):
         from isaaclab import sim as sim_utils
@@ -155,8 +155,7 @@ class IsaacSimWrapper(BaseWrapper):
 
     def _setup_robot(self, scene_cfg):
         from isaaclab import sim as sim_utils
-        from isaaclab import assets
-        from isaaclab import actuators
+        from isaaclab import assets, actuators, sensors
 
         asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
         asset_root = os.path.dirname(asset_path)
@@ -226,6 +225,10 @@ class IsaacSimWrapper(BaseWrapper):
             spawn=robot_usd_cfg,
             init_state=init_state,
             actuators=actuators,
+        )
+
+        scene_cfg.contact_sensor = sensors.ContactSensorCfg(
+            prim_path="/World/envs/env_.*/Robot/.*", history_length=3, update_period=0.005, track_air_time=True
         )
 
         return
@@ -367,3 +370,289 @@ class IsaacSimWrapper(BaseWrapper):
             color=(0.98, 0.95, 0.88),
         )
         light_config1.func("/World/DomeLight", light_config1, translation=(1, 0, 10))
+
+    def _process_robot_props(self):
+        self._body_names = self._robot.body_names
+        self.num_bodies = len(self._body_names)
+
+        self.num_dof = len(self._robot.joint_names)
+        self._dof_names = self._robot.joint_names
+        self.dof_pos_limits = self._robot.data.joint_pos_limits[0]  # original (n_envs, n_joints, 2), slice the first env
+
+    def create_indices(self, names, is_link):
+        indices = self._zero_tensor(len(names), dtype=torch.long)
+
+        for i, n in enumerate(names):
+            if is_link:
+                for body_i, body_n in enumerate(self._body_names):
+                    if n == body_n:
+                        indices[i] = body_i
+                        break
+
+                if n != body_n:
+                    raise ValueError(f"link name \"{n}\" not found in self._body_names")
+
+            else:
+                for dof_i, dof_n in enumerate(self._dof_names):
+                    if n == dof_n:
+                        indices[i] = dof_i
+                        break
+
+                if n != dof_n:
+                    raise ValueError(f"dof name \"{n}\" not found in self._dof_names")
+
+        return indices
+
+    def _domain_rand(self):
+        from isaaclab.utils import configclass
+        from isaaclab.managers import EventManager, EventTermCfg, SceneEntityCfg
+        from isaaclab.envs import mdp
+
+        # env_ids = torch.arange(self.num_envs, device=self.device)
+        self.payload_masses = self._zero_tensor(self.num_envs, 1)
+        self._link_mass = self._robot.data.default_mass.to(self.device)
+
+        return
+
+        # randomize rigid body properties
+        @configclass
+        class EventCfg:
+            if self.cfg.domain_rand.randomize_base_mass:
+                randomize_base_mass = EventTermCfg(
+                    func=mdp.randomize_rigid_body_mass,
+                    mode="startup",
+                    params={
+                        "asset_cfg": SceneEntityCfg("robot", body_names=self.cfg.asset.base_link_name),
+                        "mass_distribution_params": self.cfg.domain_rand.added_mass_range,
+                        "operation": 'add',
+                        "distribution": 'uniform',
+                        "recompute_inertia": True,
+                    },
+                )
+
+            # robot_physics_material = EventTermCfg(
+            #     func=mdp.randomize_rigid_body_material,
+            #     mode="reset",
+            #     params={
+            #         "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
+            #         "static_friction_range": (0.7, 1.3),
+            #         "dynamic_friction_range": (1.0, 1.0),
+            #         "restitution_range": (1.0, 1.0),
+            #         "num_buckets": 250,
+            #     },
+            # )
+            # robot_joint_stiffness_and_damping = EventTermCfg(
+            #     func=mdp.randomize_actuator_gains,
+            #     mode="reset",
+            #     params={
+            #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            #         "stiffness_distribution_params": (0.75, 1.5),
+            #         "damping_distribution_params": (0.3, 3.0),
+            #         "operation": "scale",
+            #         "distribution": "log_uniform",
+            #     },
+            # )
+            # reset_gravity = EventTermCfg(
+            #     func=mdp.randomize_physics_scene_gravity,
+            #     mode="interval",
+            #     is_global_time=True,
+            #     interval_range_s=(36.0, 36.0),  # time_s = num_steps * (decimation * dt)
+            #     params={
+            #         "gravity_distribution_params": ([0.0, 0.0, 0.0], [0.0, 0.0, 0.4]),
+            #         "operation": "add",
+            #         "distribution": "gaussian",
+            #     },
+            # )
+
+        self.event_manager = EventManager(EventTermCfg, self)
+        print("[INFO] Event Manager: ", self.event_manager)
+
+        # Randomize at once
+        if "startup" in self.event_manager.available_modes:
+            self.event_manager.apply(mode="startup")
+
+        return
+
+
+
+
+
+        self.events_cfg = EventCfg()
+        if self.domain_rand_config.get("randomize_link_mass", False):
+            self.events_cfg.scale_body_mass = EventTerm(
+                func=mdp.randomize_rigid_body_mass,
+                mode="startup",
+                params={
+                    "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
+                    "mass_distribution_params": tuple(self.domain_rand_config["link_mass_range"]),
+                    "operation": "scale",
+                },
+            )
+
+        # Randomize joint friction
+        if self.domain_rand_config.get("randomize_friction", False):
+            self.events_cfg.random_joint_friction = EventTerm(
+                func=mdp.randomize_joint_parameters,
+                mode="startup",
+                params={
+                    "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+                    "friction_distribution_params": tuple(self.domain_rand_config["friction_range"]),
+                    "operation": "scale",
+                },
+            )
+
+        if self.domain_rand_config.get("randomize_base_com", False):
+            self.events_cfg.random_base_com = EventTerm(
+                func=randomize_body_com,
+                mode="startup",
+                params={
+                    "asset_cfg": SceneEntityCfg(
+                        "robot",
+                        body_names=[
+                            "torso_link",
+                        ],
+                    ),
+                    "distribution_params": (
+                        torch.tensor([self.domain_rand_config["base_com_range"]["x"][0], self.domain_rand_config["base_com_range"]["y"][0],
+                                      self.domain_rand_config["base_com_range"]["z"][0]]),
+                        torch.tensor([self.domain_rand_config["base_com_range"]["x"][1], self.domain_rand_config["base_com_range"]["y"][1],
+                                      self.domain_rand_config["base_com_range"]["z"][1]])
+                    ),
+                    "operation": "add",
+                    "distribution": "uniform",
+                    "num_envs": self.simulator_config.scene.num_envs,
+                },
+            )
+
+        self.event_manager = EventManager(self.events_cfg, self)
+        print("[INFO] Event Manager: ", self.event_manager)
+
+
+
+
+
+
+
+
+
+
+
+        if self.cfg.domain_rand.randomize_base_mass:
+            self._robot.set_mass_shift(self.payload_masses, self._base_idx.clone(), env_ids)  # TODO: use this !!!
+
+
+
+        if self.cfg.domain_rand.randomize_link_mass:
+            # notice the [1:] slicing, this is because base is not considered
+            link_mass = [self._robot.get_link(n).get_mass() for n in self._body_names]
+            link_mass_shift = (self.link_mass_multiplier - 1) * torch.tensor(link_mass[1:], device=self.device).unsqueeze(0)
+            self._robot.set_mass_shift(link_mass_shift, self._body_indices[1:].clone(), env_ids)
+
+        if self.cfg.domain_rand.randomize_com:
+            self._robot.set_COM_shift(self.com_displacements.unsqueeze(1), self._base_idx.clone(), env_ids)
+
+        if self.cfg.domain_rand.randomize_friction:
+            self._robot.set_friction_ratio(self.friction_coeffs.repeat(1, self.num_bodies), self._body_indices.clone(), env_ids)
+
+            if not self.suppress_warning:
+                print(f"[bold red]⚠️ Restitution is not supported by Genesis currently?![/bold red]")
+
+        self._link_mass[:] = self._robot.data.default_mass
+
+        self._link_mass[:, 0:1] += self.payload_masses
+        self._link_mass[:, 1:] *= self.link_mass_multiplier
+
+    # ---------------------------------------------- IO Interface ----------------------------------------------
+
+    def refresh_variable(self):
+        pass
+        # self._robot.update()
+
+    def set_root_state(self, env_ids, pos, quat, lin_vel, ang_vel):
+        quat = quat[..., [3, 0, 1, 2]]  # [x, y, z, w] -> [w, x, y, z]
+        root_state = torch.cat([pos, quat, lin_vel, ang_vel], dim=1)
+        self._robot.write_root_state_to_sim(root_state, env_ids)
+
+    def set_dof_state(self, env_ids, dof_pos, dof_vel):
+        self._robot.write_joint_position_to_sim(
+            position=dof_pos,
+            joint_ids=None,  # all joints
+            env_ids=env_ids,
+        )
+
+        self._robot.write_joint_velocity_to_sim(
+            velocity=dof_vel,
+            joint_ids=None,  # all joints
+            env_ids=env_ids,
+        )
+
+    def set_dof_armature(self, armature, env_ids=None):
+        self._robot.write_joint_armature_to_sim(
+            armature=armature,
+            joint_ids=None,  # all joints
+            env_ids=env_ids
+        )
+
+    @property
+    def root_pos(self):
+        return self._robot.data.root_pos_w
+
+    @property
+    def root_quat(self):
+        return self._robot.data.root_quat_w[..., [1, 2, 3, 0]]  # (w, x, y, z) -> (x, y, z, w)
+
+    @property
+    def root_lin_vel(self):
+        return self._robot.data.root_lin_vel_w
+
+    @property
+    def root_ang_vel(self):
+        return self._robot.data.root_ang_vel_w
+
+    @property
+    def dof_pos(self):
+        return self._robot.data.joint_pos
+
+    @property
+    def dof_vel(self):
+        return self._robot.data.joint_vel
+
+    @property
+    def contact_forces(self):
+        return self._contact_sensor.data.net_forces_w
+
+    @property
+    def link_pos(self):
+        return self._robot.data.body_link_pos_w
+
+    @property
+    def link_quat(self):
+        return self._robot.data.body_link_quat_w[..., [1, 2, 3, 0]]  # (w, x, y, z) -> (x, y, z, w)
+
+    # @property
+    # def link_vel(self):
+    #     return self._robot.get_links_vel()
+
+    @property
+    def link_COM(self):
+        return self._robot.data.body_com_pos_w
+
+    @property
+    def link_mass(self):
+        return self._link_mass
+
+    # ---------------------------------------------- Step Interface ----------------------------------------------
+
+    # def apply_perturbation(self, force, torque, env_ids=None):
+    #     self.rigid_solver.apply_links_external_force(force[:, :1], self._base_idx_scene_level, env_ids)
+    #     self.rigid_solver.apply_links_external_torque(torque[:, :1], self._base_idx_scene_level, env_ids)
+    #
+    def control_dof_torque(self, torques):
+        self._robot.set_joint_effort_target(torques)
+        self._robot.write_data_to_sim()
+
+    def step_environment(self):
+        self.sim.step()
+
+    # def control_dof_position(self, target_dof_pos):
+    #     self._robot.control_dofs_position(target_dof_pos, self._dof_indices)

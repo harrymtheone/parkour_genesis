@@ -3,7 +3,7 @@ import math
 import torch
 import warp as wp
 
-from legged_gym.envs.base.utils import DelayBuffer
+from legged_gym.envs.base.utils import DelayBufferNew as DelayBuffer
 from legged_gym.simulator import get_simulator, SimulatorType, DriveMode, SensorManager
 from legged_gym.utils.helpers import class_to_dict
 from legged_gym.utils.joystick import JoystickHandler

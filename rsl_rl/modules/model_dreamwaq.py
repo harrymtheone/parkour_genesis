@@ -137,7 +137,7 @@ class ActorGRU(nn.Module):
                                                  output_activation=False)
 
         # Action noise
-        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
+        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
         self.distribution = None
 
         # disable args validation for speedup

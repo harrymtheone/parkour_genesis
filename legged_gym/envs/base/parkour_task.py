@@ -41,7 +41,7 @@ class ParkourTask(BaseTask):
         self.last_root_vel = torch.zeros_like(self.sim.root_lin_vel)
 
         self.target_yaw = self._zero_tensor(self.num_envs)  # used by info panel in play.py
-        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+        if self.sim.terrain is not None:
             self.reach_goal_timer = self._zero_tensor(self.num_envs)
             self.reached_goal_ids = self._zero_tensor(self.num_envs, dtype=torch.bool)
             self.reach_goal_cutoff = self._zero_tensor(self.num_envs, dtype=torch.bool)
@@ -60,7 +60,7 @@ class ParkourTask(BaseTask):
     # ---------------------------------------------- Robots Creation ----------------------------------------------
 
     def _get_env_origins(self):
-        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+        if self.sim.terrain is not None:
             # put robots at the origins defined by the terrain
             max_init_level = self.cfg.terrain.max_init_terrain_level
             if max_init_level >= self.cfg.terrain.num_rows:
@@ -239,17 +239,18 @@ class ParkourTask(BaseTask):
     def _post_physics_mid_step(self):
         super()._post_physics_mid_step()
 
-        self.cur_goals[:] = self.env_goals[torch.arange(self.num_envs), self.cur_goal_idx]
+        if self.sim.terrain is not None:
+            self.cur_goals[:] = self.env_goals[torch.arange(self.num_envs), self.cur_goal_idx]
 
-        # update goals
-        dist = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1)
-        self.reached_goal_ids[:] = (dist < self.cfg.env.next_goal_threshold) & (self.env_class >= 4)
+            # update goals
+            dist = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1)
+            self.reached_goal_ids[:] = (dist < self.cfg.env.next_goal_threshold) & (self.env_class >= 4)
 
-        # update goals
-        self.reach_goal_timer[self.reached_goal_ids] += 1
-        self.reach_goal_timer[~self.reached_goal_ids] = 0
-        next_flag = self.reach_goal_timer > self.cfg.env.reach_goal_delay / self.dt
-        self.cur_goal_idx[next_flag] += 1
+            # update goals
+            self.reach_goal_timer[self.reached_goal_ids] += 1
+            self.reach_goal_timer[~self.reached_goal_ids] = 0
+            next_flag = self.reach_goal_timer > self.cfg.env.reach_goal_delay / self.dt
+            self.cur_goal_idx[next_flag] += 1
 
     def _post_physics_post_step(self):
         self.last_last_actions[:] = self.last_actions

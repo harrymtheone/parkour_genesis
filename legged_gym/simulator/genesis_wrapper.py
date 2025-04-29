@@ -47,7 +47,6 @@ class GenesisWrapper(BaseWrapper):
     def _create_scene(self, n_rendered_envs):
         """ Creates simulation, terrain and environments
         """
-
         # compute dt and substeps based on drive mode
         if self.cfg.asset.default_dof_drive_mode == 1:
             self.drive_mode = DriveMode.pos_target

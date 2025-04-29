@@ -17,7 +17,6 @@ class DriveMode(Enum):
 class BaseWrapper:
     def __init__(self, cfg, args):
         self.cfg = cfg
-        self.suppress_warning = True
 
         self.device = torch.device(args.device)
         self.headless = args.headless
