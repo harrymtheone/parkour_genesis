@@ -26,7 +26,7 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = True
+    task_cfg.play.control = False
     task_cfg.env.num_envs = 3
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
@@ -46,7 +46,7 @@ def play(args):
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
-        'rough_slope': 0,
+        'rough_slope': 1,
         'stairs_up': 0,
         'stairs_down': 0,
         'discrete': 0,
@@ -57,7 +57,7 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
+        'parkour_stair': 0,
         'parkour_flat': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())

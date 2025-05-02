@@ -149,18 +149,15 @@ class T1BaseCfg(BaseConfig):
 
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
-        randomize_action_delay_each_step = False
         action_delay_range = [(0, 5), (0, 10), (5, 15), (5, 20)]
         action_delay_update_steps = 2000 * 24
 
         add_dof_lag = False
         randomize_dof_lag = True  # if False, max delay will be used
-        randomize_dof_lag_each_step = False
         dof_lag_range = (0, 40)
 
         add_imu_lag = False
         randomize_imu_lag = True  # if False, max delay will be used
-        randomize_imu_lag_each_step = False
         imu_lag_range = (1, 10)
 
         randomize_base_mass = False

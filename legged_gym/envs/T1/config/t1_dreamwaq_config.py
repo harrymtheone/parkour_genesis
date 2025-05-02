@@ -27,7 +27,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         scan_pts_x = np.linspace(-0.5, 1.1, 32)
         scan_pts_y = np.linspace(-0.4, 0.4, 16)
 
-        curriculum = False
+        curriculum = True
 
         terrain_dict = {
             'smooth_slope': 1,
@@ -58,8 +58,8 @@ class T1DreamWaqCfg(T1BaseCfg):
         randomize_start_vel = switch
         randomize_start_pitch = switch
 
-        randomize_start_dof_pos = switch
-        randomize_start_dof_vel = switch
+        randomize_start_dof_pos = False
+        randomize_start_dof_vel = False
 
         randomize_friction = switch
         randomize_base_mass = switch
@@ -68,7 +68,8 @@ class T1DreamWaqCfg(T1BaseCfg):
 
         push_robots = switch
         action_delay = switch
-        add_dof_lag = False
+        action_delay_range = [(0, 0), (0, 5), (0, 10), (5, 15), (5, 20)]
+        action_delay_update_steps = 4000 * 24
         add_imu_lag = False
 
         randomize_torque = switch
@@ -85,7 +86,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         feet_height_target = 0.04
         feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
         only_positive_rewards_until_epoch = 1e10  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
@@ -105,26 +106,23 @@ class T1DreamWaqCfg(T1BaseCfg):
             joint_pos = 2.
             feet_contact_number = 1.2
             feet_clearance = 0.2  # 0.2
-            feet_air_time = 1.
             feet_slip = -1.
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
 
             # contact
-            feet_contact_forces = -0.1
+            feet_contact_forces = -0.005
 
             # vel tracking
             tracking_lin_vel = 1.2
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
-            low_speed = 0.2
-            track_vel_hard = 0.5
 
             # base pos
             default_joint_pos = 0.5
             orientation = 1.
-            base_height = -0.2
+            base_height = 0.2
             base_acc = 0.2
 
             # energy
@@ -134,6 +132,20 @@ class T1DreamWaqCfg(T1BaseCfg):
             dof_acc = -1e-7
             collision = -1.
             # stand_still = 2.0
+
+    class control(T1BaseCfg.control):
+        # PD Drive parameters:
+        stiffness = {
+            'Head': 30,
+            'Hip_Roll': 55, 'Hip_Yaw': 30, 'Hip_Pitch': 55, 'Knee_Pitch': 100, 'Ankle_Roll': 30, 'Ankle_Pitch': 30,
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100, 'Waist': 200  # not used yet, set randomly
+        }
+
+        damping = {
+            'Head': 1,
+            'Hip_Roll': 3.0, 'Hip_Yaw': 4.0, 'Hip_Pitch': 3, 'Knee_Pitch': 6.0, 'Ankle_Roll': 0.3, 'Ankle_Pitch': 0.3,
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3, 'Waist': 10.0  # not used yet, set randomly
+        }
 
     class policy:
         use_recurrent_policy = True
@@ -147,7 +159,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 10
+        num_learning_epochs = 5
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed

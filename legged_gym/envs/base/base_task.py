@@ -113,18 +113,17 @@ class BaseTask:
 
         # Lag buffer
         if self.cfg.domain_rand.action_delay:
-            self.action_delay_buf = DelayBuffer(self.num_envs, (self.num_dof,),
-                                                self.cfg.domain_rand.action_delay_range.pop(0),
-                                                self.cfg.domain_rand.randomize_action_delay_each_step,
-                                                device=self.device)
+            self.action_delay_buf = DelayBuffer(80, self.num_envs, (self.num_dof,), device=self.device)
 
         if self.cfg.domain_rand.add_dof_lag:
+            raise NotImplementedError
             self.dof_lag_buf = DelayBuffer(self.num_envs, (self.num_dof, 2),
                                            self.cfg.domain_rand.dof_lag_range,
                                            self.cfg.domain_rand.randomize_dof_lag_each_step,
                                            device=self.device)
 
         if self.cfg.domain_rand.add_imu_lag:
+            raise NotImplementedError
             self.imu_lag_buf = DelayBuffer(self.num_envs, (4 + 3,),
                                            self.cfg.domain_rand.imu_lag_range,
                                            self.cfg.domain_rand.randomize_imu_lag_each_step,
@@ -226,9 +225,6 @@ class BaseTask:
         clip_actions = self.cfg.normalization.clip_actions / self.cfg.control.action_scale
         self.actions[:, self.dof_activated] = torch.clip(self.last_action_output, -clip_actions, clip_actions)
 
-        if self.cfg.domain_rand.action_delay:
-            self.action_delay_buf.append(self.actions)
-
         # step the simulator
         self._step_environment()
         self._post_physics_step()
@@ -239,19 +235,21 @@ class BaseTask:
         if self.sim.drive_mode is DriveMode.torque:
             for step_i in range(self.cfg.control.decimation):
                 if self.cfg.domain_rand.action_delay:
-                    self.action_delay_buf.step()
-                    self.actions[:] = self.action_delay_buf.get()
+                    self.torques[:] = self._compute_torques(self.action_delay_buf.compute(self.actions))
+                else:
+                    self.torques[:] = self._compute_torques(self.actions)
 
-                self.torques[:] = self._compute_torques()
                 self.sim.control_dof_torque(self.torques)
                 self.sim.step_environment()
 
                 if self.cfg.domain_rand.add_dof_lag:
+                    raise NotImplementedError
                     self.dof_lag_buf.append(torch.stack([self.sim.dof_pos[:, self.dof_activated],
                                                          self.sim.dof_vel[:, self.dof_activated]], dim=2))
                     self.dof_lag_buf.step()
 
                 if self.cfg.domain_rand.add_imu_lag:
+                    raise NotImplementedError
                     self.imu_lag_buf.append(torch.stack([self.sim.root_quat,
                                                          self.sim.root_ang_vel], dim=2))
                     self.imu_lag_buf.step()
@@ -263,9 +261,9 @@ class BaseTask:
             # TODO: 111
             raise NotImplementedError("Torque is not updated")
 
-    def _compute_torques(self):
+    def _compute_torques(self, actions):
         # pd controller
-        target_dof_pos = self.actions * self.cfg.control.action_scale + self.init_state_dof_pos
+        target_dof_pos = actions * self.cfg.control.action_scale + self.init_state_dof_pos
 
         if self.cfg.domain_rand.randomize_motor_offset:
             target_dof_pos[:] += self.motor_offsets
@@ -337,9 +335,9 @@ class BaseTask:
     def _post_physics_pre_step(self):
         self.episode_length_buf[:] += 1
 
-        if self.cfg.domain_rand.action_delay and (self.global_counter % self.cfg.domain_rand.action_delay_update_steps == 0):
+        if self.cfg.domain_rand.action_delay and (self.global_counter % self.cfg.domain_rand.action_delay_update_steps == 1):
             if len(self.cfg.domain_rand.action_delay_range) > 0:
-                self.action_delay_buf.update_delay_range(self.cfg.domain_rand.action_delay_range.pop(0))
+                self.action_delay_buf.set_delay_range(self.cfg.domain_rand.action_delay_range.pop(0))
 
     def _post_physics_mid_step(self):
         self._update_command()

@@ -1,6 +1,6 @@
 import torch
 
-from ..base.humanoid_env import HumanoidEnv
+from .t1_base_env import T1BaseEnv
 from ..base.utils import ObsBase, HistoryBuffer
 
 
@@ -32,7 +32,7 @@ class CriticObs(ObsBase):
         return torch.cat((self.priv_his.flatten(1), self.scan.flatten(1)), dim=1)
 
 
-class T1DreamWaqEnvironment(HumanoidEnv):
+class T1DreamWaqEnvironment(T1BaseEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -45,31 +45,6 @@ class T1DreamWaqEnvironment(HumanoidEnv):
         super()._init_robot_props()
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
-
-    def _compute_ref_state(self):
-        clock_l, clock_r = self._get_clock_input()
-
-        ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
-        scale_1 = self.cfg.rewards.target_joint_pos_scale
-        scale_2 = 2 * scale_1
-
-        # left swing
-        clock_l[clock_l > 0] = 0
-        ref_dof_pos[:, 1] = clock_l * scale_1
-        ref_dof_pos[:, 4] = -clock_l * scale_2
-        ref_dof_pos[:, 5] = clock_l * scale_1
-
-        # right swing
-        clock_r[clock_r > 0] = 0
-        ref_dof_pos[:, 7] = clock_r * scale_1
-        ref_dof_pos[:, 10] = -clock_r * scale_2
-        ref_dof_pos[:, 11] = clock_r * scale_1
-
-        # # Add double support phase
-        # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
-
-        self.ref_dof_pos[:] = self.init_state_dof_pos
-        self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
 
     def _compute_observations(self):
         """
