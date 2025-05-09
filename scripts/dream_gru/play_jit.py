@@ -1,4 +1,5 @@
 import os
+from argparse import Namespace
 
 try:
     import isaacgym, torch
@@ -10,47 +11,47 @@ import time
 from rich.live import Live
 
 from legged_gym.simulator import SimulatorType
-from legged_gym.utils.helpers import get_args
 from legged_gym.utils.task_registry import TaskRegistry
 from vis import gen_info_panel
 
 slowmo = 1
 
 
-def play(args):
-    exptid, checkpoint = 'pdd_dream_gru_003', 200
+def play():
+    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_006', 2300
 
-    args.proj_name = 'parkour_genesis'
-    args.task = 'pdd_dreamwaq_gru'
+    args = Namespace()
+    args.proj_name = proj
     args.device = 'cpu'
-    log_root = 'logs'
+    args.task = cfg
+    args.exptid = exptid
+    args.checkpoint = checkpoint
+
     # args.simulator = SimulatorType.Genesis
     args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
 
     task_registry = TaskRegistry()
-    env_cfg, train_cfg = task_registry.get_cfg(name=args.task)
+    task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    env_cfg.play.control = False
-    env_cfg.play.use_joystick = True
-    env_cfg.env.num_envs = 1
-    env_cfg.env.episode_length_s *= 10 if env_cfg.play.control else 1
-    env_cfg.terrain.num_rows = 10
-    env_cfg.terrain.curriculum = True
-    env_cfg.terrain.max_difficulty = False
-    env_cfg.terrain.max_init_terrain_level = 9
+    task_cfg.play.control = False
+    task_cfg.play.use_joystick = True
+    task_cfg.env.num_envs = 1
+    task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
+    task_cfg.terrain.num_rows = 10
+    task_cfg.terrain.curriculum = True
+    task_cfg.terrain.max_difficulty = False
+    task_cfg.terrain.max_init_terrain_level = 9
     # env_cfg.asset.disable_gravity = True
 
     # env_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
-    env_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
-    env_cfg.depth.angle_range = [-1, 1]
-    env_cfg.domain_rand.push_robots = False
-    env_cfg.domain_rand.push_interval_s = 6
-    env_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
+    task_cfg.domain_rand.push_robots = False
+    task_cfg.domain_rand.push_interval_s = 6
+    task_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
 
-    env_cfg.terrain.terrain_dict = {
+    task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
         'rough_slope': 0,
         'stairs_up': 0,
@@ -66,12 +67,13 @@ def play(args):
         'parkour_stair': 0,
         'parkour_flat': 0,
     }
-    env_cfg.terrain.num_cols = sum(env_cfg.terrain.terrain_dict.values())
+    task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
 
     # prepare environment
-    args.n_rendered_envs = env_cfg.env.num_envs
-    env, _ = task_registry.make_env(args=args, env_cfg=env_cfg)
+    args.n_rendered_envs = task_cfg.env.num_envs
+    env, _ = task_registry.make_env(args=args, task_cfg=task_cfg)
     obs = env.get_observations()
+    env.sim.clear_lines = True
 
     model = torch.jit.load(os.path.join("traced", f'{exptid}_{checkpoint}_jit.pt'))
     model = model.to(args.device)
@@ -95,4 +97,4 @@ def play(args):
 
 if __name__ == '__main__':
     with torch.inference_mode():
-        play(get_args())
+        play()

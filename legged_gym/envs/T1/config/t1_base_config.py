@@ -114,11 +114,11 @@ class T1BaseCfg(BaseConfig):
         noise_level = 1.0  # scales other values
 
         class noise_scales:
-            dof_pos = 0.01
-            dof_vel = 0.1
+            dof_pos = 0.02
+            dof_vel = 1.5
             lin_vel = 0.1
             ang_vel = 0.2
-            gravity = 0.05
+            gravity = 0.1
             height_measurements = 0.1
 
     class domain_rand:
@@ -139,13 +139,13 @@ class T1BaseCfg(BaseConfig):
         randomize_start_dof_vel_range = 0.1
 
         push_robots = False
-        push_force_max = ((-300, 600),
-                          (-400, 400),
+        push_force_max = ((-200, 200),
+                          (-200, 200),
                           (-5, 5))
-        push_torque_max = (-0, 0)
+        push_torque_max = (-50, 50)
         push_interval_s = 5
-        push_duration = [0., 0.05, 0.1, 0.15]
-        push_duration_update_steps = 1000 * 24
+        push_duration = [0.1, 0.2, 0.3]
+        push_duration_update_steps = 2000 * 24
 
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
@@ -154,11 +154,11 @@ class T1BaseCfg(BaseConfig):
 
         add_dof_lag = False
         randomize_dof_lag = True  # if False, max delay will be used
-        dof_lag_range = (0, 40)
+        dof_lag_range = (0, 20)
 
         add_imu_lag = False
         randomize_imu_lag = True  # if False, max delay will be used
-        imu_lag_range = (1, 10)
+        imu_lag_range = (0, 10)
 
         randomize_base_mass = False
         added_mass_range = [-2.5, 2.5]
@@ -194,8 +194,8 @@ class T1BaseCfg(BaseConfig):
         motor_offset_range = [-0.035, 0.035]  # Offset to add to the motor angles
 
         randomize_gains = False
-        kp_multiplier_range = [0.95, 1.05]
-        kd_multiplier_range = [0.95, 1.05]
+        kp_multiplier_range = [0.8, 1.2]
+        kd_multiplier_range = [0.8, 1.2]
 
         randomize_torque = False
         torque_multiplier_range = [0.8, 1.2]
@@ -251,14 +251,14 @@ class T1BaseCfg(BaseConfig):
         # PD Drive parameters:
         stiffness = {
             'Head': 30,
-            'Hip_Roll': 150, 'Hip_Yaw': 150, 'Hip_Pitch': 150, 'Knee_Pitch': 180, 'Ankle_Roll': 50, 'Ankle_Pitch': 50,
-            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100, 'Waist': 100  # not used yet, set randomly
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100, 'Waist': 100,  # not used yet, set randomly
+            'Hip_Pitch': 150, 'Hip_Roll': 150, 'Hip_Yaw': 150, 'Knee_Pitch': 180, 'Ankle_Pitch': 50, 'Ankle_Roll': 50,
         }
 
         damping = {
             'Head': 1,
-            'Hip_Roll': 8.0, 'Hip_Yaw': 4.0, 'Hip_Pitch': 8, 'Knee_Pitch': 8.0, 'Ankle_Roll': 1.0, 'Ankle_Pitch': 1.0,
-            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3, 'Waist': 3.0  # not used yet, set randomly
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3, 'Waist': 3.0,  # not used yet, set randomly
+            'Hip_Pitch': 8, 'Hip_Roll': 8.0, 'Hip_Yaw': 4.0, 'Knee_Pitch': 8.0, 'Ankle_Pitch': 1.0, 'Ankle_Roll': 1.0,
         }
 
         # activated = ['Hip', 'Knee', 'Ankle']
@@ -288,13 +288,11 @@ class T1BaseCfg(BaseConfig):
         flip_visual_attachments = False  # Some .obj meshes must be flipped from y-up to z-up
 
         density = 0.001
-        stiffness = 0.  # joint props
         angular_damping = 0.  # joint props
         linear_damping = 0.  # joint props
-        friction = 0.  # joint props
-        armature = 0.  # joint props
         max_angular_velocity = 1000.
         max_linear_velocity = 1000.
+        armature = 0.
         thickness = 0.01
 
     class viewer:

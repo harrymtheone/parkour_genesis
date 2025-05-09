@@ -4,16 +4,15 @@ import torch
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_trans_quat, transform_by_yaw
+from ...utils.math import transform_by_yaw, torch_rand_float
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, depth, priv_actor, scan):
+    def __init__(self, proprio, prop_his, depth, scan):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
         self.depth = depth.clone()
-        self.priv_actor = priv_actor.clone()
         self.scan = scan.clone()
 
     def as_obs_next(self):
@@ -26,7 +25,6 @@ class ActorObs(ObsBase):
             mirror_proprio_by_x(self.proprio),
             mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
             torch.flip(self.depth, dims=[3]),
-            self.priv_actor,
             torch.flip(self.scan, dims=[2]),
         )
 
@@ -38,24 +36,26 @@ class ActorObs(ObsBase):
 
 
 class ActorObsNoDepth(ObsBase):
-    def __init__(self, proprio, prop_his, priv_actor, scan):
+    def __init__(self, proprio, prop_his, scan, priv_actor):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
-        self.priv_actor = priv_actor.clone()
         self.scan = scan.clone()
+        self.priv_actor = priv_actor.clone()
 
     def as_obs_next(self):
-        # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
 
     @torch.compiler.disable
     def mirror(self):
+        priv_actor_mirrored = self.priv_actor.clone()
+        priv_actor_mirrored[:, 1] *= -1.0
+
         return ActorObsNoDepth(
             mirror_proprio_by_x(self.proprio),
             mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
-            self.priv_actor,
             torch.flip(self.scan, dims=[2]),
+            priv_actor_mirrored
         )
 
     @staticmethod
@@ -68,8 +68,6 @@ class ActorObsNoDepth(ObsBase):
 class ObsNext(ObsBase):
     def __init__(self, proprio):
         self.proprio = proprio.clone()
-        self.proprio[:, 6: 6 + 5] = 0.
-        self.proprio[:, -12:] = 0.
 
 
 class CriticObs(ObsBase):
@@ -80,20 +78,37 @@ class CriticObs(ObsBase):
         self.edge_mask = edge_mask.clone()
 
 
-class T1ZJUEnvironment(T1BaseEnv):
-    def _parse_cfg(self, args):
-        super()._parse_cfg(args)
+class T1_Phase_Environment(T1BaseEnv):
+
+    def step(self, action_clock):
+        if self.cfg.policy.enable_modulator:
+            self.last_phase_increment_ratio[:] = self.phase_increment_ratio
+            self.last_phase_bias[:] = self.phase_bias
+
+            self.phase_increment_ratio[:] = 1 + 0.5 * action_clock[:, -3]
+            self.phase_bias[:] = 0.5 * action_clock[:, -2:]
+
+            self.phase_increment_ratio[:] = self.phase_increment_ratio.clip(min=self.ratio_range[0], max=self.ratio_range[1])
+            self.phase_bias[:] = self.phase_bias.clip(min=self.bias_range[0], max=self.bias_range[1])
+
+            return super().step(action_clock[:, :-3])
+        else:
+            return super().step(action_clock)
 
     def _init_buffers(self):
         super()._init_buffers()
 
         self.phase_increment_ratio = 1 + self._zero_tensor(self.num_envs)
-        # self.phase_increment_ratio = torch_rand_float(0.5, 1.5, (self.num_envs, 1), self.device).squeeze()
+        self.phase_bias = self._zero_tensor(self.num_envs, 2)
 
-        bounding_box = self.cfg.sensors.depth_0.bounding_box  # x1, x2, y1, y2
-        hmap_shape = self.cfg.sensors.depth_0.hmap_shape  # x dim, y dim
-        self.depth_scan_points = self._init_height_points(np.linspace(*bounding_box[:2], hmap_shape[0]),
-                                                          np.linspace(*bounding_box[2:], hmap_shape[1]))
+        # self.ratio_range = (0.9, 1.1)
+        # self.bias_range = (-0.1, 0.1)
+
+        self.ratio_range = (0.7, 1.5)
+        self.bias_range = (-0.3, 0.3)
+
+        self.last_phase_increment_ratio = torch.zeros_like(self.phase_increment_ratio)
+        self.last_phase_bias = torch.zeros_like(self.phase_bias)
 
     def _init_robot_props(self):
         super()._init_robot_props()
@@ -101,11 +116,51 @@ class T1ZJUEnvironment(T1BaseEnv):
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
+    def _resample_commands(self, env_ids: torch.Tensor):
+        super()._resample_commands(env_ids)
+
+        if not self.cfg.policy.enable_modulator:
+            self.phase_increment_ratio[env_ids] = torch_rand_float(self.ratio_range[0], self.ratio_range[1], (len(env_ids), 1), self.device).squeeze()
+
+    def _reset_idx(self, env_ids: torch.Tensor):
+        super()._reset_idx(env_ids)
+
+        if not self.cfg.policy.enable_modulator:
+            self.phase_bias[env_ids] = torch_rand_float(0, 1., (len(env_ids), 1), self.device)
+            self.phase_bias[env_ids, 1:2] += torch_rand_float(self.bias_range[0], self.bias_range[1], (len(env_ids), 1), self.device)
+
+    def update_reward_curriculum(self, epoch):
+        super().update_reward_curriculum(epoch)
+
+        if epoch < 3000:
+            self.ratio_range = (0.9, 1.1)
+            self.bias_range = (-0.1, 0.1)
+        elif epoch < 6000:
+            self.ratio_range = (0.8, 1.3)
+            self.bias_range = (-0.2, 0.2)
+        elif epoch < 1000000:
+            self.ratio_range = (0.7, 1.5)
+            self.bias_range = (-0.3, 0.3)
+
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
 
         self.phase_length_buf[:] += self.dt * (self.phase_increment_ratio - 1)
         self._update_phase()
+
+    def _get_clock_input(self):
+        clock_l = torch.sin(2 * torch.pi * (self.phase + self.phase_bias[:, 0]))
+        clock_r = torch.sin(2 * torch.pi * (self.phase - 0.5 + self.phase_bias[:, 1]))
+        return clock_l, clock_r
+
+    def _reward_default_clock(self):
+        rew = torch.square(self.phase_increment_ratio - 1)
+        rew += torch.square(self.phase_bias).sum(dim=1)
+        rew += torch.square(self.phase_bias[:, 0] - self.phase_bias[:, 1])
+        return rew
+
+    def _reward_clock_smoothness(self):
+        return torch.square(self.phase_increment_ratio - self.last_phase_increment_ratio) + torch.square(self.phase_bias - self.last_phase_bias).sum(dim=1)
 
     def _compute_observations(self):
         """
@@ -165,14 +220,7 @@ class T1ZJUEnvironment(T1BaseEnv):
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
-        if self.cfg.env.obs.priv_actor == 3:
-            priv_actor_obs = self.base_lin_vel * self.obs_scales.lin_vel  # 3
-        else:
-            priv_actor_obs = torch.cat((
-                self.base_lin_vel * self.obs_scales.lin_vel,  # 3
-                self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
-                self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
-            ), dim=-1)
+        priv_actor_obs = self.base_lin_vel * self.obs_scales.lin_vel
 
         # compute height map
         scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
@@ -181,9 +229,9 @@ class T1ZJUEnvironment(T1BaseEnv):
         scan_edge = torch.stack([scan, base_edge_mask], dim=1)
 
         if self.cfg.sensors.activated:
-            self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan_edge)
+            self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), scan_edge)
         else:
-            self.actor_obs = ActorObsNoDepth(proprio, self.prop_his_buf.get(), priv_actor_obs, scan_edge)
+            self.actor_obs = ActorObsNoDepth(proprio, self.prop_his_buf.get(), scan_edge, priv_actor_obs)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer
@@ -202,10 +250,10 @@ class T1ZJUEnvironment(T1BaseEnv):
             # self.draw_hmap_from_depth()
             # self.draw_cloud_from_depth()
             self._draw_goals()
-            self._draw_camera()
+            # self._draw_camera()
             # self._draw_link_COM(whole_body=False)
             # self._draw_feet_at_edge()
-            # self._draw_foothold()
+            self._draw_foothold()
 
             # self._draw_height_field(draw_guidance=False)
             # self._draw_edge()
@@ -229,25 +277,6 @@ class T1ZJUEnvironment(T1BaseEnv):
         if len(pts) > 0:
             pts = density_weighted_sampling(pts, 500)
             self.sim.draw_points(pts)
-
-    def draw_hmap_from_depth(self):
-        if not self.cfg.sensors.activated:
-            return
-
-        hmap, hmap_std = self.sensors.get('depth_0', get_hmap=True)
-        hmap, hmap_std = hmap[self.lookat_id], hmap_std[self.lookat_id]
-
-        pts = self.depth_scan_points[self.lookat_id].clone()
-        pts[:, 2] = hmap.flatten()
-        pts = pts[hmap_std.flatten() >= 0]
-
-        pts = transform_by_trans_quat(
-            pts,
-            self.sim.root_pos[[self.lookat_id]].repeat(pts.size(0), 1),
-            self.sim.root_quat[[self.lookat_id]].repeat(pts.size(0), 1)
-        )
-
-        self.sim.draw_points(pts.cpu().numpy(), color=(1, 0, 0))
 
     def draw_est_hmap(self, est):
         feet_hmap = est[self.lookat_id, -16 - 8:-16]

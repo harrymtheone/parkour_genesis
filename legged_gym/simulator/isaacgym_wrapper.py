@@ -236,10 +236,10 @@ class IsaacGymWrapper(BaseWrapper):
                 self.torque_limits[i] = props["effort"][i].item()
 
         for i in range(len(props)):
-            props["stiffness"][i] = self.cfg.asset.stiffness
+            # props["stiffness"][i] = self.cfg.asset.stiffness
             props["damping"][i] = self.cfg.asset.angular_damping
-            props["friction"][i] = self.cfg.asset.friction
-            props["armature"][i] = self.cfg.asset.armature
+            # props["friction"][i] = self.cfg.asset.friction
+            # props["armature"][i] = self.cfg.asset.armature
 
     def _process_rigid_body_props(self, props, env_id):
         # randomize base mass
@@ -490,7 +490,7 @@ class IsaacGymWrapper(BaseWrapper):
         self._handle_key_event(self.gym.query_viewer_action_events(self.viewer))
 
         # fetch results
-        if self.device != 'cpu':
+        if self.device.type != 'cpu':
             self.gym.fetch_results(self.sim, True)
 
         self.gym.poll_viewer_events(self.viewer)

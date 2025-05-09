@@ -18,7 +18,7 @@ class ParkourTask(BaseTask):
         self.cmd_ranges_parkour = class_to_dict(self.cfg.commands.parkour_ranges)
 
         self.curriculum = self.cfg.terrain.curriculum
-        if self.cfg.terrain.description_type not in ['heightfield', 'trimesh']:
+        if self.sim.terrain is None:
             self.curriculum = False
 
     # ----------------------------------------- Initialization -------------------------------------------
@@ -108,7 +108,7 @@ class ParkourTask(BaseTask):
         self.last_torques[env_ids] = 0.
         self.last_root_vel[:] = 0.
 
-        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+        if self.sim.terrain is not None:
             self.cur_goal_idx[env_ids] = 0
             self.reach_goal_timer[env_ids] = 0
 
@@ -134,7 +134,7 @@ class ParkourTask(BaseTask):
         if self.cfg.env.send_timeouts:
             self.extras['time_outs'] = self.time_out_cutoff.clone()
 
-            if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+            if self.sim.terrain is not None:
                 self.extras['reach_goals'] = self.reach_goal_cutoff.clone()
 
     # ----------------------------------------- Height Measurement -------------------------------------------
@@ -176,7 +176,7 @@ class ParkourTask(BaseTask):
         )
 
     def _get_heights(self, points, averaging=False, use_guidance=False):
-        if self.cfg.terrain.description_type not in ['heightfield', 'trimesh']:
+        if self.sim.terrain is None:
             return self._zero_tensor(self.num_envs, points.size(1))
 
         points = (points / self.cfg.terrain.horizontal_scale).long()
@@ -233,8 +233,10 @@ class ParkourTask(BaseTask):
 
     def _check_termination(self):
         super()._check_termination()
-        self.reach_goal_cutoff[:] = (self.cur_goal_idx >= self.env_goal_num) & (self.env_class >= 4)
-        self.reset_buf[:] |= self.reach_goal_cutoff
+
+        if self.sim.terrain is not None:
+            self.reach_goal_cutoff[:] = (self.cur_goal_idx >= self.env_goal_num) & (self.env_class >= 4)
+            self.reset_buf[:] |= self.reach_goal_cutoff
 
     def _post_physics_mid_step(self):
         super()._post_physics_mid_step()
@@ -398,7 +400,7 @@ class ParkourTask(BaseTask):
     def _update_command(self):
         super()._update_command()
 
-        if self.cfg.terrain.description_type not in ["heightfield", "trimesh"]:
+        if self.sim.terrain is None:
             return
 
         # update target_pos_rel and target_yaw

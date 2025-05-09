@@ -3,7 +3,8 @@ import math
 import torch
 import warp as wp
 
-from legged_gym.envs.base.utils import DelayBufferNew as DelayBuffer
+from legged_gym.envs.base.utils import DelayBufferHumanoidGym as DelayBuffer
+# from legged_gym.envs.base.utils import DelayBufferCircular as DelayBuffer
 from legged_gym.simulator import get_simulator, SimulatorType, DriveMode, SensorManager
 from legged_gym.utils.helpers import class_to_dict
 from legged_gym.utils.joystick import JoystickHandler
@@ -113,14 +114,11 @@ class BaseTask:
 
         # Lag buffer
         if self.cfg.domain_rand.action_delay:
-            self.action_delay_buf = DelayBuffer(80, self.num_envs, (self.num_dof,), device=self.device)
+            self.action_delay_buf = DelayBuffer(100, self.num_envs, (self.num_dof,), device=self.device)
 
         if self.cfg.domain_rand.add_dof_lag:
-            raise NotImplementedError
-            self.dof_lag_buf = DelayBuffer(self.num_envs, (self.num_dof, 2),
-                                           self.cfg.domain_rand.dof_lag_range,
-                                           self.cfg.domain_rand.randomize_dof_lag_each_step,
-                                           device=self.device)
+            self.dof_lag_buf = DelayBuffer(100, self.num_envs, (2, self.num_dof), device=self.device)
+            self.dof_lag_buf.set_delay_range(self.cfg.domain_rand.dof_lag_range)
 
         if self.cfg.domain_rand.add_imu_lag:
             raise NotImplementedError
@@ -133,7 +131,7 @@ class BaseTask:
         self.ext_force = self._zero_tensor(self.num_envs, 3)
         self.ext_torque = self._zero_tensor(self.num_envs, 3)
 
-        self.global_counter = 0
+        self.global_counter = -1
         self.extras = {}
 
         if not self.sim.headless:
@@ -219,11 +217,13 @@ class BaseTask:
         Args:
             actions (torch.Tensor): Tensor of shape (num_envs, num_actions_per_env)
         """
+        actions = actions.to(torch.float)
+
         self.last_action_output[:] = actions
 
         # clip action range
         clip_actions = self.cfg.normalization.clip_actions / self.cfg.control.action_scale
-        self.actions[:, self.dof_activated] = torch.clip(self.last_action_output, -clip_actions, clip_actions)
+        self.actions[:, self.dof_activated] = torch.clip(actions, -clip_actions, clip_actions)
 
         # step the simulator
         self._step_environment()
@@ -243,10 +243,7 @@ class BaseTask:
                 self.sim.step_environment()
 
                 if self.cfg.domain_rand.add_dof_lag:
-                    raise NotImplementedError
-                    self.dof_lag_buf.append(torch.stack([self.sim.dof_pos[:, self.dof_activated],
-                                                         self.sim.dof_vel[:, self.dof_activated]], dim=2))
-                    self.dof_lag_buf.step()
+                    self.dof_lag_buf.compute(torch.stack([self.sim.dof_pos, self.sim.dof_vel], dim=1))
 
                 if self.cfg.domain_rand.add_imu_lag:
                     raise NotImplementedError
@@ -335,7 +332,7 @@ class BaseTask:
     def _post_physics_pre_step(self):
         self.episode_length_buf[:] += 1
 
-        if self.cfg.domain_rand.action_delay and (self.global_counter % self.cfg.domain_rand.action_delay_update_steps == 1):
+        if self.cfg.domain_rand.action_delay and (self.global_counter % self.cfg.domain_rand.action_delay_update_steps == 0):
             if len(self.cfg.domain_rand.action_delay_range) > 0:
                 self.action_delay_buf.set_delay_range(self.cfg.domain_rand.action_delay_range.pop(0))
 
@@ -352,6 +349,8 @@ class BaseTask:
             duration_i = int(self.global_counter / self.cfg.domain_rand.push_duration_update_steps)
             duration_i = min(duration_i, len(self.cfg.domain_rand.push_duration) - 1)
             duration = self.cfg.domain_rand.push_duration[duration_i] / self.dt
+            assert duration < self.push_interval
+
             if self.global_counter % self.push_interval <= duration:
                 self._push_robots()
             else:

@@ -147,23 +147,6 @@ class DelayBuffer:
         self.buf[dones] = 0.
 
 
-class CircularDelayBuffer:
-    def __init__(self, n_envs, data_shape, delay_range, rand_per_step, dtype=None, device=None):
-        self.n_envs = n_envs
-        self.delay_range = delay_range
-        self.rand_per_step = rand_per_step
-        self.buf_len = 1 + 1 + delay_range[1]
-
-        dtype = torch.float32 if dtype is None else dtype
-        assert device is not None
-        self.buf = torch.zeros((n_envs, self.buf_len, *data_shape), dtype=dtype, device=device)
-
-        # delay should +1 because you should call step before get
-        self.delay = 1 + torch.randint(delay_range[0], delay_range[1] + 1, (self.n_envs, 1), device=device)
-        self._cols = torch.arange(self.buf_len, device=device).unsqueeze(0)
-        self._mask = self._cols >= self.delay
-
-
 class CircularBuffer:
     def __init__(self, max_len: int, batch_size: int, data_shape: Sequence[int], device: torch.device):
         self._batch_size = batch_size
@@ -198,15 +181,21 @@ class CircularBuffer:
 
     def __getitem__(self, key: torch.Tensor) -> torch.Tensor:
         # check if the buffer is empty
-        if torch.any(self._num_pushes < 1) or self._buffer is None:
-            raise RuntimeError("Attempting to retrieve data on an empty circular buffer. Please append data first.")
+        # if torch.any(self._num_pushes < 1) or self._buffer is None:
+        #     raise RuntimeError("Attempting to retrieve data on an empty circular buffer. Please append data first.")
 
         valid_keys = torch.minimum(key, self._num_pushes - 1)
         index_in_buffer = torch.remainder(self._pointer - valid_keys, self._max_len)
         return self._buffer[index_in_buffer, self._ALL_INDICES]
 
+    def get_all(self):
+        valid_keys = torch.arange(self._max_len, device=self._device)
+        # index_in_buffer = torch.remainder(valid_keys - self._pointer, self._max_len)
+        index_in_buffer = torch.remainder(self._pointer - valid_keys, self._max_len)
+        return self._buffer[index_in_buffer]
 
-class DelayBufferNew:
+
+class DelayBufferCircular:
     def __init__(self, history_length: int, batch_size: int, data_shape: Sequence[int], device: torch.device):
         self._history_length = max(0, history_length)
         self._batch_size = batch_size
@@ -230,3 +219,34 @@ class DelayBufferNew:
     def compute(self, data: torch.Tensor) -> torch.Tensor:
         self._circular_buffer.append(data)
         return self._circular_buffer[self._time_lags].clone()
+
+    def get(self):
+        return self._circular_buffer[self._time_lags].clone()
+
+
+class DelayBufferHumanoidGym:
+    def __init__(self, history_length: int, batch_size: int, data_shape: Sequence[int], device: torch.device):
+        self._batch_size = batch_size
+        self._device = device
+        self._all_envs = torch.arange(batch_size, device=device)
+
+        self._lag_buffer = torch.zeros(history_length, batch_size, *data_shape, dtype=torch.float, device=device)
+        self._lag_timestep = torch.zeros(batch_size, dtype=torch.int, device=device)
+
+    def set_delay_range(self, delay_prop: Tuple[int, int]):
+        self._lag_timestep[:] = torch.randint(
+            low=delay_prop[0],
+            high=delay_prop[1] + 1,
+            size=(self._batch_size,),
+            dtype=torch.int,
+            device=self._device,
+        )
+
+    def compute(self, data: torch.Tensor) -> torch.Tensor:
+        self._lag_buffer[1:] = self._lag_buffer[:-1].clone()
+        self._lag_buffer[0] = data
+
+        return self._lag_buffer[self._lag_timestep, self._all_envs]
+
+    def reset(self, batch_ids: Sequence[int] | None = None):
+        self._lag_buffer[:, batch_ids] = 0.

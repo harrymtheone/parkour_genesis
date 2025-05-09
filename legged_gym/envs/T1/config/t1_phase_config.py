@@ -1,9 +1,7 @@
 from .t1_base_config import T1BaseCfg
 
-DEPTH_RESIZED = (87, 58)
 
-
-class T1_Multi_Critic_Cfg(T1BaseCfg):
+class T1_Phase_Cfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
 
@@ -20,41 +18,23 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         num_actions = 13
         episode_length_s = 40  # episode length in seconds
 
-        class obs:
-            proprio = 50
-            prop_his = (10, 50)
-            depth = (2, *reversed(DEPTH_RESIZED))
-            priv_actor = 3  # 27
-            scan = (2, 32, 16)
-
-        class critic_obs:
-            priv_his = (50, 86)
-            scan = (32, 16)
-            edge_mask = (32, 16)
-
-        class obs_next:
-            proprio = 50
-
     class sensors:
-        activated = True
+        activated = False
 
         class depth_0:
-            link_attached_to = 'Head'
-            position = [0.15, 0, 0.]  # front camera
+            link_attached_to = 'Waist'
+            position = [0.1, 0, 0.]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch = 30  # positive is looking down
             pitch_range = [-1, 1]
 
-            data_format = 'depth'  # depth, cloud, hmap
-            update_interval = 10
-            delay_prop = (10, 1)  # Gaussian (mean, std)
+            data_format = 'depth'  # depth, cloud
+            update_interval = 10  # 5 works without retraining, 8 worse
+            delay_prop = (5, 1)  # Gaussian (mean, std)
 
             resolution = (106, 60)  # width, height
-            resized = DEPTH_RESIZED
+            resized = (87, 58)  # (87, 58)
             horizontal_fov = 87
-
-            bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
-            hmap_shape = (16, 16)  # x dim, y dim
 
             near_clip = 0
             far_clip = 2
@@ -72,18 +52,18 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         sw_switch = True
 
         class flat_ranges:
-            lin_vel_x = [-1.0, 1.0]
+            lin_vel_x = [-0.5, 0.5]
             lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [0.6, 1.2]
-            lin_vel_y = [-0.5, 0.2]
+            lin_vel_x = [0.5, 0.5]
+            lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.5, 1.2]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.4, 0.8]  # min value should be greater than lin_vel_clip
             # lin_vel_x = [0.8, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
@@ -92,7 +72,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 1,
+            'smooth_slope': 3,
             'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
@@ -104,7 +84,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 2,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 0,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 
@@ -114,11 +94,11 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
     class domain_rand(T1BaseCfg.domain_rand):
         switch = True
 
-        randomize_start_pos = False
-        randomize_start_y = switch
-        randomize_start_yaw = switch
-        randomize_start_vel = switch
-        randomize_start_pitch = switch
+        randomize_start_pos = True
+        randomize_start_y = True
+        randomize_start_yaw = False
+        randomize_start_vel = False
+        randomize_start_pitch = False
 
         randomize_start_dof_pos = True
         randomize_start_dof_vel = True
@@ -129,7 +109,9 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         randomize_com = switch
 
         push_robots = switch
-        action_delay = True
+        action_delay = switch
+        action_delay_range = [(0, 0), (0, 5), (0, 10), (5, 15), (5, 20)]
+        action_delay_update_steps = 4000 * 24
         add_dof_lag = False
         add_imu_lag = False
 
@@ -164,39 +146,35 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
         class scales:
             # gait
-            joint_pos = 2.
-            feet_contact_number = 1.2
-            feet_clearance = 0.2  # 0.2
-            # feet_air_time = 1.
+            joint_pos = 2.0
+            feet_contact_number = 3.0
+            feet_clearance = 1.0  # 0.2
             feet_slip = -1.
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
 
+            # # contact
+            # feet_contact_forces = -0.005
+
             # vel tracking
-            tracking_lin_vel = 2.0
-            tracking_goal_vel = 3.0
-            tracking_ang_vel = 2.5
+            tracking_lin_vel = 1.2
+            tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
 
-            # contact
-            feet_contact_forces = -0.005
-            feet_stumble = -1.0
-            # feet_edge = -0.5
-            foothold = -1.
-
             # base pos
-            default_joint_pos = 2.0
+            default_joint_pos = 1.0
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
 
             # energy
-            action_smoothness = -3e-3
+            action_smoothness = -0.003
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
             collision = -1.
+            # stand_still = 2.0
 
     class policy:
         # actor parameters
@@ -206,18 +184,16 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         critic_hidden_dims = [512, 256, 128]
 
         use_recurrent_policy = True
+        enable_modulator = False
         enable_reconstructor = True
-        enable_VAE = True
 
         obs_gru_hidden_size = 64
-        obs_gru_num_layers = 1
         recon_gru_hidden_size = 256
-        recon_gru_num_layers = 2
 
-        len_latent = 64  # 16
+        len_latent = 16
         len_base_vel = 3
-        len_latent_feet = 0  # 8
-        len_latent_body = 0  # 16
+        len_latent_feet = 8
+        len_latent_body = 16
         transformer_embed_dim = 64
 
     class algorithm:
@@ -226,8 +202,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 5
-        num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
+        num_learning_epochs = 4
+        num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
         gamma = 0.99
@@ -235,39 +211,27 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         desired_kl = 0.01
         max_grad_norm = 1.
 
+        use_amp = True
         continue_from_last_std = True
         init_noise_std = 1.0
 
-        use_amp = True
-
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'  # rl, distil, mixed
-        algorithm_name = 'ppo_zju_mc'
+        algorithm_name = 'ppo_dreamwaq'
 
         max_iterations = 20000  # number of policy updates
-
 
 # -----------------------------------------------------------------------------------------------
 # ------------------------------------------- Stair -------------------------------------------
 # -----------------------------------------------------------------------------------------------
 
-class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
-    class domain_rand(T1_Multi_Critic_Cfg.domain_rand):
-        push_robots = True
-        push_duration = [0.15]
-
-        action_delay = True
-        action_delay_range = [(5, 5)]
-
-    class terrain(T1_Multi_Critic_Cfg.terrain):
-        num_rows = 10  # number of terrain rows (levels)
-        num_cols = 20  # number of terrain cols (types)
-
+class T1_Phase_Stair_Cfg(T1_Phase_Cfg):
+    class terrain(T1_Phase_Cfg.terrain):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 0,
-            'stairs_down': 0,
+            'stairs_up': 1,
+            'stairs_down': 1,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -276,77 +240,46 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 2,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 1,  # First train a policy without stair for 2000 epochs
             'parkour_flat': 0,
         }
 
-    class algorithm(T1_Multi_Critic_Cfg.algorithm):
-        entropy_coef = 0.01
-
-        continue_from_last_std = False
-        init_noise_std = 0.6
-
-    class runner(T1_Multi_Critic_Cfg.runner):
-        max_iterations = 100000  # number of policy updates
-
-
-# -----------------------------------------------------------------------------------------------
-# ------------------------------------------- Parkour -------------------------------------------
-# -----------------------------------------------------------------------------------------------
-
-class T1_Multi_Critic_Parkour_Cfg(T1_Multi_Critic_Cfg):
-    class sensors(T1_Multi_Critic_Cfg.sensors):
-        activated = True
-
-    class domain_rand(T1_Multi_Critic_Cfg.domain_rand):
-        push_robots = True
+    class domain_rand(T1_Phase_Cfg.domain_rand):
         push_duration = [0.15]
-        push_duration_update_steps = 1000 * 24
-
-        action_delay = True
         action_delay_range = [(5, 20)]
-        action_delay_update_steps = 2000 * 24
 
-    class rewards(T1_Multi_Critic_Cfg.rewards):
-        class scales(T1_Multi_Critic_Cfg.rewards.scales):
-            joint_pos = 5.
+    class rewards(T1_Phase_Cfg.rewards):
+        class scales(T1_Phase_Cfg.rewards.scales):
+            joint_pos = 2.0
+            feet_contact_number = 3.0
 
-            # gait
-            feet_distance = 0.2
-            knee_distance = 0.2
-            feet_rotation = 0.5
+            # vel tracking
+            tracking_lin_vel = 2.0
+            tracking_goal_vel = 3.0
+            tracking_ang_vel = 2.5
 
             # contact
             feet_contact_forces = -0.005
             feet_stumble = -1.0
-            feet_edge = -0.5
+            # feet_edge = -0.5
+            foothold = -1.
 
-            # base pos
-            default_joint_pos = 5.0
+            default_joint_pos = 1.0
 
-    class terrain(T1_Multi_Critic_Cfg.terrain):
-        num_rows = 10  # number of terrain rows (levels)
-        num_cols = 20  # number of terrain cols (types)
+            default_clock = -5.0
+            clock_smoothness = -5.0
 
-        terrain_dict = {
-            'smooth_slope': 2,
-            'rough_slope': 0,
-            'stairs_up': 0,
-            'stairs_down': 0,
-            'discrete': 0,
-            'stepping_stone': 0,
-            'gap': 0,
-            'pit': 0,
-            'parkour': 0,
-            'parkour_gap': 0,
-            'parkour_box': 1,
-            'parkour_step': 1,
-            'parkour_stair': 0,  # First train a policy without stair for 2000 epochs
-            'parkour_flat': 0,
-        }
+    class algorithm(T1_Phase_Cfg.algorithm):
+        entropy_coef = 0.006
+        clock_entropy_coef = 0.005
 
-    class policy(T1_Multi_Critic_Cfg.policy):
+    class policy(T1_Phase_Cfg.policy):
+        use_recurrent_policy = True
+        enable_modulator = True
         enable_reconstructor = True
 
-    class runner(T1_Multi_Critic_Cfg.runner):
-        max_iterations = 50000  # number of policy updates
+    class runner(T1_Phase_Cfg.runner):
+        runner_name = 'rl_dream'  # rl, distil, mixed
+        algorithm_name = 'ppo_phase'
+
+        max_iterations = 100000  # number of policy updates

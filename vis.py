@@ -1,3 +1,6 @@
+from collections import deque
+from typing import Dict, List, Tuple
+
 import numpy as np
 import torch
 from rich.table import Table
@@ -21,6 +24,7 @@ def gen_info_panel(args, env):
 
     phase = env.phase[env.lookat_id] if hasattr(env, 'phase') else 0.
     phase_increment_ratio = f'{env.phase_increment_ratio[env.lookat_id]: .2f}' if hasattr(env, 'phase_increment_ratio') else 'None'
+    phase_bias = env.phase_bias[env.lookat_id].cpu().numpy() if hasattr(env, 'phase_bias') else ['None', 'None']
 
     friction_ratio = env.sim.friction_coeffs[env.lookat_id].item()
     cmd_vx_correction = env.vel_correction[env.lookat_id, 0].cpu().numpy() if hasattr(env, 'vel_correction') else -100
@@ -62,6 +66,7 @@ def gen_info_panel(args, env):
     table22 = Table()
     table22.add_column(f"phase: {phase: .2f}")
     table22.add_column(f"phase ratio: {phase_increment_ratio}")
+    table22.add_row(f"bias: {phase_bias[0]}", f"{phase_bias[1]}")
     table22.add_row(f"friction: {friction_ratio: .2f}", f"{cmd_vx_correction: .2f}")
 
     grid = Table.grid()
@@ -69,3 +74,83 @@ def gen_info_panel(args, env):
     grid.add_row(table21, table22)
 
     return grid
+
+
+import matplotlib
+
+matplotlib.use('TkAgg')  # Use a faster interactive backend than default
+import matplotlib.pyplot as plt
+
+
+class BaseVisualizer:
+    subplot_shape: Tuple[int, int]
+    subplot_props: Dict[str, dict]
+    his_length: int
+
+    def __init__(self):
+        assert len(self.subplot_props) == self.subplot_shape[0] * self.subplot_shape[1], "Names must match subplot grid size"
+
+        self.his = {n: deque(maxlen=self.his_length) for n in self.subplot_props}
+
+        self.fig, self.axes = plt.subplots(*self.subplot_shape, figsize=(6, len(self.subplot_props) * 1.2))
+        self.axes_dict = {}
+        self.lines = {}
+
+        # Flatten axes
+        axes_flat = self.axes.flatten() if isinstance(self.axes, np.ndarray) else [self.axes]
+
+        for (name, props), ax in zip(self.subplot_props.items(), axes_flat):
+            self.axes_dict[name] = ax
+            ax.set_title(name)
+            ax.set_xlim(0, self.his_length)
+            ax.set_ylim(*props['lim'])  # You may want to adjust this
+            line, = ax.plot([], [], lw=1)
+            self.lines[name] = line
+
+        self.fig.tight_layout()
+        self.fig.canvas.draw()
+        plt.show(block=False)
+
+    def plot(self, data: Dict[str, float]):
+        for name, y_val in data.items():
+            if name in self.axes_dict:
+                his = self.his[name]
+                his.append(y_val)
+
+                line = self.lines[name]
+                line.set_ydata(his)
+                line.set_xdata(range(len(his)))
+
+                # ax = self.axes_dict[name]
+                # ax.set_xlim(0, self.his_length)
+                # y_min, y_max = min(his), max(his)
+                # if y_min == y_max:
+                #     y_min -= 0.1
+                #     y_max += 0.1
+                # ax.set_ylim(y_min, y_max)
+
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+
+
+class ActionsVisualizer(BaseVisualizer):
+    subplot_shape = (13, 1)
+    subplot_props = {
+        'Waist': {'lim': (-3, 3)},
+        'Left_Hip_Pitch': {'lim': (-3, 3)},
+        'Left_Hip_Roll': {'lim': (-3, 3)},
+        'Left_Hip_Yaw': {'lim': (-3, 3)},
+        'Left_Knee_Pitch': {'lim': (-3, 3)},
+        'Left_Ankle_Pitch': {'lim': (-3, 3)},
+        'Left_Ankle_Roll': {'lim': (-3, 3)},
+        'Right_Hip_Pitch': {'lim': (-3, 3)},
+        'Right_Hip_Roll': {'lim': (-3, 3)},
+        'Right_Hip_Yaw': {'lim': (-3, 3)},
+        'Right_Knee_Pitch': {'lim': (-3, 3)},
+        'Right_Ankle_Pitch': {'lim': (-3, 3)},
+        'Right_Ankle_Roll': {'lim': (-3, 3)},
+    }
+    his_length = 50
+
+
+

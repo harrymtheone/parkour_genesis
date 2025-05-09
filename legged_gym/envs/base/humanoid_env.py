@@ -131,7 +131,8 @@ class HumanoidEnv(ParkourTask):
 
     def _get_clock_input(self):
         clock_l = torch.sin(2 * torch.pi * self.phase)
-        clock_r = torch.sin(2 * torch.pi * (self.phase - 0.5))
+        clock_r = -torch.sin(2 * torch.pi * self.phase)
+        # clock_r = torch.sin(2 * torch.pi * (self.phase - 0.5))
         return clock_l, clock_r
 
     def _get_stance_mask(self):
@@ -154,12 +155,9 @@ class HumanoidEnv(ParkourTask):
         """
         Calculates the reward based on the difference between the current joint positions and the target joint positions.
         """
-        diff = self.sim.dof_pos - torch.where(
-            self.is_zero_command.unsqueeze(1),
-            self.init_state_dof_pos,
-            self.ref_dof_pos
-        )
+        diff = self.sim.dof_pos - self.ref_dof_pos
         diff = torch.norm(diff[:, self.dof_activated], dim=1)
+        diff[self.is_zero_command] = 0.
 
         rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
         rew[self.env_class >= 2] *= 0.5
@@ -181,7 +179,7 @@ class HumanoidEnv(ParkourTask):
         # rew = torch.sum(rew * ~self._get_stance_mask(), dim=1, dtype=torch.float)
 
         rew = (self.feet_height / self.cfg.rewards.feet_height_target).clip(min=-1, max=1)
-        rew[self._get_stance_mask()] = -torch.abs(rew[self._get_stance_mask()])
+        rew[self._get_stance_mask()] = 0.
         return rew.sum(dim=1)
 
     def _reward_feet_air_time(self):
@@ -250,7 +248,7 @@ class HumanoidEnv(ParkourTask):
             torch.exp(-lin_vel_error_square * self.cfg.rewards.tracking_sigma)
         )
 
-        rew[self.env_class >= 2] = 0.
+        rew[self.env_class >= 4] = 0.
         return rew
 
     def _reward_tracking_goal_vel(self):

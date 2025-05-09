@@ -68,7 +68,7 @@ class Actor(nn.Module):
                                                  env_cfg.num_actions,
                                                  activation_func=self.activation,
                                                  output_activation=False)
-        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
+        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
         self.distribution = None
 
         # disable args validation for speedup
@@ -93,9 +93,10 @@ class Actor(nn.Module):
         mean = self.actor_backbone(actor_input)
         self.distribution = Normal(mean, mean * 0. + torch.exp(self.log_std))
 
-    # def estimate(self, obs):
-    #     obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
-    #     return self.vae(obs_enc, mu_only=False)
+    def estimate(self, obs, **kwargs):
+        obs_enc = self.obs_enc(obs.prop_his.transpose(1, 2))
+        ot1, est_mu, est_logvar = self.vae(obs_enc, mu_only=False)
+        return ot1, est_mu[..., :3], est_mu, est_logvar
 
     @property
     def action_mean(self):
@@ -137,7 +138,7 @@ class ActorGRU(nn.Module):
                                                  output_activation=False)
 
         # Action noise
-        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
+        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions), requires_grad=True)
         self.distribution = None
 
         # disable args validation for speedup

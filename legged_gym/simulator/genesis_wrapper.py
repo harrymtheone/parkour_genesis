@@ -20,6 +20,7 @@ class GenesisWrapper(BaseWrapper):
         self.cfg = cfg
         self.debug = True
         self.init_done = False
+        self.suppress_warning = False
 
         # create envs, sim and viewer
         gs.init(backend=gs.gpu if self.device.type == 'cuda' else gs.cpu, logging_level='info')
@@ -108,6 +109,8 @@ class GenesisWrapper(BaseWrapper):
             terrain_desc_type = self.cfg.terrain.description_type
         else:
             raise ValueError("Terrain description type not specified!")
+
+        terrain_desc_type = 'plane'
 
         if terrain_desc_type in ['heightfield', 'trimesh']:
             # TODO: maybe remove this in later release of Genesis?
@@ -223,20 +226,20 @@ class GenesisWrapper(BaseWrapper):
         self.dof_pos_limits = torch.stack(wrapper_unsafe(self._robot.get_dofs_limit, self._dof_indices), dim=1)
         self.torque_limits = wrapper_unsafe(self._robot.get_dofs_force_range, self._dof_indices)[1]
 
-        # set joint stiffness
-        joint_stiffness = self.cfg.asset.stiffness + self._zero_tensor(self.num_envs, self.num_dof)
-        wrapper_unsafe(self._robot.set_dofs_stiffness, joint_stiffness, self._dof_indices)
+        # # set joint stiffness
+        # joint_stiffness = self.cfg.asset.stiffness + self._zero_tensor(self.num_envs, self.num_dof)
+        # wrapper_unsafe(self._robot.set_dofs_stiffness, joint_stiffness, self._dof_indices)
 
         # set joint damping
         joint_damping = self.cfg.asset.angular_damping + self._zero_tensor(self.num_envs, self.num_dof)
         wrapper_unsafe(self._robot.set_dofs_damping, joint_damping, self._dof_indices)
 
-        # set joint armature
-        joint_armature = self.cfg.asset.armature + self._zero_tensor(self.num_envs, self.num_dof)
-        wrapper_unsafe(self._robot.set_dofs_armature, joint_armature, self._dof_indices)
+        # # set joint armature
+        # joint_armature = self.cfg.asset.armature + self._zero_tensor(self.num_envs, self.num_dof)
+        # wrapper_unsafe(self._robot.set_dofs_armature, joint_armature, self._dof_indices)
 
-        if self.cfg.asset.friction > 0 and not self.suppress_warning:
-            print(f"[bold red]⚠️ genesis has no joint friction?! [/bold red]")
+        # if self.cfg.asset.friction > 0 and not self.suppress_warning:
+        #     print(f"[bold red]⚠️ genesis has no joint friction?! [/bold red]")
 
     def create_indices(self, names, is_link):
         indices = self._zero_tensor(len(names), dtype=torch.long)

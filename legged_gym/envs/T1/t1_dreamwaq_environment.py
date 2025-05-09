@@ -1,7 +1,8 @@
 import torch
 
 from .t1_base_env import T1BaseEnv
-from ..base.utils import ObsBase, HistoryBuffer
+from ..base.utils import ObsBase, HistoryBuffer, CircularBuffer
+from ...utils.math import torch_rand_float
 
 
 class ActorObs(ObsBase):
@@ -33,6 +34,32 @@ class CriticObs(ObsBase):
 
 
 class T1DreamWaqEnvironment(T1BaseEnv):
+    def step(self, actions):
+        self.last_action_output[:] = actions
+        self.actions_his_buf.append(actions)
+
+        action_fft = torch.fft.fft(self.actions_his_buf.get_all(), dim=0)
+        freqs = torch.fft.fftfreq(action_fft.size(0), d=self.dt).to(self.device)
+        mask = torch.abs(freqs) <= 10
+        fft_filtered = action_fft * mask[:, None, None]
+        act_his_filtered = torch.real(torch.fft.ifft(fft_filtered, dim=0))
+        self.actions_filtered_his_buf.append(act_his_filtered[0])
+
+        # actions = actions.clone()
+        # actions[:, 5] = act_his_filtered[0, :, 5]
+        # actions[:, 6] = act_his_filtered[0, :, 6]
+        # actions[:, 11] = act_his_filtered[0, :, 11]
+        # actions[:, 12] = act_his_filtered[0, :, 12]
+
+        # clip action range
+        clip_actions = self.cfg.normalization.clip_actions / self.cfg.control.action_scale
+        self.actions[:, self.dof_activated] = torch.clip(actions, -clip_actions, clip_actions)
+
+        # step the simulator
+        self._step_environment()
+        self._post_physics_step()
+
+        return self.actor_obs, self.critic_obs, self.rew_buf.clone(), self.reset_buf.clone(), self.extras
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -41,10 +68,32 @@ class T1DreamWaqEnvironment(T1BaseEnv):
         self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
         self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
+        self.phase_increment_ratio = torch_rand_float(0.8, 1.2, (self.num_envs, 1), self.device).squeeze(1)
+
+        self.actions_his_buf = CircularBuffer(50, self.num_envs, (self.num_actions,), self.device)
+        self.actions_filtered_his_buf = CircularBuffer(50, self.num_envs, (self.num_actions,), self.device)
+
     def _init_robot_props(self):
         super()._init_robot_props()
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
+
+    def _post_physics_pre_step(self):
+        super()._post_physics_pre_step()
+
+        self.phase_length_buf[:] += self.dt * (self.phase_increment_ratio - 1)
+        self._update_phase()
+
+    def _reward_low_pass_filter(self):
+        action_his = self.actions_his_buf.get_all()
+
+        magnitude = torch.abs(torch.fft.fft(action_his, dim=0))
+        freqs = torch.fft.fftfreq(action_his.size(0), d=self.dt).to(self.device)
+
+        high_freq_mask = torch.abs(freqs) > 20.
+        high_freq_sum = (magnitude * high_freq_mask[:, None, None]).sum(dim=0)
+
+        return high_freq_sum.mean(dim=1)
 
     def _compute_observations(self):
         """
@@ -54,7 +103,7 @@ class T1DreamWaqEnvironment(T1BaseEnv):
         # add lag to sensor observation
         if self.cfg.domain_rand.add_dof_lag:
             dof_data = self.dof_lag_buf.get()
-            dof_pos, dof_vel = dof_data[..., 0], dof_data[..., 1]
+            dof_pos, dof_vel = dof_data[:, 0], dof_data[:, 1]
         else:
             dof_pos, dof_vel = self.sim.dof_pos, self.sim.dof_vel
 
@@ -111,11 +160,11 @@ class T1DreamWaqEnvironment(T1BaseEnv):
 
         # compose actor observation
         reset_flag = self.episode_length_buf <= 1
-        self.prop_his_buf.append(proprio, reset_flag)
         self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), priv_actor_obs)
+        self.prop_his_buf.append(proprio, reset_flag)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation
-        self.critic_his_buf.append(priv_obs, reset_flag)
         self.critic_obs = CriticObs(priv_obs, self.critic_his_buf.get(), scan)
+        self.critic_his_buf.append(priv_obs, reset_flag)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
