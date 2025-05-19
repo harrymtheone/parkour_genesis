@@ -4,7 +4,7 @@ import torch
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_trans_quat, transform_by_yaw
+from ...utils.math import transform_by_trans_quat, transform_by_yaw, torch_rand_float
 
 
 class ActorObs(ObsBase):
@@ -87,8 +87,8 @@ class T1ZJUEnvironment(T1BaseEnv):
     def _init_buffers(self):
         super()._init_buffers()
 
-        self.phase_increment_ratio = 1 + self._zero_tensor(self.num_envs)
-        # self.phase_increment_ratio = torch_rand_float(0.5, 1.5, (self.num_envs, 1), self.device).squeeze()
+        # self.phase_increment_ratio = 1 + self._zero_tensor(self.num_envs)
+        self.phase_increment_ratio = torch_rand_float(0.8, 1.2, (self.num_envs, 1), self.device).squeeze()
 
         bounding_box = self.cfg.sensors.depth_0.bounding_box  # x1, x2, y1, y2
         hmap_shape = self.cfg.sensors.depth_0.hmap_shape  # x dim, y dim
@@ -107,6 +107,11 @@ class T1ZJUEnvironment(T1BaseEnv):
         self.phase_length_buf[:] += self.dt * (self.phase_increment_ratio - 1)
         self._update_phase()
 
+    def _reset_idx(self, env_ids: torch.Tensor):
+        super()._reset_idx(env_ids)
+
+        self.phase_increment_ratio[env_ids] = torch_rand_float(0.8, 1.2, (len(env_ids), 1), self.device).squeeze()
+
     def _compute_observations(self):
         """
         Computes observations
@@ -114,7 +119,7 @@ class T1ZJUEnvironment(T1BaseEnv):
         # add lag to sensor observation
         if self.cfg.domain_rand.add_dof_lag:
             dof_data = self.dof_lag_buf.get()
-            dof_pos, dof_vel = dof_data[..., 0], dof_data[..., 1]
+            dof_pos, dof_vel = dof_data[:, 0], dof_data[:, 1]
         else:
             dof_pos, dof_vel = self.sim.dof_pos, self.sim.dof_vel
 
@@ -202,12 +207,12 @@ class T1ZJUEnvironment(T1BaseEnv):
             # self.draw_hmap_from_depth()
             # self.draw_cloud_from_depth()
             self._draw_goals()
-            self._draw_camera()
+            # self._draw_camera()
             # self._draw_link_COM(whole_body=False)
             # self._draw_feet_at_edge()
             # self._draw_foothold()
 
-            # self._draw_height_field(draw_guidance=False)
+            # self._draw_height_field(draw_guidance=True)
             # self._draw_edge()
 
         if self.cfg.sensors.activated:
@@ -228,7 +233,7 @@ class T1ZJUEnvironment(T1BaseEnv):
 
         if len(pts) > 0:
             pts = density_weighted_sampling(pts, 500)
-            self.sim.draw_points(pts)
+            self.pending_vis_task.append(dict(points=pts))
 
     def draw_hmap_from_depth(self):
         if not self.cfg.sensors.activated:
@@ -314,6 +319,7 @@ def density_weighted_sampling(points, num_samples, k=10):
     probabilities /= np.sum(probabilities)
 
     # Sample points based on computed probabilities
+    num_samples = min(num_samples, len(points) - 1)
     sampled_indices = np.random.choice(len(points), size=num_samples, replace=False, p=probabilities)
 
     return points[sampled_indices]

@@ -64,16 +64,18 @@ class T1BaseEnv(HumanoidEnv):
 
 @torch.jit.script
 def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):
-    # [-switch(hip), switch(thigh), switch(calf)]
-    left_idx = torch.tensor([1, 2, 3, 4, 5, 6], dtype=torch.long, device=prop.device) + start_idx
+    left_idx = start_idx + torch.tensor([1, 2, 3, 4, 5, 6], dtype=torch.long, device=prop.device)
     right_idx = left_idx + 6
 
     dof_left = prop[:, left_idx].clone()
     prop[:, left_idx] = prop[:, right_idx]
     prop[:, right_idx] = dof_left
 
-    invert_idx = torch.tensor([2, 3, 6], dtype=torch.long, device=prop.device)
+    prop[:, start_idx + 0] *= -1.  # invert waist
+
+    invert_idx = start_idx + torch.tensor([2, 3, 6], dtype=torch.long, device=prop.device)
     prop[:, invert_idx] *= -1.
+    prop[:, invert_idx + 6] *= -1.
 
 
 @torch.jit.script
@@ -110,7 +112,7 @@ def mirror_priv_by_x(priv: torch.Tensor) -> torch.Tensor:
     priv = priv.clone()
 
     # base velocity, [0:3], [x, -y, z]
-    priv[:, 0:3] = priv[:, 0:3] * torch.tensor([[1, -1, 1]], device=priv.device)  #
+    priv[:, 1] *= -1.
 
     # feet height map, [3:19], flip
     feet_hmap = priv[:, 3:19].unflatten(1, (4, 2, 2))

@@ -115,7 +115,7 @@ class PPODreamWaQ(BaseAlgorithm):
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
-        # mean_symmetry_loss = 0
+        mean_symmetry_loss = 0
         mean_estimation_loss = 0
         mean_ot1_prediction_loss = 0
         mean_vae_loss = 0
@@ -130,13 +130,14 @@ class PPODreamWaQ(BaseAlgorithm):
 
         for batch in generator:
             # update policy
-            value_loss, surrogate_loss, entropy_loss, kl_mean = self._update_policy(batch)
+            value_loss, surrogate_loss, entropy_loss, kl_mean, symmetry_loss = self._update_policy(batch)
             kl_change.append(kl_mean)
             num_updates += 1
             mean_value_loss += value_loss
             mean_surrogate_loss += surrogate_loss
             mean_entropy_loss += entropy_loss
             mean_kl += kl_mean
+            mean_symmetry_loss += symmetry_loss
 
             # update estimation
             if update_est:
@@ -152,7 +153,7 @@ class PPODreamWaQ(BaseAlgorithm):
         mean_estimation_loss /= num_updates
         mean_ot1_prediction_loss /= num_updates
         mean_vae_loss /= num_updates
-        # mean_symmetry_loss /= num_updates
+        mean_symmetry_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -167,7 +168,7 @@ class PPODreamWaQ(BaseAlgorithm):
             'Loss/kl_div': mean_kl,
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
-            # 'Loss/symmetry_loss': mean_symmetry_loss,
+            'Loss/symmetry_loss': mean_symmetry_loss,
             'Loss/estimation_loss': mean_estimation_loss,
             'Loss/ot1_prediction_loss': mean_ot1_prediction_loss,
             'Loss/vae_loss': mean_vae_loss,
@@ -225,7 +226,14 @@ class PPODreamWaQ(BaseAlgorithm):
             # Entropy Loss
             entropy_loss = self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
-            loss = (surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss)
+            # Symmetry loss
+            action_mean_original = self.actor.action_mean.detach()
+            obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (actions_batch.size(0), -1))
+            self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states_batch)
+            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (actions_batch.size(0), -1))
+            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+
+            loss = (surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss + symmetry_loss)
 
         # Use KL to adaptively update learning rate
         if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -240,9 +248,10 @@ class PPODreamWaQ(BaseAlgorithm):
         self.scaler.step(self.optimizer)
         self.scaler.update()
 
-        return value_loss.item(), surrogate_loss.item(), entropy_loss.item(), kl_mean
+        return value_loss.item(), surrogate_loss.item(), entropy_loss.item(), kl_mean, symmetry_loss.item()
 
-    # @torch.compile()
+        # @torch.compile()
+
     def _update_estimation(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']

@@ -155,9 +155,16 @@ class HumanoidEnv(ParkourTask):
         """
         Calculates the reward based on the difference between the current joint positions and the target joint positions.
         """
-        diff = self.sim.dof_pos - self.ref_dof_pos
+        diff = self.sim.dof_pos - torch.where(
+            self.is_zero_command.unsqueeze(1),
+            self.init_state_dof_pos,
+            self.ref_dof_pos
+        )
         diff = torch.norm(diff[:, self.dof_activated], dim=1)
-        diff[self.is_zero_command] = 0.
+
+        # diff = self.sim.dof_pos - self.ref_dof_pos
+        # diff = torch.norm(diff[:, self.dof_activated], dim=1)
+        # diff[self.is_zero_command] = 0.
 
         rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
         rew[self.env_class >= 2] *= 0.5
@@ -230,7 +237,6 @@ class HumanoidEnv(ParkourTask):
         Calculates the reward for keeping contact forces within a specified range. Penalizes
         high contact forces on the feet.
         """
-        # print(self.sim.contact_forces[:, self.feet_indices, 2].cpu().numpy())
         contact_forces = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1)
         return (contact_forces - self.cfg.rewards.max_contact_force).clip(min=0).sum(dim=1)
 
@@ -264,6 +270,8 @@ class HumanoidEnv(ParkourTask):
         # rew = torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
         # rew[self.env_class < 4] = 0.
         # return rew
+        if self.sim.terrain is None:
+            return self._zero_tensor(self.num_envs)
 
         cmd_vel_norm = torch.norm(self.commands[:, :2], dim=1)
         target_unit_vec = self.target_pos_rel / (torch.norm(self.target_pos_rel, dim=1, keepdim=True) + 1e-5)
@@ -372,7 +380,9 @@ class HumanoidEnv(ParkourTask):
         joint_diff = self.sim.dof_pos - self.init_state_dof_pos
         yaw_roll = joint_diff[:, self.yaw_roll_dof_indices].abs()
         yaw_roll = (yaw_roll - 0.1).clip(min=0, max=50).sum(dim=1)
-        return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1)
+        term1 = torch.exp(-yaw_roll * 100)
+        term2 = torch.norm(joint_diff, dim=1)
+        return term1 - 0.01 * term2
 
         # rew = -joint_diff[:, self.dof_activated].square().sum(dim=1)
         # return torch.exp(rew * self.cfg.rewards.tracking_sigma)
@@ -443,7 +453,7 @@ class HumanoidEnv(ParkourTask):
         This is important for achieving fluid motion and reducing mechanical stress.
         """
         term_1 = torch.sum(torch.square(self.last_actions - self.actions), dim=1)
-        term_2 = torch.sum(torch.square(self.actions + self.last_last_actions - 2 * self.last_actions), dim=1)
+        term_2 = 3 * torch.sum(torch.square(self.actions + self.last_last_actions - 2 * self.last_actions), dim=1)
         term_3 = 0.05 * torch.sum(torch.abs(self.actions), dim=1)
         return term_1 + term_2 + term_3
 

@@ -21,7 +21,8 @@ class Terrain:
         parkour_box = 10
         parkour_step = 11
         parkour_stair = 12
-        parkour_flat = 13
+        parkour_mini_stair = 13
+        parkour_flat = 14
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -178,7 +179,7 @@ class Terrain:
             #     slope *= -1
             # terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
             # add_fractal_roughness(terrain, scale=5)
-            self.add_roughness(terrain, difficulty)
+            # self.add_roughness(terrain, difficulty)
 
         elif choice < self.proportions[1]:
             terrain.terrain_type = Terrain.terrain_type.rough_slope
@@ -278,9 +279,18 @@ class Terrain:
                                   # step_depth=random.uniform(0.25, 0.35))  # 0.31
                                   step_depth=0.31)  # 0.31
             terrain.centered_origin = False
-            # self.add_roughness(terrain, difficulty)
+            self.add_roughness(terrain, difficulty)
 
         elif choice < self.proportions[13]:
+            terrain.terrain_type = Terrain.terrain_type.parkour_mini_stair
+            parkour_mini_stair_terrain(terrain,
+                                       step_height=stair_height_goal,
+                                       # step_depth=random.uniform(0.25, 0.35))  # 0.31
+                                       step_depth=0.31)  # 0.31
+            terrain.centered_origin = False
+            self.add_roughness(terrain, difficulty)
+
+        elif choice < self.proportions[14]:
             terrain.terrain_type = Terrain.terrain_type.parkour_flat
             parkour_flat_terrain(terrain)
             terrain.centered_origin = False

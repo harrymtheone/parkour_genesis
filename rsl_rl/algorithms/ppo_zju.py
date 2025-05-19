@@ -307,7 +307,6 @@ class PPO_ZJU(BaseAlgorithm):
             obs_next_batch = batch['observations_next'][:batch_size]
             mask_batch = batch['masks'][:batch_size, :, 0]
             use_estimated_values_batch = batch['use_estimated_values'][:batch_size]
-            action_mean_original = self.actor.action_mean.detach()[:batch_size]
 
             recon_rough, recon_refine, est_latent, est, est_logvar, ot1 = self.actor.reconstruct(
                 obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch, use_estimated_values_batch)

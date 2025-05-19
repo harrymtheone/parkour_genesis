@@ -395,13 +395,15 @@ def parkour_step_terrain(terrain: SubTerrain,
     terrain.goals = goals * terrain.horizontal_scale
 
 
-def parkour_stair_terrain(terrain: SubTerrain,
-                          platform_len=2.5,
-                          num_steps=16,
-                          step_height=0.2,
-                          step_depth=0.2,
-                          goal_deviation=0.5,
-                          only_up=True):
+def parkour_stair_terrain(
+        terrain: SubTerrain,
+        platform_len=2.5,
+        num_steps=16,
+        step_height=0.2,
+        step_depth=0.2,
+        goal_deviation=0.5,
+        only_up=True
+):
     if only_up:
         num_steps = 40
         terrain.height_field_guidance = terrain.height_field_raw.copy()
@@ -477,6 +479,78 @@ def parkour_stair_terrain(terrain: SubTerrain,
         goals[0] = [mid_x_stair, mid_y]
         goals[1] = [dis_x + round(1 / terrain.horizontal_scale), mid_y]
         terrain.goals = goals * terrain.horizontal_scale
+
+
+def parkour_mini_stair_terrain(
+        terrain: SubTerrain,
+        platform_len=2.5,
+        num_steps=16,
+        step_height=0.2,
+        step_depth=0.2,
+        goal_deviation=0.2,
+):
+    terrain.height_field_guidance = terrain.height_field_raw.copy()
+    mid_y = terrain.length // 2  # length is actually y width
+
+    step_height = round(step_height / terrain.vertical_scale)
+    step_depth = round(step_depth / terrain.horizontal_scale)
+    platform_len = round(platform_len / terrain.horizontal_scale)
+
+    mini_stair_hf = np.zeros((150, 100))
+    mini_stair_hf[:step_depth] = step_height
+    mini_stair_hf[step_depth: 2 * step_depth] = 2 * step_height
+    mini_stair_hf[2 * step_depth: 3 * step_depth] = 3 * step_height
+    mini_stair_hf[3 * step_depth: -3 * step_depth] = 4 * step_height
+    mini_stair_hf[-3 * step_depth: -2 * step_depth] = 3 * step_height
+    mini_stair_hf[-2 * step_depth: -step_depth] = 2 * step_height
+    mini_stair_hf[-step_depth:] = step_height
+
+    # mini guidance terrain
+    mini_stair_hf_guidance = np.zeros((200, 100))
+    mini_stair_hf_guidance[50:] = mini_stair_hf
+    mini_stair_hf_guidance[50 - step_depth // 2: 50] = np.tile(np.linspace(0 * step_height, 1 * step_height, step_depth // 2), (100, 1)).T
+    mini_stair_hf_guidance[50 + step_depth - step_depth // 2: 50 + step_depth] = np.tile(np.linspace(1 * step_height, 2 * step_height, step_depth // 2), (100, 1)).T
+    mini_stair_hf_guidance[50 + 2 * step_depth - step_depth // 2: 50 + 2 * step_depth] = np.tile(np.linspace(2 * step_height, 3 * step_height, step_depth // 2), (100, 1)).T
+    mini_stair_hf_guidance[50 + 3 * step_depth - step_depth // 2: 50 + 3 * step_depth] = np.tile(np.linspace(3 * step_height, 4 * step_height, step_depth // 2), (100, 1)).T
+
+    def rand_deviation():
+        return round(random.uniform(-goal_deviation, goal_deviation) / terrain.horizontal_scale)
+
+    goals = np.zeros((5, 2))
+
+    start_x = platform_len
+    terrain.height_field_raw[start_x: start_x + 150, 50:-50] = mini_stair_hf
+    goals[0] = [start_x + 75, mid_y + rand_deviation()]
+
+    start_x = start_x + 150 + 50
+    terrain.height_field_raw[start_x: start_x + 150, 50:-50] = mini_stair_hf
+    goals[1] = [start_x + 75, mid_y + rand_deviation()]
+
+    start_x = start_x + 150 + 50
+    terrain.height_field_raw[start_x: start_x + 150, 50:-50] = mini_stair_hf
+    goals[2] = [start_x + 75, mid_y + rand_deviation()]
+
+    start_x = start_x + 150 + 50
+    terrain.height_field_raw[start_x: start_x + 150, 50:-50] = mini_stair_hf
+    goals[3] = [start_x + 75, mid_y + rand_deviation()]
+
+    start_x = start_x + 150
+    goals[4] = [start_x + 75, mid_y + rand_deviation()]
+
+    terrain.goals = goals * terrain.horizontal_scale
+
+    # guidance terrain
+    start_x = platform_len - 50
+    terrain.height_field_guidance[start_x: start_x + 200, 50:-50] = mini_stair_hf_guidance
+
+    start_x = start_x + 200
+    terrain.height_field_guidance[start_x: start_x + 200, 50:-50] = mini_stair_hf_guidance
+
+    start_x = start_x + 200
+    terrain.height_field_guidance[start_x: start_x + 200, 50:-50] = mini_stair_hf_guidance
+
+    start_x = start_x + 200
+    terrain.height_field_guidance[start_x: start_x + 200, 50:-50] = mini_stair_hf_guidance
 
 
 def parkour_flat_terrain(terrain: SubTerrain,

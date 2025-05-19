@@ -39,11 +39,11 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         activated = True
 
         class depth_0:
-            link_attached_to = 'Head'
-            position = [0.15, 0, 0.]  # front camera
+            link_attached_to = 'H2'
+            position = [0.07, 0, 0.09]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-            pitch = 30  # positive is looking down
-            pitch_range = [-1, 1]
+            pitch = 0  # positive is looking down
+            pitch_range = [-3, 3]
 
             data_format = 'depth'  # depth, cloud, hmap
             update_interval = 10
@@ -72,7 +72,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         sw_switch = True
 
         class flat_ranges:
-            lin_vel_x = [-1.0, 1.0]
+            lin_vel_x = [-0.6, 0.6]
             lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]
 
@@ -83,7 +83,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.5, 1.2]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.3, 1.2]  # min value should be greater than lin_vel_clip
             # lin_vel_x = [0.8, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
@@ -104,7 +104,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 2,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 1,
+            'parkour_mini_stair': 1,
             'parkour_flat': 0,
         }
 
@@ -112,35 +113,34 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         add_noise = True
 
     class domain_rand(T1BaseCfg.domain_rand):
-        switch = True
+        randomize_start_pos = True
+        randomize_start_z = False
+        randomize_start_yaw = True
+        randomize_start_vel = False
+        randomize_start_pitch = True
 
-        randomize_start_pos = False
-        randomize_start_y = switch
-        randomize_start_yaw = switch
-        randomize_start_vel = switch
-        randomize_start_pitch = switch
+        randomize_start_dof_pos = False
+        randomize_start_dof_vel = False
 
-        randomize_start_dof_pos = True
-        randomize_start_dof_vel = True
+        randomize_friction = True
+        randomize_base_mass = True
+        randomize_link_mass = True
+        randomize_com = True
 
-        randomize_friction = switch
-        randomize_base_mass = switch
-        randomize_link_mass = switch
-        randomize_com = switch
-
-        push_robots = switch
+        push_robots = True
         action_delay = True
+        action_delay_range = [(0, 5)]
         add_dof_lag = False
         add_imu_lag = False
 
-        randomize_torque = switch
-        randomize_gains = switch
-        randomize_motor_offset = switch
+        randomize_torque = True
+        randomize_gains = True
+        randomize_motor_offset = True
         randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = True
-        randomize_coulomb_friction = False
+        randomize_coulomb_friction = True
 
     class rewards:
         base_height_target = 0.64
@@ -166,9 +166,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             # gait
             joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 0.2  # 0.2
-            # feet_air_time = 1.
-            feet_slip = -1.
+            feet_clearance = 0.2
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
@@ -180,7 +178,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             vel_mismatch_exp = 0.5
 
             # contact
-            feet_contact_forces = -0.005
+            feet_slip = -1.
+            feet_contact_forces = -0.001
             feet_stumble = -1.0
             # feet_edge = -0.5
             foothold = -1.
@@ -226,8 +225,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 5
-        num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
+        num_learning_epochs = 4
+        num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
         gamma = 0.99
@@ -254,17 +253,18 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
     class domain_rand(T1_Multi_Critic_Cfg.domain_rand):
         push_robots = True
-        push_duration = [0.15]
+        push_duration = [0.3]
 
         action_delay = True
-        action_delay_range = [(5, 5)]
+        action_delay_range = [(0, 5), (0, 10), (5, 15), (5, 20)]
+        action_delay_update_steps = 2000 * 24
 
     class terrain(T1_Multi_Critic_Cfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 1,
+            'smooth_slope': 2,
             'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
@@ -276,8 +276,25 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 2,  # First train a policy without stair for 2000 epochs
+            'parkour_stair': 1,
+            'parkour_mini_stair': 1,
             'parkour_flat': 0,
+        }
+
+    class control(T1BaseCfg.control):
+        # PD Drive parameters:
+        stiffness = {
+            'Head': 30,
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+            'Waist': 100,
+            'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
+        }
+
+        damping = {
+            'Head': 1,
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+            'Waist': 3,
+            'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
         }
 
     class algorithm(T1_Multi_Critic_Cfg.algorithm):

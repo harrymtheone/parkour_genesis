@@ -57,7 +57,10 @@ class DepthCam(SensorBase):
                                     delay_prop=cfg_dict['delay_prop'],
                                     device=device)
 
-    def get(self, get_depth=False, get_cloud=False, get_hmap=False, **kwargs):
+    def get(self, get_pos=False, get_depth=False, get_cloud=False, get_hmap=False, **kwargs):
+        if get_pos:
+            return wp.to_torch(self.sensor_pos)
+
         if get_depth:
             return self.depth_raw.clone()
 

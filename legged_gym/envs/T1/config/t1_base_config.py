@@ -115,7 +115,7 @@ class T1BaseCfg(BaseConfig):
 
         class noise_scales:
             dof_pos = 0.02
-            dof_vel = 1.5
+            dof_vel = 0.5
             lin_vel = 0.1
             ang_vel = 0.2
             gravity = 0.1
@@ -128,8 +128,8 @@ class T1BaseCfg(BaseConfig):
         randomize_start_vel_range = 0.1
         randomize_start_yaw = False
         randomize_start_yaw_range = 1.2
-        randomize_start_y = False
-        randomize_start_y_range = 0.1  # (0, 0.05)
+        randomize_start_z = False
+        randomize_start_z_range = 0.1  # (0, 0.05)
         randomize_start_pitch = False
         randomize_start_pitch_range = 0.1  # 5 degree
 
@@ -150,6 +150,7 @@ class T1BaseCfg(BaseConfig):
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
         action_delay_range = [(0, 5), (0, 10), (5, 15), (5, 20)]
+        # action_delay_range = [(0, 5), (0, 10), (5, 15), (5, 20)]
         action_delay_update_steps = 2000 * 24
 
         add_dof_lag = False
@@ -170,9 +171,9 @@ class T1BaseCfg(BaseConfig):
         com_displacement_range = [-0.05, 0.05]
 
         randomize_friction = False
-        friction_range = [0.3, 2.0]
-        compliance_range = [0.5, 1.5]
-        restitution_range = [0.1, 0.9]
+        friction_range = [0.2, 1.3]
+        # compliance_range = [0.5, 1.5]
+        restitution_range = [0., 0.4]
 
         randomize_joint_stiffness = False
         joint_stiffness_range = [0., 0.]
@@ -201,14 +202,14 @@ class T1BaseCfg(BaseConfig):
         torque_multiplier_range = [0.8, 1.2]
 
     class init_state:
-        pos = [0.0, 0.0, 0.72]
+        pos = [0.0, 0.0, 0.7]
         rot = [0.0, 0.0, 0.0, 1.0]  # x,y,z,w [quat]
         lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
         ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
 
         default_joint_angles = {
             'AAHead_yaw': 0.,
-            'Head_pitch': 0.,
+            'Head_pitch': 0.5236,
 
             'Left_Shoulder_Pitch': 0.,
             'Left_Shoulder_Roll': -1.3,
@@ -251,13 +252,15 @@ class T1BaseCfg(BaseConfig):
         # PD Drive parameters:
         stiffness = {
             'Head': 30,
-            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100, 'Waist': 100,  # not used yet, set randomly
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+            'Waist': 100,
             'Hip_Pitch': 150, 'Hip_Roll': 150, 'Hip_Yaw': 150, 'Knee_Pitch': 180, 'Ankle_Pitch': 50, 'Ankle_Roll': 50,
         }
 
         damping = {
             'Head': 1,
-            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3, 'Waist': 3.0,  # not used yet, set randomly
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+            'Waist': 3.0,
             'Hip_Pitch': 8, 'Hip_Roll': 8.0, 'Hip_Yaw': 4.0, 'Knee_Pitch': 8.0, 'Ankle_Pitch': 1.0, 'Ankle_Roll': 1.0,
         }
 

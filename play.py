@@ -10,7 +10,7 @@ from rich.live import Live
 from legged_gym.simulator import SimulatorType
 from legged_gym.utils.helpers import get_args
 from legged_gym.utils.task_registry import TaskRegistry
-from vis import gen_info_panel, ActionsVisualizer
+from vis import gen_info_panel, T1GravityVisualizer
 
 slowmo = 1
 
@@ -27,7 +27,7 @@ def play(args):
 
     # override some parameters for testing
     task_cfg.play.control = False
-    task_cfg.env.num_envs = 8
+    task_cfg.env.num_envs = 16
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
@@ -39,13 +39,15 @@ def play(args):
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
     task_cfg.domain_rand.action_delay = True
-    task_cfg.domain_rand.action_delay_range = [(10, 10)]
+    task_cfg.domain_rand.action_delay_range = [(5, 5)]
+    task_cfg.domain_rand.add_dof_lag = False
+    task_cfg.domain_rand.dof_lag_range = (10, 10)
     task_cfg.domain_rand.push_robots = True
     task_cfg.domain_rand.push_duration = [0.3]
-    task_cfg.domain_rand.push_interval_s = 3
+    task_cfg.domain_rand.push_interval_s = 8
 
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 1,
+        'smooth_slope': 0,
         'rough_slope': 0,
         'stairs_up': 0,
         'stairs_down': 0,
@@ -57,7 +59,8 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 0,
+        'parkour_stair': 1,
+        'parkour_mini_stair': 1,
         'parkour_flat': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
@@ -89,22 +92,20 @@ def play(args):
                     if len(recon_rough) > 0:
                         args.est = est[env.lookat_id, :3] / 2
 
-                        # env.draw_recon(recon_refine)
+                        # env.draw_recon(recon_rough)
                         env.draw_recon(recon_refine)
-                        # env.draw_body_edge(edge_refine)
                         # env.draw_est_hmap(est)
 
             else:
                 actions = rtn
 
-            # env.draw_hmap(obs.scan[:, 0])
-            # env.draw_body_edge(critic_obs.base_edge_mask)
+            # env.draw_recon(obs.scan)
             # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
 
-            # for calibration of mirroring of dof
+            # # for calibration of mirroring of dof
             # actions[:] = 0.
-            # actions[env.lookat_id, 5] = env.joystick_handler.get_control_input()[0]
-            # actions[env.lookat_id, 5 + 6] = env.joystick_handler.get_control_input()[0]
+            # actions[env.lookat_id, 6] = env.joystick_handler.get_control_input()[0]
+            # actions[env.lookat_id, 6 + 6] = env.joystick_handler.get_control_input()[0]
 
             # # for testing reference motion
             # actions[:] = 0.
@@ -146,7 +147,8 @@ def play(args):
             #     plt.pause(0.1)  # Pause for GUI update
             #     feet_act_his.clear()
 
-            # act_vis.plot({
+            # actions = actions.cpu().numpy()
+            # t1_vis.plot({
             #     'Waist': actions[env.lookat_id, 0],
             #     'Left_Hip_Pitch': actions[env.lookat_id, 1],
             #     'Left_Hip_Roll': actions[env.lookat_id, 2],
@@ -162,6 +164,13 @@ def play(args):
             #     'Right_Ankle_Roll': actions[env.lookat_id, 12],
             # })
 
+            # euler = env.projected_gravity.cpu().numpy()
+            # t1_vis.plot({
+            #     'X': euler[env.lookat_id, 0],
+            #     'Y': euler[env.lookat_id, 1],
+            #     'Z': euler[env.lookat_id, 2],
+            # })
+
 
 if __name__ == '__main__':
     # plt.ion()
@@ -171,7 +180,8 @@ if __name__ == '__main__':
     # line1, = axs[1].plot([], [])
     # line2, = axs[2].plot([], [])
 
-    # act_vis = ActionsVisualizer()
+    # t1_vis = T1ActionsVisualizer()
+    t1_vis = T1GravityVisualizer()
 
     with torch.inference_mode():
         play(get_args())

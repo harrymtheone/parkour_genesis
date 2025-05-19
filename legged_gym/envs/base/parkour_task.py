@@ -207,6 +207,9 @@ class ParkourTask(BaseTask):
         return heights.view(self.num_envs, -1) * self.cfg.terrain.vertical_scale
 
     def get_edge_mask(self):
+        if self.sim.terrain is None:
+            return self._zero_tensor(*self.scan_points.shape[:2], dtype=torch.bool)
+
         # convert height points coordinate to world frame
         points = transform_by_yaw(
             self.scan_points,
@@ -496,6 +499,9 @@ class ParkourTask(BaseTask):
             self.sim.draw_points(feet_stumble_pos, radius=0.05, color=(1, 1, 0), sphere_lines=8)
 
     def _draw_goals(self):
+        if self.sim.terrain is None:
+            return
+
         if self.env_goal_num[self.lookat_id] == 0:
             return
 
@@ -515,7 +521,7 @@ class ParkourTask(BaseTask):
             return
 
         cam_pos = self.sensors.get('depth_0', get_pos=True)
-        self.sim.draw_points(cam_pos, 0.05, (1, 0, 0), sphere_lines=16)
+        self.pending_vis_task.append(dict(points=cam_pos, radius=0.02, color=(1, 0, 0), sphere_lines=16, z_shift=0.))
 
     def _draw_link_COM(self, whole_body=True):
         if whole_body:

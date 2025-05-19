@@ -9,9 +9,14 @@ from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.simulator.base_wrapper import BaseWrapper, DriveMode
 from legged_gym.utils.terrain import Terrain
 
+LATEST = True
+
 
 def wrapper_unsafe(func, *args, **kwargs):
-    return func(*args, unsafe=True, **kwargs)
+    if LATEST:
+        return func(*args, unsafe=True, **kwargs)
+    else:
+        return func(*args, **kwargs)
 
 
 class GenesisWrapper(BaseWrapper):
@@ -20,7 +25,7 @@ class GenesisWrapper(BaseWrapper):
         self.cfg = cfg
         self.debug = True
         self.init_done = False
-        self.suppress_warning = False
+        self.suppress_warning = True
 
         # create envs, sim and viewer
         gs.init(backend=gs.gpu if self.device.type == 'cuda' else gs.cpu, logging_level='info')
@@ -92,7 +97,11 @@ class GenesisWrapper(BaseWrapper):
             refresh_rate=60,
             max_FPS=60
         )
-        vis_options = gs.options.VisOptions(rendered_envs_idx=list(range(n_rendered_envs)))
+
+        if LATEST:
+            vis_options = gs.options.VisOptions(rendered_envs_idx=list(range(n_rendered_envs)))
+        else:
+            vis_options = gs.options.VisOptions(n_rendered_envs=n_rendered_envs)
 
         # create Scene
         self._scene = gs.Scene(
@@ -121,7 +130,7 @@ class GenesisWrapper(BaseWrapper):
             self.terrain = None
 
         if terrain_desc_type == 'plane':
-            self._scene.add_entity(gs.morphs.Plane())
+            self.plane = self._scene.add_entity(gs.morphs.Plane())
         elif terrain_desc_type == 'heightfield':
             self._create_heightfield()
         elif terrain_desc_type == 'trimesh':
@@ -291,8 +300,13 @@ class GenesisWrapper(BaseWrapper):
     # ---------------------------------------------- IO Interface ----------------------------------------------
 
     def get_trimesh(self):
-        vertices = self.terrain.vertices - np.array([[self.cfg.terrain.border_size, self.cfg.terrain.border_size, 0]])
-        triangles = self.terrain.triangles
+        if self.terrain is None:
+            mesh = self.plane.geoms[0].mesh
+            vertices, triangles = mesh.verts, mesh.faces
+        else:
+            vertices = self.terrain.vertices - np.array([[self.cfg.terrain.border_size, self.cfg.terrain.border_size, 0]])
+            triangles = self.terrain.triangles
+
         return vertices, triangles
 
     def refresh_variable(self):

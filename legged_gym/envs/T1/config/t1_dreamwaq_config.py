@@ -29,9 +29,9 @@ class T1DreamWaqCfg(T1BaseCfg):
         switch = True
 
         randomize_start_pos = switch
-        randomize_start_y = switch
+        randomize_start_z = False
         randomize_start_yaw = switch
-        randomize_start_vel = switch
+        randomize_start_vel = False
         randomize_start_pitch = switch
 
         randomize_start_dof_pos = False
@@ -45,8 +45,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         push_robots = switch
         action_delay = switch
         action_delay_update_steps = 1000 * 24
-        add_dof_lag = False
-        dof_lag_range = (0, 20)
+        add_dof_lag = switch
         add_imu_lag = False
 
         randomize_torque = switch
@@ -89,15 +88,15 @@ class T1DreamWaqCfg(T1BaseCfg):
 
             # contact
             feet_slip = -1.
-            feet_contact_forces = -0.005
+            feet_contact_forces = -0.001
 
             # vel tracking
-            tracking_lin_vel = 2.5
+            tracking_lin_vel = 1.6
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
 
             # base pos
-            default_joint_pos = 0.5
+            default_joint_pos = 1.5
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
@@ -144,7 +143,7 @@ class T1DreamWaqCfg(T1BaseCfg):
 
 class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):
     class terrain(T1DreamWaqCfg.terrain):
-        description_type = 'trimesh'
+        description_type = 'plane'
 
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
@@ -168,17 +167,18 @@ class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):
             'parkour_box': 0,
             'parkour_step': 0,
             'parkour_stair': 0,
+            'parkour_mini_stair': 0,
             'parkour_flat': 0,
         }
 
     class domain_rand(T1DreamWaqCfg.domain_rand):
         push_robots = True
         push_duration = [0.2, 0.3]
-        # push_duration = [0.3]
 
-        action_delay_range = [(0, 10), (5, 15), (5, 20)]
-#         action_delay_range = [(5, 20)]
-        action_delay_update_steps = 1000 * 24
+        action_delay_range = [(0, 10), (0, 20), (5, 30), (5, 40)]
+        # action_delay_range = [(2, 10), (4, 15), (5, 20)]
+        # action_delay_range = [(5, 20)]
+        action_delay_update_steps = 2000 * 24
 
     class control(T1DreamWaqCfg.control):
         # PD Drive parameters:

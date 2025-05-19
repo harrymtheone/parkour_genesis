@@ -107,7 +107,8 @@ class RLDreamRunner(RunnerLogger):
                         terrain_coefficient_variation[f'Coefficient Variation/{n}'] = coefficient_variation[i].item()
 
                     # probability to use ground truth value
-                    self.p_smpl = 0.999 * self.p_smpl + 0.001 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
+                    if self.cur_it > 10000:
+                        self.p_smpl = 0.999 * self.p_smpl + 0.001 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
 
                 # Learning step
                 self.alg.compute_returns(critic_obs)

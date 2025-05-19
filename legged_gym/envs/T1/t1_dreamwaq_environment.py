@@ -1,6 +1,6 @@
 import torch
 
-from .t1_base_env import T1BaseEnv
+from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase, HistoryBuffer, CircularBuffer
 from ...utils.math import torch_rand_float
 
@@ -15,6 +15,23 @@ class ActorObs(ObsBase):
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
+
+    @torch.compiler.disable
+    def mirror(self):
+        priv_actor = self.priv_actor.clone()
+        priv_actor[:, 1] *= -1.
+
+        return ActorObs(
+            mirror_proprio_by_x(self.proprio),
+            mirror_proprio_by_x(self.prop_his.flatten(0, 1)).unflatten(0, self.prop_his.shape[:2]),
+            priv_actor,
+        )
+
+    @staticmethod
+    def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
+        dof_prop_mirrored = dof_prop.clone()
+        mirror_dof_prop_by_x(dof_prop_mirrored, 0)
+        return dof_prop_mirrored
 
 
 class ObsNext(ObsBase):

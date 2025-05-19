@@ -1,5 +1,5 @@
 from collections import deque
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import torch
@@ -56,7 +56,7 @@ def gen_info_panel(args, env):
     table12.add_row(f'{env.target_yaw[env.lookat_id]: .2f}', f'{real_base_height: .2f}')
 
     table21 = Table()
-    table21.add_column("")
+    table21.add_column("Pushing" if env.pushing_robots else "")
     table21.add_column("Left")
     table21.add_column("Right")
     table21.add_row("Feet height", f'{feet_height[0]: .2f}', f'{feet_height[1]: .2f}')
@@ -83,6 +83,7 @@ import matplotlib.pyplot as plt
 
 
 class BaseVisualizer:
+    figsize: Tuple[int, int]
     subplot_shape: Tuple[int, int]
     subplot_props: Dict[str, dict]
     his_length: int
@@ -92,7 +93,7 @@ class BaseVisualizer:
 
         self.his = {n: deque(maxlen=self.his_length) for n in self.subplot_props}
 
-        self.fig, self.axes = plt.subplots(*self.subplot_shape, figsize=(6, len(self.subplot_props) * 1.2))
+        self.fig, self.axes = plt.subplots(*self.subplot_shape, figsize=self.figsize)
         self.axes_dict = {}
         self.lines = {}
 
@@ -133,24 +134,34 @@ class BaseVisualizer:
         self.fig.canvas.flush_events()
 
 
-class ActionsVisualizer(BaseVisualizer):
-    subplot_shape = (13, 1)
+class T1ActionsVisualizer(BaseVisualizer):
+    figsize = (6, 12)
+    subplot_shape = (6, 2)
     subplot_props = {
-        'Waist': {'lim': (-3, 3)},
+        # 'Waist': {'lim': (-3, 3)},
         'Left_Hip_Pitch': {'lim': (-3, 3)},
-        'Left_Hip_Roll': {'lim': (-3, 3)},
-        'Left_Hip_Yaw': {'lim': (-3, 3)},
-        'Left_Knee_Pitch': {'lim': (-3, 3)},
-        'Left_Ankle_Pitch': {'lim': (-3, 3)},
-        'Left_Ankle_Roll': {'lim': (-3, 3)},
         'Right_Hip_Pitch': {'lim': (-3, 3)},
+        'Left_Hip_Roll': {'lim': (-3, 3)},
         'Right_Hip_Roll': {'lim': (-3, 3)},
+        'Left_Hip_Yaw': {'lim': (-3, 3)},
         'Right_Hip_Yaw': {'lim': (-3, 3)},
+        'Left_Knee_Pitch': {'lim': (-3, 3)},
         'Right_Knee_Pitch': {'lim': (-3, 3)},
+        'Left_Ankle_Pitch': {'lim': (-3, 3)},
         'Right_Ankle_Pitch': {'lim': (-3, 3)},
+        'Left_Ankle_Roll': {'lim': (-3, 3)},
         'Right_Ankle_Roll': {'lim': (-3, 3)},
     }
     his_length = 50
 
 
+class T1GravityVisualizer(BaseVisualizer):
+    figsize = (6, 12)
+    subplot_shape = (3, 1)
+    subplot_props = {
+        'X': {'lim': (-0.1, 0.1)},
+        'Y': {'lim': (-0.1, 0.1)},
+        'Z': {'lim': (-1., 0.)},
+    }
+    his_length = 50
 

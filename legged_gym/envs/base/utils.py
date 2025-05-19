@@ -250,3 +250,6 @@ class DelayBufferHumanoidGym:
 
     def reset(self, batch_ids: Sequence[int] | None = None):
         self._lag_buffer[:, batch_ids] = 0.
+
+    def get(self):
+        return self._lag_buffer[self._lag_timestep, self._all_envs]

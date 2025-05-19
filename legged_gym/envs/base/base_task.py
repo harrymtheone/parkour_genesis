@@ -128,6 +128,7 @@ class BaseTask:
                                            device=self.device)
 
         # Push robot
+        self.pushing_robots = False
         self.ext_force = self._zero_tensor(self.num_envs, 3)
         self.ext_torque = self._zero_tensor(self.num_envs, 3)
 
@@ -352,8 +353,10 @@ class BaseTask:
             assert duration < self.push_interval
 
             if self.global_counter % self.push_interval <= duration:
+                self.pushing_robots = True
                 self._push_robots()
             else:
+                self.pushing_robots = False
                 self.ext_force[:] = 0.
                 self.ext_torque[:] = 0.
 
@@ -410,8 +413,9 @@ class BaseTask:
                                                   (self.num_envs, 3),
                                                   device=self.device)
 
-        apply_force[:, 0] = self.ext_force * self.is_zero_command.unsqueeze(-1)
-        apply_torque[:, 0] = self.ext_torque * self.is_zero_command.unsqueeze(-1)
+        has_command = ~self.is_zero_command.unsqueeze(-1)
+        apply_force[:, 0] = self.ext_force * has_command
+        apply_torque[:, 0] = self.ext_torque * has_command
         self.sim.apply_perturbation(apply_force, apply_torque)
 
     def render(self):
@@ -470,9 +474,9 @@ class BaseTask:
                                                 (len(env_ids), 2),
                                                 device=self.device)
 
-        if self.cfg.domain_rand.randomize_start_y:
-            root_pos[:, 2] += torch.abs(torch_rand_float(-self.cfg.domain_rand.randomize_start_y_range,
-                                                         self.cfg.domain_rand.randomize_start_y_range,
+        if self.cfg.domain_rand.randomize_start_z:
+            root_pos[:, 2] += torch.abs(torch_rand_float(-self.cfg.domain_rand.randomize_start_z_range,
+                                                         self.cfg.domain_rand.randomize_start_z_range,
                                                          (len(env_ids), 1),
                                                          device=self.device).squeeze(1))
 

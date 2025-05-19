@@ -222,7 +222,7 @@ class IsaacGymWrapper(BaseWrapper):
         if self.cfg.domain_rand.randomize_friction:
             for s in range(len(props)):
                 props[s].friction = self.friction_coeffs[env_id]
-                props[s].compliance = self.compliance_coeffs[env_id]
+                # props[s].compliance = self.compliance_coeffs[env_id]
                 props[s].restitution = self.restitution_coeffs[env_id]
 
     def _process_dof_props(self, props, env_id: int):
@@ -288,8 +288,12 @@ class IsaacGymWrapper(BaseWrapper):
 
     # ---------------------------------------------- IO Interface ----------------------------------------------
     def get_trimesh(self):
-        vertices = self.terrain.vertices - np.array([[self.cfg.terrain.border_size, self.cfg.terrain.border_size, 0]])
-        triangles = self.terrain.triangles
+        if self.terrain is None:
+            raise NotImplementedError
+        else:
+            vertices = self.terrain.vertices - np.array([[self.cfg.terrain.border_size, self.cfg.terrain.border_size, 0]])
+            triangles = self.terrain.triangles
+
         return vertices, triangles
 
     def set_root_state(self, env_ids, root_pos, root_quat, root_lin_vel, root_ang_vel):

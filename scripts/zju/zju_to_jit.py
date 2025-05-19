@@ -1,4 +1,5 @@
-from rsl_rl.modules.model_zju_gru import ObsGRU, ReconGRU, LocoTransformer, Actor
+# from rsl_rl.modules.model_zju_gru import ObsGRU, ReconGRU, LocoTransformer, Actor
+from rsl_rl.modules.model_zju_exp import ObsGRU, ReconGRU, Mixer, Actor
 
 try:
     import isaacgym, torch
@@ -22,10 +23,11 @@ class EstimatorGRU(nn.Module):
 
         self.obs_gru = ObsGRU(env_cfg, policy_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
-        self.transformer = LocoTransformer(env_cfg, policy_cfg)
+        # self.transformer = LocoTransformer(env_cfg, policy_cfg)
+        self.mixer = Mixer(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
-        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
+        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
         self.distribution = None
 
     def forward(self, proprio, prop_his, depth, hidden_obs_gru, hidden_recon):  # <-- my mood be like
@@ -36,7 +38,8 @@ class EstimatorGRU(nn.Module):
         recon_rough, recon_refine, hidden_recon = self.reconstructor(depth.unsqueeze(0), latent_obs, hidden_recon)
 
         # cross-model mixing using transformer
-        est_latent, est, est_logvar, ot1 = self.transformer(recon_refine.squeeze(0), latent_obs.squeeze(0))
+        # est_latent, est, est_logvar, ot1 = self.transformer(recon_refine.squeeze(0), latent_obs.squeeze(0))
+        est_latent, est, est_logvar, ot1 = self.mixer(recon_refine.squeeze(0), latent_obs.squeeze(0))
 
         # compute action
         latent_input = torch.cat([est_latent, est.detach()], dim=1)
@@ -49,7 +52,11 @@ class EstimatorGRU(nn.Module):
 def trace():
     # proj, cfg, exptid, checkpoint = 't1', 't1_zju', 't1_zju_002', 12100
     # proj, cfg, exptid, checkpoint = 't1', 't1_zju', 't1_zju_002r1', 11200
-    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_002st04r2', 40000
+    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_002st04r2', 40000
+    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r1', 60300
+    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r2', 60000
+    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r4', 29000
+    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r5', 23500
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):
