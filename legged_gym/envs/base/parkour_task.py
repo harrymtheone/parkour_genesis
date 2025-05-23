@@ -37,6 +37,7 @@ class ParkourTask(BaseTask):
         self.last_actions = torch.zeros_like(self.actions)
         self.last_last_actions = torch.zeros_like(self.actions)
         self.last_dof_vel = torch.zeros_like(self.sim.dof_vel)
+        self.last_last_dof_vel = torch.zeros_like(self.sim.dof_vel)
         self.last_torques = torch.zeros_like(self.torques)
         self.last_root_vel = torch.zeros_like(self.sim.root_lin_vel)
 
@@ -105,6 +106,7 @@ class ParkourTask(BaseTask):
         self.last_actions[env_ids] = 0.
         self.last_last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
+        self.last_last_dof_vel[env_ids] = 0.
         self.last_torques[env_ids] = 0.
         self.last_root_vel[:] = 0.
 
@@ -260,6 +262,7 @@ class ParkourTask(BaseTask):
     def _post_physics_post_step(self):
         self.last_last_actions[:] = self.last_actions
         self.last_actions[:] = self.actions
+        self.last_last_dof_vel[:] = self.last_dof_vel
         self.last_dof_vel[:] = self.sim.dof_vel
         self.last_torques[:] = self.torques
         self.last_root_vel[:] = self.sim.root_lin_vel

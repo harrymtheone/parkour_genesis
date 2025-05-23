@@ -122,7 +122,7 @@ class Terrain:
                     pts = (goal_xy / self.cfg.horizontal_scale).astype(int)
                     self.goals[r, c, goal_i, 2] = self.height_field_raw[pts[0], pts[1]] * self.cfg.vertical_scale
 
-    def add_roughness(self, terrain, difficulty=1):
+    def add_roughness(self, terrain, difficulty=1.):
         max_height = (self.cfg.roughness_height[1] - self.cfg.roughness_height[0]) * difficulty + self.cfg.roughness_height[0]
         random_uniform_terrain(terrain,
                                min_height=-max_height,
@@ -276,10 +276,10 @@ class Terrain:
             terrain.terrain_type = Terrain.terrain_type.parkour_stair
             parkour_stair_terrain(terrain,
                                   step_height=stair_height_goal,
-                                  # step_depth=random.uniform(0.25, 0.35))  # 0.31
-                                  step_depth=0.31)  # 0.31
+                                  step_depth=random.uniform(0.25, 0.35))  # 0.31
+                                  # step_depth=0.31)  # 0.31
             terrain.centered_origin = False
-            self.add_roughness(terrain, difficulty)
+            # self.add_roughness(terrain, 0.5)
 
         elif choice < self.proportions[13]:
             terrain.terrain_type = Terrain.terrain_type.parkour_mini_stair

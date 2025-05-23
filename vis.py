@@ -155,6 +155,27 @@ class T1ActionsVisualizer(BaseVisualizer):
     his_length = 50
 
 
+class T1DofVelVisualizer(BaseVisualizer):
+    figsize = (6, 12)
+    subplot_shape = (6, 2)
+    subplot_props = {
+        # 'Waist': {'lim': (-3, 3)},
+        'Left_Hip_Pitch': {'lim': (-3, 3)},
+        'Right_Hip_Pitch': {'lim': (-3, 3)},
+        'Left_Hip_Roll': {'lim': (-3, 3)},
+        'Right_Hip_Roll': {'lim': (-3, 3)},
+        'Left_Hip_Yaw': {'lim': (-3, 3)},
+        'Right_Hip_Yaw': {'lim': (-3, 3)},
+        'Left_Knee_Pitch': {'lim': (-3, 3)},
+        'Right_Knee_Pitch': {'lim': (-3, 3)},
+        'Left_Ankle_Pitch': {'lim': (-3, 3)},
+        'Right_Ankle_Pitch': {'lim': (-3, 3)},
+        'Left_Ankle_Roll': {'lim': (-3, 3)},
+        'Right_Ankle_Roll': {'lim': (-3, 3)},
+    }
+    his_length = 50
+
+
 class T1GravityVisualizer(BaseVisualizer):
     figsize = (6, 12)
     subplot_shape = (3, 1)
@@ -164,4 +185,3 @@ class T1GravityVisualizer(BaseVisualizer):
         'Z': {'lim': (-1., 0.)},
     }
     his_length = 50
-

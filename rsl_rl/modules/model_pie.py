@@ -78,7 +78,7 @@ class EstimatorVAE(nn.Module):
         self.ot1_predictor = make_linear_layers(hidden_size, 128, env_cfg.n_proprio,
                                                 activation_func=activation, output_activation=False)
 
-        self.len_estimation = policy_cfg.len_base_vel + policy_cfg.len_latent_feet + policy_cfg.len_latent_body
+        self.len_estimation = policy_cfg.len_estimation
         self.len_hmap_latent = policy_cfg.len_hmap_latent
         self.hmap_recon = make_linear_layers(self.len_hmap_latent, 256, env_cfg.n_scan,
                                              activation_func=activation, output_activation=False)

@@ -87,8 +87,8 @@ class T1ZJUEnvironment(T1BaseEnv):
     def _init_buffers(self):
         super()._init_buffers()
 
-        # self.phase_increment_ratio = 1 + self._zero_tensor(self.num_envs)
-        self.phase_increment_ratio = torch_rand_float(0.8, 1.2, (self.num_envs, 1), self.device).squeeze()
+        self.phase_increment_ratio = 1 + self._zero_tensor(self.num_envs)
+        # self.phase_increment_ratio = torch_rand_float(0.8, 1.2, (self.num_envs, 1), self.device).squeeze()
 
         bounding_box = self.cfg.sensors.depth_0.bounding_box  # x1, x2, y1, y2
         hmap_shape = self.cfg.sensors.depth_0.hmap_shape  # x dim, y dim
@@ -110,7 +110,7 @@ class T1ZJUEnvironment(T1BaseEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         super()._reset_idx(env_ids)
 
-        self.phase_increment_ratio[env_ids] = torch_rand_float(0.8, 1.2, (len(env_ids), 1), self.device).squeeze()
+        # self.phase_increment_ratio[env_ids] = torch_rand_float(0.8, 1.2, (len(env_ids), 1), self.device).squeeze()
 
     def _compute_observations(self):
         """
@@ -175,8 +175,14 @@ class T1ZJUEnvironment(T1BaseEnv):
         else:
             priv_actor_obs = torch.cat((
                 self.base_lin_vel * self.obs_scales.lin_vel,  # 3
-                self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
-                self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
+                self.action_delay_buf.lag_timestep.unsqueeze(1) / 20,  # 1
+                self.dof_lag_buf.lag_timestep.unsqueeze(1) / 20,  # 1
+                self.torque_mul[:, self.dof_activated],  # 13
+                self.p_gain_multiplier[:, self.dof_activated],  # 13
+                self.d_gain_multiplier[:, self.dof_activated],  # 13
+                self.joint_armatures.unsqueeze(1) / 0.05,  # 1
+                self.randomized_joint_viscous[:, self.dof_activated],  # 13
+                self.randomized_joint_coulomb[:, self.dof_activated],  # 13
             ), dim=-1)
 
         # compute height map

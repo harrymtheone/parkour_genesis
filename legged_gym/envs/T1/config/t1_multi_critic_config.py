@@ -24,7 +24,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             proprio = 50
             prop_his = (10, 50)
             depth = (2, *reversed(DEPTH_RESIZED))
-            priv_actor = 3  # 27
+            priv_actor = 3
+            # priv_actor = 3 + 1 + 1 + 13 + 26 + 1 + 26  # act delay, dof delay, torque mul, PD gain mul, armature, coulomb
             scan = (2, 32, 16)
 
         class critic_obs:
@@ -92,7 +93,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 1,
+            'smooth_slope': 3,
             'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
@@ -130,7 +131,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         push_robots = True
         action_delay = True
         action_delay_range = [(0, 5)]
-        add_dof_lag = False
+        add_dof_lag = True
         add_imu_lag = False
 
         randomize_torque = True
@@ -194,6 +195,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             action_smoothness = -3e-3
             torques = -1e-5
             dof_vel = -5e-4
+            dof_vel_smoothness = -1e-3
             dof_acc = -1e-7
             collision = -1.
 
@@ -214,9 +216,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         recon_gru_num_layers = 2
 
         len_latent = 64  # 16
-        len_base_vel = 3
-        len_latent_feet = 0  # 8
-        len_latent_body = 0  # 16
+        len_estimation = 3
+        # len_estimation = 3 + 1 + 1 + 13 + 26 + 1 + 26  # act delay, dof delay, torque mul, PD gain mul, armature, coulomb
         transformer_embed_dim = 64
 
     class algorithm:
@@ -256,7 +257,7 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
         push_duration = [0.3]
 
         action_delay = True
-        action_delay_range = [(0, 5), (0, 10), (5, 15), (5, 20)]
+        action_delay_range = [(0, 5), (0, 10)]
         action_delay_update_steps = 2000 * 24
 
     class terrain(T1_Multi_Critic_Cfg.terrain):
@@ -277,7 +278,7 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             'parkour_box': 0,
             'parkour_step': 0,
             'parkour_stair': 1,
-            'parkour_mini_stair': 1,
+            'parkour_mini_stair': 0,
             'parkour_flat': 0,
         }
 

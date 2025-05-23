@@ -44,7 +44,6 @@ class T1DreamWaqCfg(T1BaseCfg):
 
         push_robots = switch
         action_delay = switch
-        action_delay_update_steps = 1000 * 24
         add_dof_lag = switch
         add_imu_lag = False
 
@@ -143,8 +142,6 @@ class T1DreamWaqCfg(T1BaseCfg):
 
 class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):
     class terrain(T1DreamWaqCfg.terrain):
-        description_type = 'plane'
-
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
@@ -175,9 +172,7 @@ class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):
         push_robots = True
         push_duration = [0.2, 0.3]
 
-        action_delay_range = [(0, 10), (0, 20), (5, 30), (5, 40)]
-        # action_delay_range = [(2, 10), (4, 15), (5, 20)]
-        # action_delay_range = [(5, 20)]
+        action_delay_range = [(0, 10), (5, 15), (5, 20)]
         action_delay_update_steps = 2000 * 24
 
     class control(T1DreamWaqCfg.control):

@@ -59,10 +59,7 @@ class Mixer(nn.Module):
         obs_gru_hidden_size = policy_cfg.obs_gru_hidden_size
         mixer_embed_dim = policy_cfg.transformer_embed_dim
         self.len_latent = policy_cfg.len_latent
-        vae_output_dim = (policy_cfg.len_latent
-                          + policy_cfg.len_base_vel
-                          + policy_cfg.len_latent_feet
-                          + policy_cfg.len_latent_body)
+        vae_output_dim = self.len_latent + policy_cfg.len_estimation
 
         # patch embedding
         self.cnn_scan = nn.Sequential(  # 32, 16

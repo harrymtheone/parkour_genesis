@@ -45,16 +45,15 @@ class ActorGRU(nn.Module):
 
 
 def trace():
-    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_003', 40000
-    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_005', 8000
-    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_006', 2300
-    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_016r7', 19000
-    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_016r8', 15100
-    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_016r9', 20000
-    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_017r1', 7000
-    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_018r1', 5500
-    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_018r2', 7700
-    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_020r1', 19900
+    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_020r1', 19900
+    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_020r2', 20900
+    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_020r3', 15500
+    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_026r1', 20900
+    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_021r1', 6000
+    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_021r2', 7000
+    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_021r3', 7200
+    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_027r1', 3700
+    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_028', 5700
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):

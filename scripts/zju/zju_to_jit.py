@@ -19,7 +19,7 @@ class EstimatorGRU(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         self.len_latent = policy_cfg.len_latent
-        self.est_dim = policy_cfg.len_base_vel + policy_cfg.len_latent_feet + policy_cfg.len_latent_body
+        self.est_dim = self.len_latent + policy_cfg.len_estimation
 
         self.obs_gru = ObsGRU(env_cfg, policy_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
@@ -54,9 +54,14 @@ def trace():
     # proj, cfg, exptid, checkpoint = 't1', 't1_zju', 't1_zju_002r1', 11200
     # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_002st04r2', 40000
     # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r1', 60300
-    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r2', 60000
-    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r4', 29000
-    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r5', 23500
+    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r2', 60000
+    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r6', 41300
+    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r7', 39100
+    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r9', 35300
+    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r10', 33200
+    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r11', 36000
+    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r12', 33100
+    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r13', 37200
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):

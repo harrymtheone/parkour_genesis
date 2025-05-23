@@ -231,10 +231,10 @@ class DelayBufferHumanoidGym:
         self._all_envs = torch.arange(batch_size, device=device)
 
         self._lag_buffer = torch.zeros(history_length, batch_size, *data_shape, dtype=torch.float, device=device)
-        self._lag_timestep = torch.zeros(batch_size, dtype=torch.int, device=device)
+        self.lag_timestep = torch.zeros(batch_size, dtype=torch.int, device=device)
 
     def set_delay_range(self, delay_prop: Tuple[int, int]):
-        self._lag_timestep[:] = torch.randint(
+        self.lag_timestep[:] = torch.randint(
             low=delay_prop[0],
             high=delay_prop[1] + 1,
             size=(self._batch_size,),
@@ -246,10 +246,10 @@ class DelayBufferHumanoidGym:
         self._lag_buffer[1:] = self._lag_buffer[:-1].clone()
         self._lag_buffer[0] = data
 
-        return self._lag_buffer[self._lag_timestep, self._all_envs]
+        return self._lag_buffer[self.lag_timestep, self._all_envs]
 
     def reset(self, batch_ids: Sequence[int] | None = None):
         self._lag_buffer[:, batch_ids] = 0.
 
     def get(self):
-        return self._lag_buffer[self._lag_timestep, self._all_envs]
+        return self._lag_buffer[self.lag_timestep, self._all_envs]

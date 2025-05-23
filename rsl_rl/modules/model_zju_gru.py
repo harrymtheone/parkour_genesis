@@ -212,10 +212,7 @@ class LocoTransformer(nn.Module):
         obs_gru_hidden_size = policy_cfg.obs_gru_hidden_size
         transformer_embed_dim = policy_cfg.transformer_embed_dim
         self.len_latent = policy_cfg.len_latent
-        vae_output_dim = (policy_cfg.len_latent
-                          + policy_cfg.len_base_vel
-                          + policy_cfg.len_latent_feet
-                          + policy_cfg.len_latent_body)
+        vae_output_dim = policy_cfg.len_latent + policy_cfg.len_estimation
 
         # patch embedding
         self.cnn_scan = nn.Conv2d(in_channels=2, out_channels=transformer_embed_dim, kernel_size=4, stride=4)
@@ -300,10 +297,7 @@ class LocoTransformer(nn.Module):
 class Actor(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        vae_output_dim = (policy_cfg.len_latent
-                          + policy_cfg.len_base_vel
-                          + policy_cfg.len_latent_feet
-                          + policy_cfg.len_latent_body)
+        vae_output_dim = policy_cfg.len_latent + policy_cfg.len_estimation
 
         self.actor = make_linear_layers(env_cfg.n_proprio + vae_output_dim,
                                         *policy_cfg.actor_hidden_dims,

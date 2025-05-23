@@ -115,7 +115,7 @@ class T1BaseCfg(BaseConfig):
 
         class noise_scales:
             dof_pos = 0.02
-            dof_vel = 0.5
+            dof_vel = 1.5
             lin_vel = 0.1
             ang_vel = 0.2
             gravity = 0.1
@@ -149,8 +149,7 @@ class T1BaseCfg(BaseConfig):
 
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
-        action_delay_range = [(0, 5), (0, 10), (5, 15), (5, 20)]
-        # action_delay_range = [(0, 5), (0, 10), (5, 15), (5, 20)]
+        action_delay_range = [(0, 5), (0, 10), (0, 15), (0, 20)]
         action_delay_update_steps = 2000 * 24
 
         add_dof_lag = False
@@ -270,7 +269,7 @@ class T1BaseCfg(BaseConfig):
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
-        decimation = 5
+        decimation = 10
 
     class asset:
         file = LEGGED_GYM_ROOT_DIR + '/robots/T1/T1_serial.urdf'

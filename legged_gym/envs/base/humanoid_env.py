@@ -457,6 +457,15 @@ class HumanoidEnv(ParkourTask):
         term_3 = 0.05 * torch.sum(torch.abs(self.actions), dim=1)
         return term_1 + term_2 + term_3
 
+    def _reward_dof_vel_smoothness(self):
+        """
+        Encourages smoothness in the robot's actions by penalizing large differences between consecutive actions.
+        This is important for achieving fluid motion and reducing mechanical stress.
+        """
+        term_1 = torch.sum(torch.square(self.last_dof_vel - self.sim.dof_vel), dim=1)
+        term_2 = torch.sum(torch.square(self.sim.dof_vel + self.last_last_dof_vel - 2 * self.last_dof_vel), dim=1)
+        return term_1 + term_2
+
     def _reward_torques(self):
         """
         Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing

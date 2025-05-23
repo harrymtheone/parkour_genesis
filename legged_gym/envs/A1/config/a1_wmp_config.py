@@ -81,7 +81,7 @@ class A1_WMP_Cfg(A1BaseCfg):
         switch = False
 
         randomize_start_pos = switch
-        randomize_start_y = switch
+        randomize_start_z = switch
         randomize_start_yaw = switch
         randomize_start_vel = switch
         randomize_start_pitch = switch
