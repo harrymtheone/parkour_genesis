@@ -25,8 +25,7 @@ class RecurrentModel(nn.Module):
             nn.SiLU()
         )
 
-        # self.cell = nn.GRUCell(hidden_size, n_deter)
-        self.cell = GRUCell(hidden_size, n_deter)
+        self.cell = nn.GRUCell(hidden_size, n_deter)
 
         self.imag_out_layers = nn.Sequential(
             nn.Linear(n_deter, hidden_size, bias=False),
@@ -45,7 +44,7 @@ class RecurrentModel(nn.Module):
         # recurrent and stochastic state of world model
         self.register_buffer('state_logit', torch.zeros(env_cfg.num_envs, self.n_stoch, self.n_discrete))
         self.register_buffer('state_stoch', torch.zeros(env_cfg.num_envs, self.n_stoch, self.n_discrete))
-        self.register_buffer('state_deter', torch.zeros(env_cfg.num_envs, n_deter))
+        self.register_buffer('state_deter', torch.zeros(env_cfg.num_envs, n_deter, requires_grad=False))
 
         if self._initial == "learned":
             self.W = nn.Parameter(torch.zeros(1, n_deter))
@@ -56,10 +55,9 @@ class RecurrentModel(nn.Module):
         x = torch.cat([self.state_stoch.flatten(1), prev_actions.flatten(1)], dim=1)
         x = self.imag_in_layers(x)
 
-        x, deter = self.cell(x, [self.state_deter])
-        self.state_deter[:] = deter[0]
+        self.state_deter[:] = self.cell(x, self.state_deter)
 
-        x = self.imag_out_layers(x)
+        x = self.imag_out_layers(self.state_deter)
 
         logits = self._suff_stats_layer("imag", x)
 

@@ -36,12 +36,13 @@ class WorldModelObs(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_his, scan, base_edge_mask, amp_obs):
+    # def __init__(self, priv_his, scan, base_edge_mask, amp_obs):
+    def __init__(self, priv_his, scan, base_edge_mask, ):
         super().__init__()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
         self.base_edge_mask = base_edge_mask.clone()
-        self.amp_obs = amp_obs.clone()
+        # self.amp_obs = amp_obs.clone()
 
 
 class A1WMPEnvironment(QuadrupedEnv):
@@ -129,8 +130,9 @@ class A1WMPEnvironment(QuadrupedEnv):
             self.ext_torque,  # 3
             self.sim.friction_coeffs,  # 1
             self.sim.payload_masses / 10.,  # 1
-            self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
+            self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 4
         ), dim=-1)
+
         priv_actor_obs = torch.cat((
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 16
@@ -151,12 +153,13 @@ class A1WMPEnvironment(QuadrupedEnv):
         prop_no_cmd[:, 6: 6 + 3] = 0.
         self.prop_his_buf.append(prop_no_cmd, reset_flag)
 
-        # AMP observation
-        amp_obs = torch.cat([self.sim.dof_pos, self.sim.dof_vel, self.base_lin_vel, self.base_ang_vel], dim=1)
+        # # AMP observation
+        # amp_obs = torch.cat([self.sim.dof_pos, self.sim.dof_vel, self.base_lin_vel, self.base_ang_vel], dim=1)
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask, amp_obs)
+        # self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask, amp_obs)
+        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):

@@ -18,7 +18,7 @@ class Transition:
     def __init__(self):
         self.observations = None
         self.critic_observations = None
-        self.world_model_hidden_states = None
+        self.wm_feature = None
         self.observations_next = None
         self.actions = None
         self.rewards = None
@@ -27,7 +27,6 @@ class Transition:
         self.actions_log_prob = None
         self.action_mean = None
         self.action_sigma = None
-        self.use_estimated_values = None
 
     def get_items(self):
         return self.__dict__.items()
@@ -53,36 +52,37 @@ class PPO_WMP(BaseAlgorithm):
         self.actor = ActorWMP(task_cfg.env, task_cfg.policy).to(self.device)
         self.critic = CriticWMP(task_cfg.env, task_cfg.policy).to(self.device)
 
-        # AMP components
-        self.amp_loader = AMPLoader(
-            device,
-            time_between_frames=task_cfg.control.decimation * task_cfg.sim.dt,
-            preload_transitions=True,
-            num_preload_transitions=2000000,
-            motion_files=['/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/hop1.txt',
-                          '/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/hop2.txt',
-                          '/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/trot1.txt',
-                          '/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/trot2.txt', ]
-        )
-        self.amp_normalizer = Normalizer(30)
-        self.amp_discriminator = AMPDiscriminator(task_cfg.env, task_cfg).to(self.device)
+        # # AMP components
+        # self.amp_loader = AMPLoader(
+        #     device,
+        #     time_between_frames=task_cfg.control.decimation * task_cfg.sim.dt,
+        #     preload_transitions=True,
+        #     num_preload_transitions=2000000,
+        #     motion_files=['/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/hop1.txt',
+        #                   '/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/hop2.txt',
+        #                   '/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/trot1.txt',
+        #                   '/home/harry/projects/parkour_genesis/legged_gym/robots/a1/mocap_motions/trot2.txt', ]
+        # )
+        # self.amp_normalizer = Normalizer(30)
+        # self.amp_discriminator = AMPDiscriminator(task_cfg.env, task_cfg).to(self.device)
 
         # storage and optimizer
         params = [
             {'params': [*self.actor.parameters(), *self.critic.parameters()], 'name': 'actor_critic'},
-            {'params': self.amp_discriminator.trunk.parameters(), 'weight_decay': 10e-4, 'name': 'amp_trunk'},
-            {'params': self.amp_discriminator.linear.parameters(), 'weight_decay': 10e-2, 'name': 'amp_head'}
+            # {'params': self.amp_discriminator.trunk.parameters(), 'weight_decay': 10e-4, 'name': 'amp_trunk'},
+            # {'params': self.amp_discriminator.linear.parameters(), 'weight_decay': 10e-2, 'name': 'amp_head'}
         ]
 
         self.optimizer = torch.optim.Adam(params, lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
         self.transition = Transition()
-        self.transition_amp = Transition()
+        # self.transition_amp = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
         wm_step_interval = 5
 
         self.wm_dones = torch.ones(task_cfg.env.num_envs, dtype=torch.bool, device=self.device)
+        """ env done in last {wm_step_interval} steps """
 
         # self.wm_history_buf = HistoryBuffer(task_cfg.env.num_envs, wm_step_interval, task_cfg.env.n_proprio - 3, )
 
@@ -97,22 +97,17 @@ class PPO_WMP(BaseAlgorithm):
         # store observations
         self.transition.observations = obs
         self.transition.critic_observations = obs_critic
-        if self.actor.is_recurrent:
-            self.transition.hidden_states = self.actor.get_hidden_states()
+        wm_feature = self.world_model.get_feature()
+        self.transition.wm_feature = wm_feature
 
-        actions = self.actor.act(obs, use_estimated_values=use_estimated_values).detach()
-
-        if self.actor.is_recurrent and self.transition.hidden_states is None:
-            # only for the first step where hidden_state is None
-            self.transition.hidden_states = 0 * self.actor.get_hidden_states()
+        actions = self.actor.act(obs, wm_feature=wm_feature)
 
         # store
         self.transition.actions = actions
-        self.transition.values = self.critic.evaluate(obs_critic).detach()
-        self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions).detach()
-        self.transition.action_mean = self.actor.action_mean.detach()
-        self.transition.action_sigma = self.actor.action_std.detach()
-        self.transition.use_estimated_values = use_estimated_values
+        self.transition.values = self.critic.evaluate(obs_critic, wm_feature=wm_feature)
+        self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions)
+        self.transition.action_mean = self.actor.action_mean
+        self.transition.action_sigma = self.actor.action_std
         return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
@@ -138,11 +133,11 @@ class PPO_WMP(BaseAlgorithm):
         self.wm_dones[dones] = True
 
     def compute_returns(self, last_critic_obs):
-        last_values = self.critic.evaluate(last_critic_obs).detach()
+        last_values = self.critic.evaluate(last_critic_obs, wm_feature=self.world_model.get_feature()).detach()
         self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
     def update(self, update_est=True, **kwargs):
-        update_est = True
+        update_est = False
 
         mean_value_loss = 0
         mean_surrogate_loss = 0
@@ -211,8 +206,7 @@ class PPO_WMP(BaseAlgorithm):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
             critic_obs_batch = batch['critic_observations']
-            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
-            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
+            wm_feature_batch = batch['wm_feature']
             actions_batch = batch['actions']
             target_values_batch = batch['values']
             advantages_batch = batch['advantages']
@@ -220,9 +214,8 @@ class PPO_WMP(BaseAlgorithm):
             old_mu_batch = batch['action_mean']
             old_sigma_batch = batch['action_sigma']
             old_actions_log_prob_batch = batch['actions_log_prob']
-            use_estimated_values_batch = batch['use_estimated_values']
 
-            self.actor.train_act(obs_batch, hidden_states=hidden_states_batch, use_estimated_values=use_estimated_values_batch)
+            self.actor.train_act(obs_batch, wm_feature=wm_feature_batch)
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -230,7 +223,7 @@ class PPO_WMP(BaseAlgorithm):
                     kl_mean = kl_divergence(
                         Normal(old_mu_batch, old_sigma_batch),
                         Normal(self.actor.action_mean, self.actor.action_std)
-                    )[mask_batch].sum(dim=-1).mean().item()
+                    ).sum(dim=-1).mean().item()
 
                     if kl_mean > self.cfg.desired_kl * 2.0:
                         self.learning_rate = max(1e-5, self.learning_rate / 1.5)
@@ -238,25 +231,25 @@ class PPO_WMP(BaseAlgorithm):
                         self.learning_rate = min(1e-3, self.learning_rate * 1.5)
 
             actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
-            evaluation = self.critic.evaluate(critic_obs_batch)
+            evaluation = self.critic.evaluate(critic_obs_batch, wm_feature=wm_feature_batch)
 
             # Surrogate loss
             ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
             surrogate = -advantages_batch * ratio
             surrogate_clipped = -advantages_batch * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
-            surrogate_loss = torch.max(surrogate, surrogate_clipped)[mask_batch].mean()
+            surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
 
             # Value function loss
             if self.cfg.use_clipped_value_loss:
                 value_clipped = target_values_batch + (evaluation - target_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
                 value_losses = (evaluation - returns_batch).pow(2)
                 value_losses_clipped = (value_clipped - returns_batch).pow(2)
-                value_loss = torch.max(value_losses, value_losses_clipped)[mask_batch].mean()
+                value_loss = torch.max(value_losses, value_losses_clipped).mean()
             else:
-                value_loss = (evaluation - returns_batch)[mask_batch].pow(2).mean()
+                value_loss = (evaluation - returns_batch).pow(2).mean()
 
             # Entropy Loss
-            entropy_loss = self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
+            entropy_loss = self.cfg.entropy_coef * self.actor.entropy.mean()
 
             loss = (surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss)
 

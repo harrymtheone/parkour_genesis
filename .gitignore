@@ -3,3 +3,9 @@
 **/__pycache__
 /Genesis/
 /genesis/
+/scripts/dream/traced/
+/scripts/dream_gru/traced/
+/scripts/pie/traced/
+/scripts/zju/traced/
+/scripts/dream_gru/archive/
+/scripts/zju/trt/
