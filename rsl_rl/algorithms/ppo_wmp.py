@@ -1,10 +1,12 @@
+import math
+import random
+
 import torch
 import torch.nn as nn
 from torch.distributions import kl_divergence, Normal
 
-from legged_gym.envs.base.utils import HistoryBuffer
-from rsl_rl.datasets.motion_loader import AMPLoader
-from rsl_rl.modules.wmp import RSSM, ActorWMP, CriticWMP, AMPDiscriminator, Normalizer
+from legged_gym.envs.base.utils import CircularBuffer
+from rsl_rl.modules.wmp import RSSM, ActorWMP, CriticWMP
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from .alg_base import BaseAlgorithm
 
@@ -14,12 +16,167 @@ except ImportError:
     from torch.cuda.amp import GradScaler
 
 
+def symlog(x):
+    if isinstance(x, float):
+        return math.copysign(1., x) * math.log(abs(x) + 1.0)
+    else:
+        return torch.sign(x) * torch.log(torch.abs(x) + 1.0)  # (batch_size, 1)
+
+
+class SoftSymlogNLLLoss(nn.Module):
+    def __init__(self, low, high, num_buckets=255, device='cuda'):
+        super().__init__()
+        self.low = low
+        self.high = high
+        self.num_buckets = num_buckets
+        self.device = device
+
+        # Buckets evenly spaced in symlog space
+        self.buckets = torch.linspace(symlog(low), symlog(high), steps=num_buckets).to(device)
+
+    def forward(self, data, target):
+        """
+        logits: (batch_size, num_buckets) raw outputs from network (before softmax)
+        target: (batch_size,) continuous ground truth values (not transformed)
+        """
+
+        # 1. Transform target with symlog and convert to soft one-hot vector over buckets
+        x = symlog(target).unsqueeze(-1)  # (batch_size, 1)
+
+        # Find bucket indices just below and above target values
+        below = torch.sum((self.buckets <= x).to(torch.int64), dim=-1) - 1
+        above = torch.sum((self.buckets > x).to(torch.int64), dim=-1)
+
+        # Clamp indices to valid range
+        below = torch.clamp(below, 0, self.num_buckets - 1)
+        above = torch.clamp(above, 0, self.num_buckets - 1)
+
+        equal = (below == above)
+
+        dist_to_below = torch.where(equal, torch.tensor(1.0, device=self.device), torch.abs(self.buckets[below] - x.squeeze(-1)))
+        dist_to_above = torch.where(equal, torch.tensor(1.0, device=self.device), torch.abs(self.buckets[above] - x.squeeze(-1)))
+        total_dist = dist_to_below + dist_to_above
+
+        weight_below = dist_to_above / total_dist
+        weight_above = dist_to_below / total_dist
+
+        target_soft = (
+                nn.functional.one_hot(below, num_classes=self.num_buckets) * weight_below.unsqueeze(-1) +
+                nn.functional.one_hot(above, num_classes=self.num_buckets) * weight_above.unsqueeze(-1)
+        ).float().squeeze(2)
+
+        # 2. Compute log probabilities from logits using log_softmax for numerical stability
+        log_probs = nn.functional.log_softmax(data, dim=-1)
+
+        # 3. Compute soft negative log likelihood loss
+        loss = -torch.sum(target_soft * log_probs, dim=-1)  # (batch_size,)
+
+        return loss.mean()
+
+
+class SymlogMSELoss(nn.Module):
+    def __init__(self, tolerance=1e-8, reduction='mean'):
+        super().__init__()
+        self.tolerance = tolerance
+        self.reduction = reduction
+
+    def forward(self, data, target):
+        loss = nn.functional.mse_loss(data, symlog(target), reduction=self.reduction)
+        return loss.clip(min=self.tolerance)
+
+
+class WorldModelDataset:
+    def __init__(self, task_cfg, device, batch_size=256, buffer_size=100, dataset_size=1000, buf_device=torch.device('cuda')):
+        step_interval = 5
+
+        self.device = device
+        self.buffer_size = buffer_size
+        self.dataset_size = dataset_size
+
+        if batch_size <= task_cfg.env.num_envs:
+            batch_size = task_cfg.env.num_envs
+
+        self.envs_selected = torch.randperm(task_cfg.env.num_envs)[:batch_size]
+
+        self.buffers = {
+            "prop": CircularBuffer(buffer_size, batch_size, (task_cfg.env.n_proprio - 12,), device=device, buf_device=buf_device),
+            "depth": CircularBuffer(buffer_size, batch_size, (1, 64, 64), device=device, buf_device=buf_device),
+            "action_his": CircularBuffer(buffer_size, batch_size, (step_interval, task_cfg.env.num_actions), device=device, buf_device=buf_device),
+            "state_deter": CircularBuffer(buffer_size, batch_size, (512,), device=device, buf_device=buf_device),
+            "state_stoch": CircularBuffer(buffer_size, batch_size, (32, 32), device=device, buf_device=buf_device),
+
+            "ot1": CircularBuffer(buffer_size, batch_size, (task_cfg.env.n_proprio - 12,), device=device, buf_device=buf_device),
+            "reward": CircularBuffer(buffer_size, batch_size, (1,), device=device, buf_device=buf_device),
+        }
+
+        self.datasets = {k: torch.zeros((dataset_size, buffer_size, *self.buffers[k].shape[2:]), dtype=torch.float, device=buf_device) for k in self.buffers}
+        self._cur_idx = 0
+        self.valid_len = torch.zeros(dataset_size, dtype=torch.long, device=device)
+
+    def append(self, **kwargs):
+        assert len(self.datasets) == len(kwargs)
+
+        for k, v in kwargs.items():
+            assert k in self.buffers
+            self.buffers[k].append(v[self.envs_selected])
+
+    def transfer_dones(self, dones, transfer_ids=None):
+        if transfer_ids is None:
+            transfer_ids = (dones[self.envs_selected] | (self.buffers['prop'].get_valid_len() == self.buffer_size)).nonzero(as_tuple=False).flatten()
+
+        num_transfer = len(transfer_ids)
+
+        if num_transfer == 0:
+            return
+
+        # normal transfer
+        num_transfer_now = min(num_transfer, self.dataset_size - self._cur_idx)
+        transfer_ids_now = transfer_ids[:num_transfer_now]
+
+        valid_len_to_transfer = self.buffers["prop"].get_valid_len()[transfer_ids_now]
+        self.valid_len[self._cur_idx: self._cur_idx + num_transfer_now] = valid_len_to_transfer
+
+        for n, buf in self.buffers.items():
+            data_to_transfer = buf.get_all()[:, transfer_ids_now].transpose(0, 1)
+            self.datasets[n][self._cur_idx: self._cur_idx + num_transfer_now] = data_to_transfer
+            buf.reset(transfer_ids_now)
+
+        self._cur_idx = (self._cur_idx + num_transfer) % self.dataset_size
+
+        # transfer remaining
+        if num_transfer > num_transfer_now:
+            self.transfer_dones(None, transfer_ids=transfer_ids[num_transfer_now:])
+
+    def __len__(self):
+        return torch.sum(self.valid_len).item()
+
+    def sample(self, batch_size=16, batch_length=64):
+        prob = self.valid_len / len(self)
+        batch_idx = torch.multinomial(prob, batch_size, replacement=False)
+
+        batch_length = min(self.valid_len[batch_idx].min().item(), batch_length)
+        if batch_length <= 1:
+            return None
+
+        sampled_data = {}
+        batch_end_ids = [random.randint(batch_length, self.valid_len[idx].item()) for idx in batch_idx]
+
+        for k in self.datasets:
+            data_k = []
+
+            for idx, end_idx in zip(batch_idx, batch_end_ids):
+                data_k.append(self.datasets[k][idx, end_idx - batch_length: end_idx])
+
+            sampled_data[k] = torch.stack(data_k, dim=0).to(self.device)
+
+        return sampled_data
+
+
 class Transition:
     def __init__(self):
         self.observations = None
         self.critic_observations = None
         self.wm_feature = None
-        self.observations_next = None
         self.actions = None
         self.rewards = None
         self.dones = None
@@ -42,11 +199,23 @@ class PPO_WMP(BaseAlgorithm):
         self.learning_rate = self.cfg.learning_rate
         self.device = device
         self.mse_loss = nn.MSELoss()
+        self.rew_loss = SoftSymlogNLLLoss(low=-1., high=1.)
+        self.ot1_loss = SymlogMSELoss(reduction='mean')
 
         # world model
         self.world_model = RSSM(task_cfg.env, task_cfg).to(self.device)
         self.optimizer_wm = torch.optim.Adam(self.world_model.parameters(), lr=1e-4)
         self.scaler_wm = GradScaler(enabled=self.cfg.use_amp)
+
+        self.wm_dones = torch.ones(task_cfg.env.num_envs, dtype=torch.bool, device=self.device)
+        """ env done in last {wm_step_interval} steps """
+        self.wm_ot1 = torch.zeros(task_cfg.env.num_envs, task_cfg.env.n_proprio - 12, dtype=torch.float, device=self.device)
+        self.wm_rew_sum = torch.zeros(task_cfg.env.num_envs, dtype=torch.float, device=self.device)
+        """ reward sum in last steps """
+
+        self.wm_action_his = CircularBuffer(5, task_cfg.env.num_envs, (task_cfg.env.num_actions,), device=device)
+
+        self.wm_dataset = WorldModelDataset(task_cfg, device=self.device)
 
         # PPO components
         self.actor = ActorWMP(task_cfg.env, task_cfg.policy).to(self.device)
@@ -79,28 +248,32 @@ class PPO_WMP(BaseAlgorithm):
         # self.transition_amp = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
-        wm_step_interval = 5
-
-        self.wm_dones = torch.ones(task_cfg.env.num_envs, dtype=torch.bool, device=self.device)
-        """ env done in last {wm_step_interval} steps """
-
-        # self.wm_history_buf = HistoryBuffer(task_cfg.env.num_envs, wm_step_interval, task_cfg.env.n_proprio - 3, )
-
-        self.wm_action_his = HistoryBuffer(task_cfg.env.num_envs, wm_step_interval, task_cfg.env.num_actions, device=device)
-
     def act(self, obs, obs_critic, step_world_model=True, **kwargs):
+        actor_obs, wm_obs = obs
+
         if step_world_model:
-            self.world_model.encode(obs.depth, obs.proprio[:, :-12])  # no last_actions
-            self.world_model.step(self.wm_action_his.get(), self.wm_dones)
+            act_his = self.wm_action_his.get_all().transpose(0, 1)
+            self.world_model.step(wm_obs.proprio, wm_obs.depth, act_his, self.wm_dones)
             self.wm_dones[:] = False
 
+            self.wm_dataset.append(
+                prop=wm_obs.proprio,
+                depth=wm_obs.depth,
+                action_his=act_his,
+                state_deter=self.world_model.get_deter(),
+                state_stoch=self.world_model.get_stoch(),
+                ot1=self.wm_ot1,
+                reward=self.wm_rew_sum.unsqueeze(1),
+            )
+            self.wm_rew_sum[:] = 0.
+
         # store observations
-        self.transition.observations = obs
+        self.transition.observations = actor_obs
         self.transition.critic_observations = obs_critic
-        wm_feature = self.world_model.get_feature()
+        wm_feature = self.world_model.get_deter()
         self.transition.wm_feature = wm_feature
 
-        actions = self.actor.act(obs, wm_feature=wm_feature)
+        actions = self.actor.act(actor_obs, wm_feature=wm_feature)
 
         # store
         self.transition.actions = actions
@@ -108,10 +281,12 @@ class PPO_WMP(BaseAlgorithm):
         self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions)
         self.transition.action_mean = self.actor.action_mean
         self.transition.action_sigma = self.actor.action_std
+
+        self.wm_action_his.append(actions)
+
         return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
-        self.transition.observations_next = args[0].as_obs_next()
         self.transition.rewards = rewards.clone().unsqueeze(1)
         self.transition.dones = dones.unsqueeze(1)
 
@@ -130,23 +305,26 @@ class PPO_WMP(BaseAlgorithm):
         if self.actor.is_recurrent:
             self.actor.reset(dones)
 
+        self.wm_dataset.transfer_dones(dones)
         self.wm_dones[dones] = True
+        actor_obs, wm_obs = args[0]
+        self.wm_ot1[:] = wm_obs.proprio
+        self.wm_rew_sum[:] += rewards
 
     def compute_returns(self, last_critic_obs):
-        last_values = self.critic.evaluate(last_critic_obs, wm_feature=self.world_model.get_feature()).detach()
+        last_values = self.critic.evaluate(last_critic_obs, wm_feature=self.world_model.get_deter()).detach()
         self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
 
-    def update(self, update_est=True, **kwargs):
-        update_est = False
-
+    def update(self, train_steps_per_iter=10, **kwargs):
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
-        # mean_symmetry_loss = 0
-        mean_estimation_loss = 0
-        mean_ot1_prediction_loss = 0
-        mean_vae_loss = 0
+        mean_wm_loss = 0
+        mean_kl_div_loss = 0
+        mean_ot1_loss = 0
+        mean_depth_loss = 0
+        mean_rew_loss = 0
 
         kl_change = []
         num_updates = 0
@@ -166,21 +344,27 @@ class PPO_WMP(BaseAlgorithm):
             mean_entropy_loss += entropy_loss
             mean_kl += kl_mean
 
-            # update estimation
-            if update_est:
-                estimation_loss, ot1_prediction_loss, vae_loss = self._update_estimation(batch)
-                mean_estimation_loss += estimation_loss
-                mean_ot1_prediction_loss += ot1_prediction_loss
-                mean_vae_loss += vae_loss
-
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
         mean_kl /= num_updates
-        mean_estimation_loss /= num_updates
-        mean_ot1_prediction_loss /= num_updates
-        mean_vae_loss /= num_updates
-        # mean_symmetry_loss /= num_updates
+
+        # update estimation
+        if len(self.wm_dataset) > 1000:
+            for _ in range(train_steps_per_iter):
+                wm_loss, kl_div_loss, loss_ot1, loss_depth, loss_rew = self._update_world_model()
+
+                mean_wm_loss += wm_loss
+                mean_kl_div_loss += kl_div_loss
+                mean_ot1_loss += loss_ot1
+                mean_depth_loss += loss_depth
+                mean_rew_loss += loss_rew
+
+        mean_wm_loss /= num_updates
+        mean_kl_div_loss /= num_updates
+        mean_ot1_loss /= num_updates
+        mean_depth_loss /= num_updates
+        mean_rew_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -195,11 +379,12 @@ class PPO_WMP(BaseAlgorithm):
             'Loss/kl_div': mean_kl,
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
-            # 'Loss/symmetry_loss': mean_symmetry_loss,
-            'Loss/estimation_loss': mean_estimation_loss,
-            'Loss/ot1_prediction_loss': mean_ot1_prediction_loss,
-            'Loss/vae_loss': mean_vae_loss,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
+            'Train/wm_loss': mean_wm_loss,
+            'Train/kl_div_loss': mean_kl_div_loss,
+            'Train/ot1_loss': mean_ot1_loss,
+            'Train/depth_loss': mean_depth_loss,
+            'Train/rew_loss': mean_rew_loss,
         }
 
     def _update_policy(self, batch: dict):
@@ -268,38 +453,59 @@ class PPO_WMP(BaseAlgorithm):
 
         return value_loss.item(), surrogate_loss.item(), entropy_loss.item(), kl_mean
 
-    # @torch.compile()
-    def _update_estimation(self, batch: dict):
+    def _update_world_model(self):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            obs_batch = batch['observations']
-            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
-            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
-            obs_next_batch = batch['observations_next']
+            data = self.wm_dataset.sample()
 
-            ot1, est_vel, est_mu, est_logvar = self.actor.estimate(obs_batch, hidden_states=hidden_states_batch)
+            if data is None:
+                return 0., 0., 0., 0., 0.
 
-            # privileged information estimation loss
-            estimation_loss = self.mse_loss(est_vel[mask_batch], obs_batch.priv_actor[mask_batch])
+            prop, depth, action_his, state_deter, state_stoch, ot1, reward = data.values()
 
-            # Ot+1 prediction and VAE loss
-            prediction_loss = self.mse_loss(ot1[mask_batch], obs_next_batch.proprio[mask_batch])
-            vae_loss = 1 + est_logvar - est_mu.pow(2) - est_logvar.exp()
-            vae_loss = -0.5 * vae_loss[mask_batch].sum(dim=1).mean()
+            prior, post, ot1_pred, depth_pred, rew_pred = self.world_model.train_step(prop, depth, action_his, state_deter, state_stoch)
 
-            loss = estimation_loss + prediction_loss + vae_loss
+            # KL Divergence
+            kl_div_loss, _, _ = self.kl_loss(prior, post)
+
+            # maximum likelihood
+            loss_ot1 = self.ot1_loss(ot1_pred, prop)
+            loss_depth = self.mse_loss(depth_pred, depth)
+            loss_rew = self.rew_loss(rew_pred, reward)
+
+            loss = kl_div_loss + 1.0 * loss_ot1 + 1.0 * loss_depth + 1.0 * loss_rew
 
         # Gradient step
-        self.optimizer.zero_grad()
-        self.scaler.scale(loss).backward()
-        # self.scaler.unscale_(self.optimizer)
-        # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
+        self.optimizer_wm.zero_grad()
+        self.scaler_wm.scale(loss).backward()
+        self.scaler_wm.step(self.optimizer_wm)
+        self.scaler_wm.update()
 
-        return estimation_loss.item(), prediction_loss.item(), vae_loss.item()
+        return loss, kl_div_loss.item(), loss_ot1.item(), loss_depth.item(), loss_rew.item()
 
-    def play_act(self, obs, **kwargs):
-        return self.actor.act(obs, **kwargs)
+    def kl_loss(self, prior, post, free=1.0, dyn_scale=0.5, rep_scale=0.1):
+        dist = self.world_model.recurrent_model.get_dist
+
+        rep_loss = torch.distributions.kl.kl_divergence(
+            dist(post), dist(prior.detach()))
+
+        dyn_loss = torch.distributions.kl.kl_divergence(
+            dist(post.detach()), dist(prior))
+
+        # this is implemented using maximum at the original repo as the gradients are not back-propagated for the out of limits.
+        rep_loss = torch.clip(rep_loss, min=free)
+        dyn_loss = torch.clip(dyn_loss, min=free)
+        loss = dyn_scale * dyn_loss + rep_scale * rep_loss
+
+        return loss.mean(), dyn_loss, rep_loss
+
+    def play_act(self, obs, step_world_model=True, **kwargs):
+        actor_obs, wm_obs = obs
+
+        if step_world_model:
+            act_his = self.wm_action_his.get_all().transpose(0, 1)
+            self.world_model.step(wm_obs.proprio, wm_obs.depth, act_his, self.wm_dones)
+
+        return self.actor.act(actor_obs, wm_feature=self.world_model.get_deter(), **kwargs)
 
     def train(self):
         self.actor.train()

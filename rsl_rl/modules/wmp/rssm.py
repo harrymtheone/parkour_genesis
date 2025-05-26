@@ -4,6 +4,7 @@ from torch import nn
 from .decoder import WMDecoder
 from .encoder import WMEncoder
 from .recurrent_model import RecurrentModel
+from ..utils import gru_wrapper
 
 
 class RSSM(nn.Module):
@@ -16,26 +17,36 @@ class RSSM(nn.Module):
         self.decoder = WMDecoder(env_cfg, train_cfg)
         self.recurrent_model = RecurrentModel(env_cfg, train_cfg)
 
-        self.obs_enc = None  # features encoded by encoder
+    def step(self, proprio, depth, prev_actions, dones):
+        obs_enc = self.encoder(proprio, depth)
 
-    def encode(self, depth, proprio):
-        self.obs_enc = self.encoder(depth, proprio)
-
-    def decode(self):
-        raise NotImplementedError
-
-    def step(self, prev_actions, dones):
         if torch.any(dones):
             self.recurrent_model.init_model_state(dones)
 
-        self.recurrent_model.imagination_step(prev_actions)
-        return self.recurrent_model.observation_step(self.obs_enc)
+        return self.recurrent_model.step(obs_enc, prev_actions)
+
+    def train_step(self, prop, depth, action_his, state_deter, state_stoch):
+        obs_enc = gru_wrapper(self.encoder.forward, prop, depth)
+
+        state_deter_new, prior = self.recurrent_model.imagination_step(state_deter, state_stoch, action_his)
+
+        post = gru_wrapper(self.recurrent_model.observation_step, state_deter_new, obs_enc)
+
+        ot1, depth, rew = gru_wrapper(self.decoder, state_deter_new, post)
+
+        return prior, post, ot1, depth, rew
+
+
+
 
     def reset(self, dones):
         self.recurrent_model.init_wm_state(dones)
 
-    def get_feature(self):
+    def get_deter(self):
         return self.recurrent_model.state_deter
+
+    def get_stoch(self):
+        return self.recurrent_model.state_stoch
 
     def _train(self, data):
         # action (batch_size, batch_length, act_dim)

@@ -13,6 +13,8 @@ from .T1.t1_pie_environment import T1PIEEnvironment
 from .T1.t1_priv_environment import T1PrivEnvironment
 from .T1.t1_zju_environment import T1ZJUEnvironment
 from .go1.config.go1_zju_config import Go1_ZJU_Cfg, Go1_ZJU_Pit_Cfg
+from .go1.go1_wmp_environment import Go1WMPEnvironment
+from .go1.config.go1_wmp_config import Go1_WMP_Cfg
 from .go1.go1_zju_environment import Go1ZJUEnvironment
 from .pdd.config.pdd_dreamwaq_config import PddDreamWaqCfg, PddDreamWaqCfgPPO, PddDreamWaqGRUCfgPPO
 from .pdd.config.pdd_scan_config import PddScanCfg, PddScanCfgPPO, PddScanStairCfg, PddScanStairCfgPPO
@@ -46,6 +48,7 @@ task_list = [
 
     ['go1_zju', Go1ZJUEnvironment, Go1_ZJU_Cfg()],
     ['go1_zju_pit', Go1ZJUEnvironment, Go1_ZJU_Pit_Cfg()],
+    ['go1_wmp', Go1WMPEnvironment, Go1_WMP_Cfg()],
 
     # ['a1_zju', Go1ZJUEnvironment, Go1_ZJU_Cfg(), Go1_ZJU_CfgPPO()],  # TODO: not finished yet
     # ['a1_zju_pit', Go1ZJUEnvironment, Go1_ZJU_Pit_Cfg(), Go1_ZJU_VAE_Pit_CfgPPO()],  # TODO: not finished yet

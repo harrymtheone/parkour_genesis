@@ -41,7 +41,7 @@ class ActorWMP(nn.Module):
         # disable args validation for speedup
         torch.distributions.Normal.set_default_validate_args = False
 
-    def act(self, obs, wm_feature, eval_=False):
+    def act(self, obs, wm_feature, eval_=False, **kwargs):
         his_enc = self.history_encoder(obs.prop_his.flatten(1))
         wm_enc = self.wm_feature_encoder(wm_feature)
 

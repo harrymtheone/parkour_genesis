@@ -1,10 +1,13 @@
-import torch
-from torch import nn
-
-net = nn.GRU(128, 512)
-
-x = torch.randn(10, 2, 128)
-hidden = None
+import subprocess
 
 
-out, hidden_new = net(x, hidden)
+def is_ninja_available():
+    try:
+        subprocess.check_output(['ninja', '--version'])
+        return True
+    except Exception as e:
+        raise e
+        return False
+
+
+print(is_ninja_available())

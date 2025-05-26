@@ -1,6 +1,9 @@
 import torch
 from torch import nn
 
+from rsl_rl.modules.utils import gru_wrapper
+from rsl_rl.modules.wmp.utils import OneHotDist
+
 
 class RecurrentModel(nn.Module):
     state_logit: torch.Tensor
@@ -25,7 +28,7 @@ class RecurrentModel(nn.Module):
             nn.SiLU()
         )
 
-        self.cell = nn.GRUCell(hidden_size, n_deter)
+        self.gru = nn.GRU(hidden_size, n_deter)
 
         self.imag_out_layers = nn.Sequential(
             nn.Linear(n_deter, hidden_size, bias=False),
@@ -51,22 +54,12 @@ class RecurrentModel(nn.Module):
 
         # self.init_model_state(torch.ones(env_cfg.num_envs, dtype=torch.bool))
 
-    def imagination_step(self, prev_actions, sample=True):
+    def step(self, obs_enc, prev_actions, sample=True):  # called during rollout
         x = torch.cat([self.state_stoch.flatten(1), prev_actions.flatten(1)], dim=1)
         x = self.imag_in_layers(x)
+        x, _ = self.gru(x.unsqueeze(0), self.state_deter.unsqueeze(0))
+        self.state_deter[:] = x.squeeze(0)
 
-        self.state_deter[:] = self.cell(x, self.state_deter)
-
-        x = self.imag_out_layers(self.state_deter)
-
-        logits = self._suff_stats_layer("imag", x)
-
-        if sample:
-            self.state_stoch[:] = self.get_dist(logits).sample()
-        else:
-            self.state_stoch[:] = self.get_dist(logits).mode
-
-    def observation_step(self, obs_enc, sample=True):
         x = torch.cat([self.state_deter, obs_enc], dim=-1)
         x = self.obs_out_layers(x)
 
@@ -77,7 +70,31 @@ class RecurrentModel(nn.Module):
         else:
             self.state_stoch[:] = self.get_dist(self.state_logit).mode
 
-        return self.state_deter
+    def imagination_step(self, state_deter, state_stoch, prev_actions, sample=True):  # called during training
+        x = torch.cat([state_stoch.flatten(2), prev_actions.flatten(2)], dim=2)
+        x = gru_wrapper(self.imag_in_layers.forward, x)
+
+        state_deter_new, _ = self.gru(x, state_deter[0:1])
+
+        x = gru_wrapper(self.imag_out_layers.forward, state_deter_new)
+
+        logits = self._suff_stats_layer("imag", x.flatten(0, 1)).unflatten(0, x.shape[:2])
+
+        if sample:
+            return state_deter_new, self.get_dist(logits).sample()
+        else:
+            return state_deter_new, self.get_dist(logits).mode
+
+    def observation_step(self, state_deter, obs_enc, sample=True):  # called during training
+        x = torch.cat([state_deter, obs_enc], dim=-1)
+        x = self.obs_out_layers(x)
+
+        logits = self._suff_stats_layer("obs", x)
+
+        if sample:
+            return self.get_dist(logits).sample()
+        else:
+            return self.get_dist(logits).mode
 
     def init_model_state(self, dones):
         if self._initial == "zeros":
@@ -111,35 +128,6 @@ class RecurrentModel(nn.Module):
             raise NotImplementedError
 
         return x.unflatten(1, (self.n_stoch, self.n_discrete))
-
-
-class OneHotDist(torch.distributions.OneHotCategorical):
-    def __init__(self, probs=None, logits=None, unimix_ratio=0.0):
-        if logits is not None and unimix_ratio > 0.0:
-            probs = torch.softmax(logits, dim=-1)
-            probs = probs * (1.0 - unimix_ratio) + unimix_ratio / probs.shape[-1]
-            logits = torch.log(probs)
-            super().__init__(logits=logits, probs=None)
-        else:
-            super().__init__(logits=logits, probs=probs)
-
-    @property
-    def mode(self):
-        _mode = nn.functional.one_hot(
-            torch.argmax(super().logits, dim=-1),
-            super().logits.shape[-1]
-        )
-        return _mode.detach() + super().logits - super().logits.detach()
-
-    def sample(self, sample_shape=(), seed=None):
-        if seed is not None:
-            raise ValueError("need to check")
-        sample = super().sample(sample_shape)
-        probs = super().probs
-        while len(probs.shape) < len(sample.shape):
-            probs = probs[None]
-        sample += probs - probs.detach()
-        return sample
 
 
 class GRUCell(nn.Module):

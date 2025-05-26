@@ -63,8 +63,9 @@ class RL_WMP_Runner(RunnerLogger):
         terrain_coefficient_variation = {}
 
         # adaptive sampling probability (prob to use ground truth)
-        p_smpl = 1.0
         use_estimated_values = torch.zeros(n_envs, dtype=torch.bool, device=self.device)
+
+
 
         for self.cur_it in range(self.start_it, self.start_it + self.cfg.max_iterations):
             start_time = time.time()
@@ -74,7 +75,8 @@ class RL_WMP_Runner(RunnerLogger):
             # Rollout
             with torch.inference_mode():
                 for _ in range(self.num_steps_per_env):
-                    actions = self.alg.act(obs, critic_obs, use_estimated_values=use_estimated_values.unsqueeze(1))
+                    step_world_model = self.tot_steps % 5 == 0
+                    actions = self.alg.act(obs, critic_obs, step_world_model=step_world_model)
                     obs, critic_obs, rewards, dones, infos = env.step(actions)  # obs has changed to next_obs !! if done obs has been reset
                     self.alg.process_env_step(rewards, dones, infos, obs)
 
@@ -104,6 +106,8 @@ class RL_WMP_Runner(RunnerLogger):
 
                             cur_reward_sum[new_ids] = 0.
                             cur_episode_length[new_ids] = 0.
+
+                    self.tot_steps += 1
 
                 # update AdaSmpl coefficient
                 if self.cur_it - self.start_it > 20:  # ensure there are enough samples
@@ -136,7 +140,6 @@ class RL_WMP_Runner(RunnerLogger):
             self.save(os.path.join(self.log_dir, 'latest.pt'))
 
     def log(self, update_info, width=80, pad=35):
-        self.tot_steps += self.num_steps_per_env * self.task_cfg.env.num_envs
         iteration_time = self.collection_time + self.learn_time
         self.tot_time += iteration_time
 

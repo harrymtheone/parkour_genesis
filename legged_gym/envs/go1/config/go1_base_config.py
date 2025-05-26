@@ -117,8 +117,8 @@ class Go1BaseCfg(BaseConfig):
         randomize_start_vel_range = 0.1
         randomize_start_yaw = False
         randomize_start_yaw_range = 1.2
-        randomize_start_y = False
-        randomize_start_y_range = 0.1  # (0, 0.05)
+        randomize_start_z = False
+        randomize_start_z_range = 0.1  # (0, 0.05)
         randomize_start_pitch = False
         randomize_start_pitch_range = 0.1  # 5 degree
 

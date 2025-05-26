@@ -148,15 +148,16 @@ class DelayBuffer:
 
 
 class CircularBuffer:
-    def __init__(self, max_len: int, batch_size: int, data_shape: Sequence[int], device: torch.device):
+    def __init__(self, max_len: int, batch_size: int, data_shape: Sequence[int], device: torch.device, buf_device: torch.device = None):
         self._batch_size = batch_size
         self._device = device
-        self._ALL_INDICES = torch.arange(batch_size, device=device)
+        self._buf_device = self._device if buf_device is None else buf_device
+        self._ALL_INDICES = torch.arange(batch_size, device=self._buf_device)
 
         self._max_len = max_len
-        self._num_pushes = torch.zeros(batch_size, dtype=torch.long, device=device)
+        self._num_pushes = torch.zeros(batch_size, dtype=torch.long, device=self._buf_device)
         self._pointer: int = -1
-        self._buffer = torch.empty((self._max_len, batch_size, *data_shape), dtype=torch.float, device=self._device)
+        self._buffer = torch.zeros((self._max_len, batch_size, *data_shape), dtype=torch.float, device=self._buf_device)
 
     def reset(self, batch_ids: Sequence[int] | None = None):
         if batch_ids is None:
@@ -168,6 +169,7 @@ class CircularBuffer:
 
     def append(self, data: torch.Tensor):
         assert data.size(0) == self._batch_size
+        data = data.to(self._buf_device)
 
         self._pointer = (self._pointer + 1) % self._max_len
         self._buffer[self._pointer] = data
@@ -186,13 +188,20 @@ class CircularBuffer:
 
         valid_keys = torch.minimum(key, self._num_pushes - 1)
         index_in_buffer = torch.remainder(self._pointer - valid_keys, self._max_len)
-        return self._buffer[index_in_buffer, self._ALL_INDICES]
+        return self._buffer[index_in_buffer, self._ALL_INDICES].to(self._device)
 
     def get_all(self):
-        valid_keys = torch.arange(self._max_len, device=self._device)
+        valid_keys = torch.arange(self._max_len, device=self._buf_device)
         # index_in_buffer = torch.remainder(valid_keys - self._pointer, self._max_len)
         index_in_buffer = torch.remainder(self._pointer - valid_keys, self._max_len)
-        return self._buffer[index_in_buffer]
+        return self._buffer[index_in_buffer].to(self._device)
+
+    def get_valid_len(self):
+        return self._num_pushes.to(self._device)
+
+    @property
+    def shape(self):
+        return self._buffer.shape
 
 
 class DelayBufferCircular:

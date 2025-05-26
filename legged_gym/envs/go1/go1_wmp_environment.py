@@ -29,16 +29,14 @@ class ObsNext(ObsBase):
 
 
 class CriticObs(ObsBase):
-    # def __init__(self, priv_his, scan, base_edge_mask, amp_obs):
-    def __init__(self, priv_his, scan, base_edge_mask, ):
+    def __init__(self, priv_his, scan, base_edge_mask):
         super().__init__()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
         self.base_edge_mask = base_edge_mask.clone()
-        # self.amp_obs = amp_obs.clone()
 
 
-class A1WMPEnvironment(QuadrupedEnv):
+class Go1WMPEnvironment(QuadrupedEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -100,10 +98,10 @@ class A1WMPEnvironment(QuadrupedEnv):
         proprio = torch.cat((
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
-            self.commands[:, :3] * self.commands_scale,  # 3
-            (dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 12D
-            dof_vel * self.obs_scales.dof_vel,  # 12D
-            self.last_action_output,  # 12D
+            self.commands[:, :3] * self.commands_scale,  # 5
+            (dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
+            dof_vel * self.obs_scales.dof_vel,  # 10D
+            self.last_action_output,  # 10D
         ), dim=-1)
 
         # explicit privileged information
@@ -123,9 +121,8 @@ class A1WMPEnvironment(QuadrupedEnv):
             self.ext_torque,  # 3
             self.sim.friction_coeffs,  # 1
             self.sim.payload_masses / 10.,  # 1
-            self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 4
+            self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
-
         priv_actor_obs = torch.cat((
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 16
@@ -137,7 +134,6 @@ class A1WMPEnvironment(QuadrupedEnv):
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
 
         # compose actor observation
-        # self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan)
         actor_obs = ActorObs(proprio, self.prop_his_buf.get())
         actor_obs.clip(self.cfg.normalization.clip_observations)
 
@@ -147,16 +143,10 @@ class A1WMPEnvironment(QuadrupedEnv):
 
         # update history buffer
         reset_flag = self.episode_length_buf <= 1
-        prop_no_cmd = proprio.clone()
-        prop_no_cmd[:, 6: 6 + 3] = 0.
-        self.prop_his_buf.append(prop_no_cmd, reset_flag)
-
-        # # AMP observation
-        # amp_obs = torch.cat([self.sim.dof_pos, self.sim.dof_vel, self.base_lin_vel, self.base_ang_vel], dim=1)
+        self.prop_his_buf.append(proprio, reset_flag)
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-        # self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask, amp_obs)
         self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
