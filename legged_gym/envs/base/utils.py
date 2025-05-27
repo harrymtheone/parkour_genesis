@@ -148,7 +148,14 @@ class DelayBuffer:
 
 
 class CircularBuffer:
-    def __init__(self, max_len: int, batch_size: int, data_shape: Sequence[int], device: torch.device, buf_device: torch.device = None):
+    def __init__(
+            self,
+            max_len: int,
+            batch_size: int,
+            data_shape: Sequence[int],
+            device: torch.device,
+            dtype=torch.float,
+            buf_device: torch.device = None):
         self._batch_size = batch_size
         self._device = device
         self._buf_device = self._device if buf_device is None else buf_device
@@ -157,7 +164,7 @@ class CircularBuffer:
         self._max_len = max_len
         self._num_pushes = torch.zeros(batch_size, dtype=torch.long, device=self._buf_device)
         self._pointer: int = -1
-        self._buffer = torch.zeros((self._max_len, batch_size, *data_shape), dtype=torch.float, device=self._buf_device)
+        self._buffer = torch.empty((self._max_len, batch_size, *data_shape), dtype=dtype, device=self._buf_device)
 
     def reset(self, batch_ids: Sequence[int] | None = None):
         if batch_ids is None:
@@ -169,7 +176,7 @@ class CircularBuffer:
 
     def append(self, data: torch.Tensor):
         assert data.size(0) == self._batch_size
-        data = data.to(self._buf_device)
+        data = data.to(self._buf_device).to(self._buffer.dtype)
 
         self._pointer = (self._pointer + 1) % self._max_len
         self._buffer[self._pointer] = data

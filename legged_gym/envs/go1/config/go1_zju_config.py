@@ -112,7 +112,7 @@ class Go1_ZJU_Cfg(Go1BaseCfg):
         only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
         # only_positive_rewards_until_epoch = 500  # after the epoch, turn off only_positive_reward
         use_guidance_terrain = True
-        tracking_sigma = 0.2  # 0.2 tracking reward = exp(-error^2/sigma)
+        tracking_sigma = 5
         soft_dof_pos_limit = 0.9
 
         EMA_update_alpha = 0.99

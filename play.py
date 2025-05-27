@@ -38,19 +38,19 @@ def play(args):
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
-    task_cfg.domain_rand.action_delay = True
+    task_cfg.domain_rand.action_delay = False
     task_cfg.domain_rand.action_delay_range = [(0, 5)]
     task_cfg.domain_rand.add_dof_lag = False
     task_cfg.domain_rand.dof_lag_range = (0, 10)
-    task_cfg.domain_rand.push_robots = True
+    task_cfg.domain_rand.push_robots = False
     task_cfg.domain_rand.push_duration = [0.3]
     task_cfg.domain_rand.push_interval_s = 8
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
         'rough_slope': 1,
-        'stairs_up': 0,
-        'stairs_down': 0,
+        'stairs_up': 1,
+        'stairs_down': 1,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
@@ -59,7 +59,7 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
+        'parkour_stair': 0,
         'parkour_mini_stair': 0,
         'parkour_flat': 0,
     }
@@ -80,7 +80,8 @@ def play(args):
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, eval_=True)
+            # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
 
             if type(rtn) is tuple:
@@ -103,8 +104,8 @@ def play(args):
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.
-            # actions[env.lookat_id, 6] = env.joystick_handler.get_control_input()[0]
-            # actions[env.lookat_id, 6 + 6] = env.joystick_handler.get_control_input()[0]
+            # actions[env.lookat_id, 8] = env.joystick_handler.get_control_input()[0]
+            # actions[env.lookat_id, 8 + 3] = env.joystick_handler.get_control_input()[0]
 
             # # for testing reference motion
             # actions[:] = 0.

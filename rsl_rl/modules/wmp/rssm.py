@@ -17,13 +17,13 @@ class RSSM(nn.Module):
         self.decoder = WMDecoder(env_cfg, train_cfg)
         self.recurrent_model = RecurrentModel(env_cfg, train_cfg)
 
-    def step(self, proprio, depth, prev_actions, dones):
+    def step(self, proprio, depth, prev_actions, dones, sample=True):
         obs_enc = self.encoder(proprio, depth)
 
         if torch.any(dones):
             self.recurrent_model.init_model_state(dones)
 
-        return self.recurrent_model.step(obs_enc, prev_actions)
+        return self.recurrent_model.step(obs_enc, prev_actions, sample)
 
     def train_step(self, prop, depth, action_his, state_deter, state_stoch):
         obs_enc = gru_wrapper(self.encoder.forward, prop, depth)
@@ -32,12 +32,9 @@ class RSSM(nn.Module):
 
         post = gru_wrapper(self.recurrent_model.observation_step, state_deter_new, obs_enc)
 
-        ot1, depth, rew = gru_wrapper(self.decoder, state_deter_new, post)
+        prop, depth, rew = gru_wrapper(self.decoder, state_deter_new, post)
 
-        return prior, post, ot1, depth, rew
-
-
-
+        return prior, post, prop, depth, rew
 
     def reset(self, dones):
         self.recurrent_model.init_wm_state(dones)

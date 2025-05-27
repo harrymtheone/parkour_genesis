@@ -82,7 +82,7 @@ class QuadrupedEnv(ParkourTask):
     def _reward_tracking_lin_vel(self):
         # Tracking of linear velocity commands (xy axes)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
-        rew = torch.exp(-lin_vel_error / self.cfg.rewards.tracking_sigma)
+        rew = torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
 
         rew[torch.logical_and(self.env_class >= 4, self.env_class < 12)] *= 0.3
         return rew
@@ -97,7 +97,7 @@ class QuadrupedEnv(ParkourTask):
 
     def _reward_tracking_yaw(self):
         diff = self.commands[:, 2] - self.base_ang_vel[:, 2]
-        return torch.exp(-torch.square(diff) / self.cfg.rewards.tracking_sigma)
+        return torch.exp(-torch.square(diff) * self.cfg.rewards.tracking_sigma)
 
     def _reward_lin_vel_z(self):
         rew = torch.square(self.base_lin_vel[:, 2])

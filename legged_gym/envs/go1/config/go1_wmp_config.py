@@ -5,7 +5,7 @@ from .go1_base_config import Go1BaseCfg
 
 class Go1_WMP_Cfg(Go1BaseCfg):
     class env(Go1BaseCfg.env):
-        num_envs = 2048  # 6144
+        num_envs = 3500  # 6144
 
         n_proprio = 45  # 3 + 3 + 3 + 3 * 12
         len_prop_his = 5
@@ -58,10 +58,10 @@ class Go1_WMP_Cfg(Go1BaseCfg):
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 0,
-            'rough_slope': 0,
-            'stairs_up': 0,
-            'stairs_down': 0,
+            'smooth_slope': 3,
+            'rough_slope': 1,
+            'stairs_up': 1,
+            'stairs_down': 1,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -71,11 +71,11 @@ class Go1_WMP_Cfg(Go1BaseCfg):
             'parkour_box': 1,
             'parkour_step': 1,
             'parkour_stair': 1,
-            'parkour_flat': 1,
+            'parkour_flat': 0,
         }
 
     class noise(Go1BaseCfg.noise):
-        add_noise = False
+        add_noise = True
 
     class domain_rand(Go1BaseCfg.domain_rand):
         randomize_start_pos = True
@@ -93,7 +93,7 @@ class Go1_WMP_Cfg(Go1BaseCfg):
         randomize_com = True
 
         push_robots = False
-        action_delay = False
+        action_delay = True
         add_dof_lag = False
         add_imu_lag = False
 
@@ -110,9 +110,9 @@ class Go1_WMP_Cfg(Go1BaseCfg):
         base_height_target = 0.3
         feet_height_target = 0.05
         only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
-        # only_positive_rewards_until_epoch = 500  # after the epoch, turn off only_positive_reward
+        only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
         use_guidance_terrain = True
-        tracking_sigma = 0.2  # 0.2 tracking reward = exp(-error^2/sigma)
+        tracking_sigma = 5
         soft_dof_pos_limit = 0.9
 
         EMA_update_alpha = 0.99
@@ -123,21 +123,26 @@ class Go1_WMP_Cfg(Go1BaseCfg):
             tracking_goal_vel = 1.5
             tracking_yaw = 0.5
 
+            base_stumble = -1.0
+            feet_clearance = -0.01
+            feet_stumble = -5.0  # -1.0
+            feet_edge = -0.3  # -0.3
+
             lin_vel_z = -1.0
             ang_vel_xy = -0.05
-            orientation = -0.2
+            orientation = 0.5  # -0.2
             torques = -1e-5
-            action_rate = -0.01
-            # action_smoothness = -0.01
+            action_smoothness = -3e-3  # -0.01
             dof_acc = -2.5e-7
-            dof_error = -0.04
+            # dof_error = -0.04
+            default_joint_pos = 0.1
             hip_pos = -0.5
             collision = -1.0
             dof_pos_limits = -10.0
             base_height = -1.0
 
     class world_model:
-        pass
+        step_interval = 5
 
     class policy:
         # actor parameters
@@ -151,12 +156,6 @@ class Go1_WMP_Cfg(Go1BaseCfg):
 
         obs_gru_hidden_size = 64
         recon_gru_hidden_size = 256
-
-        len_latent = 16
-        len_base_vel = 3
-        len_latent_feet = 16
-        len_latent_body = 16
-        transformer_embed_dim = 64
 
     class algorithm:
         # PPO parameters

@@ -18,8 +18,11 @@ except ImportError:
 
 def symlog(x):
     if isinstance(x, float):
-        return math.copysign(1., x) * math.log(abs(x) + 1.0)
-    else:
+        if abs(x) < 1e-8:
+            return 0.
+        else:
+            return math.copysign(1., x) * math.log(abs(x) + 1.0)
+    else:  # TODO: gradient!!!!!!!! See paper
         return torch.sign(x) * torch.log(torch.abs(x) + 1.0)  # (batch_size, 1)
 
 
@@ -86,9 +89,7 @@ class SymlogMSELoss(nn.Module):
 
 
 class WorldModelDataset:
-    def __init__(self, task_cfg, device, batch_size=256, buffer_size=100, dataset_size=1000, buf_device=torch.device('cuda')):
-        step_interval = 5
-
+    def __init__(self, task_cfg, device, batch_size=64, buffer_size=100, dataset_size=1000, dtype=torch.half, buf_device=torch.device('cuda')):
         self.device = device
         self.buffer_size = buffer_size
         self.dataset_size = dataset_size
@@ -98,19 +99,19 @@ class WorldModelDataset:
 
         self.envs_selected = torch.randperm(task_cfg.env.num_envs)[:batch_size]
 
-        self.buffers = {
-            "prop": CircularBuffer(buffer_size, batch_size, (task_cfg.env.n_proprio - 12,), device=device, buf_device=buf_device),
-            "depth": CircularBuffer(buffer_size, batch_size, (1, 64, 64), device=device, buf_device=buf_device),
-            "action_his": CircularBuffer(buffer_size, batch_size, (step_interval, task_cfg.env.num_actions), device=device, buf_device=buf_device),
-            "state_deter": CircularBuffer(buffer_size, batch_size, (512,), device=device, buf_device=buf_device),
-            "state_stoch": CircularBuffer(buffer_size, batch_size, (32, 32), device=device, buf_device=buf_device),
+        def create_buf(*data_shape): return CircularBuffer(buffer_size, batch_size, data_shape, device, dtype, buf_device)
 
-            "ot1": CircularBuffer(buffer_size, batch_size, (task_cfg.env.n_proprio - 12,), device=device, buf_device=buf_device),
-            "reward": CircularBuffer(buffer_size, batch_size, (1,), device=device, buf_device=buf_device),
+        self.buffers = {
+            "prop": create_buf(task_cfg.env.n_proprio - 12),
+            "depth": create_buf(1, 64, 64),
+            "action_his": create_buf(task_cfg.world_model.step_interval, task_cfg.env.num_actions),
+            "state_deter": create_buf(512),
+            "state_stoch": create_buf(32, 32),
+            "reward": create_buf(1),
         }
 
-        self.datasets = {k: torch.zeros((dataset_size, buffer_size, *self.buffers[k].shape[2:]), dtype=torch.float, device=buf_device) for k in self.buffers}
-        self._cur_idx = 0
+        self.datasets = {k: torch.empty((dataset_size, buffer_size, *self.buffers[k].shape[2:]), dtype=torch.float, device=buf_device) for k in self.buffers}
+        self._cur_size = self._cur_idx = 0
         self.valid_len = torch.zeros(dataset_size, dtype=torch.long, device=device)
 
     def append(self, **kwargs):
@@ -142,13 +143,14 @@ class WorldModelDataset:
             buf.reset(transfer_ids_now)
 
         self._cur_idx = (self._cur_idx + num_transfer) % self.dataset_size
+        self._cur_size = min(self._cur_size + num_transfer, self.dataset_size)
 
         # transfer remaining
         if num_transfer > num_transfer_now:
             self.transfer_dones(None, transfer_ids=transfer_ids[num_transfer_now:])
 
     def __len__(self):
-        return torch.sum(self.valid_len).item()
+        return self._cur_size
 
     def sample(self, batch_size=16, batch_length=64):
         prob = self.valid_len / len(self)
@@ -199,7 +201,7 @@ class PPO_WMP(BaseAlgorithm):
         self.learning_rate = self.cfg.learning_rate
         self.device = device
         self.mse_loss = nn.MSELoss()
-        self.rew_loss = SoftSymlogNLLLoss(low=-1., high=1.)
+        self.rew_loss = SoftSymlogNLLLoss(low=-5., high=5.)
         self.ot1_loss = SymlogMSELoss(reduction='mean')
 
         # world model
@@ -209,17 +211,17 @@ class PPO_WMP(BaseAlgorithm):
 
         self.wm_dones = torch.ones(task_cfg.env.num_envs, dtype=torch.bool, device=self.device)
         """ env done in last {wm_step_interval} steps """
-        self.wm_ot1 = torch.zeros(task_cfg.env.num_envs, task_cfg.env.n_proprio - 12, dtype=torch.float, device=self.device)
         self.wm_rew_sum = torch.zeros(task_cfg.env.num_envs, dtype=torch.float, device=self.device)
         """ reward sum in last steps """
 
-        self.wm_action_his = CircularBuffer(5, task_cfg.env.num_envs, (task_cfg.env.num_actions,), device=device)
+        self.wm_action_his = CircularBuffer(task_cfg.world_model.step_interval, task_cfg.env.num_envs, (task_cfg.env.num_actions,), device=device)
+        self.wm_action_his.reset()
 
         self.wm_dataset = WorldModelDataset(task_cfg, device=self.device)
 
         # PPO components
-        self.actor = ActorWMP(task_cfg.env, task_cfg.policy).to(self.device)
-        self.critic = CriticWMP(task_cfg.env, task_cfg.policy).to(self.device)
+        self.actor = ActorWMP(task_cfg.env).to(self.device)
+        self.critic = CriticWMP(task_cfg.env).to(self.device)
 
         # # AMP components
         # self.amp_loader = AMPLoader(
@@ -262,7 +264,6 @@ class PPO_WMP(BaseAlgorithm):
                 action_his=act_his,
                 state_deter=self.world_model.get_deter(),
                 state_stoch=self.world_model.get_stoch(),
-                ot1=self.wm_ot1,
                 reward=self.wm_rew_sum.unsqueeze(1),
             )
             self.wm_rew_sum[:] = 0.
@@ -307,8 +308,6 @@ class PPO_WMP(BaseAlgorithm):
 
         self.wm_dataset.transfer_dones(dones)
         self.wm_dones[dones] = True
-        actor_obs, wm_obs = args[0]
-        self.wm_ot1[:] = wm_obs.proprio
         self.wm_rew_sum[:] += rewards
 
     def compute_returns(self, last_critic_obs):
@@ -320,9 +319,8 @@ class PPO_WMP(BaseAlgorithm):
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
-        mean_wm_loss = 0
         mean_kl_div_loss = 0
-        mean_ot1_loss = 0
+        mean_prop_loss = 0
         mean_depth_loss = 0
         mean_rew_loss = 0
 
@@ -350,19 +348,17 @@ class PPO_WMP(BaseAlgorithm):
         mean_kl /= num_updates
 
         # update estimation
-        if len(self.wm_dataset) > 1000:
+        if len(self.wm_dataset) > 100:
             for _ in range(train_steps_per_iter):
-                wm_loss, kl_div_loss, loss_ot1, loss_depth, loss_rew = self._update_world_model()
+                kl_div_loss, loss_prop, loss_depth, loss_rew = self._update_world_model()
 
-                mean_wm_loss += wm_loss
                 mean_kl_div_loss += kl_div_loss
-                mean_ot1_loss += loss_ot1
+                mean_prop_loss += loss_prop
                 mean_depth_loss += loss_depth
                 mean_rew_loss += loss_rew
 
-        mean_wm_loss /= num_updates
         mean_kl_div_loss /= num_updates
-        mean_ot1_loss /= num_updates
+        mean_prop_loss /= num_updates
         mean_depth_loss /= num_updates
         mean_rew_loss /= num_updates
 
@@ -380,11 +376,10 @@ class PPO_WMP(BaseAlgorithm):
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
-            'Train/wm_loss': mean_wm_loss,
-            'Train/kl_div_loss': mean_kl_div_loss,
-            'Train/ot1_loss': mean_ot1_loss,
-            'Train/depth_loss': mean_depth_loss,
-            'Train/rew_loss': mean_rew_loss,
+            'Loss/kl_div_loss': mean_kl_div_loss,
+            'Loss/prop_loss': mean_prop_loss,
+            'Loss/depth_loss': mean_depth_loss,
+            'Loss/rew_loss': mean_rew_loss,
         }
 
     def _update_policy(self, batch: dict):
@@ -458,21 +453,22 @@ class PPO_WMP(BaseAlgorithm):
             data = self.wm_dataset.sample()
 
             if data is None:
-                return 0., 0., 0., 0., 0.
+                return 0., 0., 0., 0.
 
-            prop, depth, action_his, state_deter, state_stoch, ot1, reward = data.values()
+            prop, depth, action_his, state_deter, state_stoch, reward = data.values()
 
-            prior, post, ot1_pred, depth_pred, rew_pred = self.world_model.train_step(prop, depth, action_his, state_deter, state_stoch)
+            prior, post, prop_pred, depth_pred, rew_pred = self.world_model.train_step(prop, depth, action_his, state_deter, state_stoch)
 
+            # TODO: make sure I understand all losses!!!
             # KL Divergence
             kl_div_loss, _, _ = self.kl_loss(prior, post)
 
             # maximum likelihood
-            loss_ot1 = self.ot1_loss(ot1_pred, prop)
+            loss_prop = self.ot1_loss(prop_pred, prop)
             loss_depth = self.mse_loss(depth_pred, depth)
             loss_rew = self.rew_loss(rew_pred, reward)
 
-            loss = kl_div_loss + 1.0 * loss_ot1 + 1.0 * loss_depth + 1.0 * loss_rew
+            loss = kl_div_loss + 1.0 * loss_prop + 1.0 * loss_depth + 1.0 * loss_rew
 
         # Gradient step
         self.optimizer_wm.zero_grad()
@@ -480,7 +476,7 @@ class PPO_WMP(BaseAlgorithm):
         self.scaler_wm.step(self.optimizer_wm)
         self.scaler_wm.update()
 
-        return loss, kl_div_loss.item(), loss_ot1.item(), loss_depth.item(), loss_rew.item()
+        return kl_div_loss.item(), loss_prop.item(), loss_depth.item(), loss_rew.item()
 
     def kl_loss(self, prior, post, free=1.0, dyn_scale=0.5, rep_scale=0.1):
         dist = self.world_model.recurrent_model.get_dist

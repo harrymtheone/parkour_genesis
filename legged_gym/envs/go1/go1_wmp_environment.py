@@ -3,6 +3,7 @@ import numpy as np
 import torch
 
 from legged_gym.envs.base.quadruped_env import QuadrupedEnv
+from .go1_base_env import mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase, HistoryBuffer
 from ...utils.math import transform_by_yaw
 
@@ -21,6 +22,19 @@ class ActorObs(ObsBase):
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
+
+    @torch.compiler.disable
+    def mirror(self):
+        return ActorObs(
+            mirror_proprio_by_x(self.proprio),
+            mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
+        )
+
+    @staticmethod
+    def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
+        dof_prop_mirrored = dof_prop.clone()
+        mirror_dof_prop_by_x(dof_prop_mirrored, 0)
+        return dof_prop_mirrored
 
 
 class ObsNext(ObsBase):
@@ -98,10 +112,10 @@ class Go1WMPEnvironment(QuadrupedEnv):
         proprio = torch.cat((
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
-            self.commands[:, :3] * self.commands_scale,  # 5
-            (dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 10D
-            dof_vel * self.obs_scales.dof_vel,  # 10D
-            self.last_action_output,  # 10D
+            self.commands[:, :3] * self.commands_scale,  # 3
+            (dof_pos - self.init_state_dof_pos) * self.obs_scales.dof_pos,  # 12D
+            dof_vel * self.obs_scales.dof_vel,  # 12D
+            self.last_action_output,  # 12D
         ), dim=-1)
 
         # explicit privileged information
@@ -122,11 +136,6 @@ class Go1WMPEnvironment(QuadrupedEnv):
             self.sim.friction_coeffs,  # 1
             self.sim.payload_masses / 10.,  # 1
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
-        ), dim=-1)
-        priv_actor_obs = torch.cat((
-            self.base_lin_vel * self.obs_scales.lin_vel,  # 3
-            self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 16
-            self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
         ), dim=-1)
 
         # compute height map
@@ -178,3 +187,31 @@ class Go1WMPEnvironment(QuadrupedEnv):
             #     self.sim.draw_points(pts[indices])
 
         super().render()
+
+    def _reward_default_joint_pos(self):
+        """
+        Calculates the reward for keeping joint positions close to default positions, with a focus
+        on penalizing deviation in yaw and roll directions. Excludes yaw and roll from the main penalty.
+        """
+        joint_diff = self.sim.dof_pos - self.init_state_dof_pos
+        rew = -joint_diff[:, self.dof_activated].square().mean(dim=1)
+        return torch.exp(rew * self.cfg.rewards.tracking_sigma)
+
+    def _reward_orientation(self):
+        """
+        Calculates the reward for maintaining a flat base orientation. It penalizes deviation
+        from the desired base orientation using the base euler angles and the projected gravity vector.
+        """
+        quat_mismatch = torch.exp(-torch.sum(torch.abs(self.base_euler[:, :2]), dim=1) * 10)
+        orientation = torch.exp(-torch.norm(self.projected_gravity[:, :2], dim=1) * 20)
+        return (quat_mismatch + orientation) / 2.
+
+    def _reward_action_smoothness(self):
+        """
+        Encourages smoothness in the robot's actions by penalizing large differences between consecutive actions.
+        This is important for achieving fluid motion and reducing mechanical stress.
+        """
+        term_1 = torch.sum(torch.square(self.last_actions - self.actions), dim=1)
+        term_2 = 3 * torch.sum(torch.square(self.actions + self.last_last_actions - 2 * self.last_actions), dim=1)
+        term_3 = 0.05 * torch.sum(torch.abs(self.actions), dim=1)
+        return term_1 + term_2 + term_3

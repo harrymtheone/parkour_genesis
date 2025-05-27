@@ -65,8 +65,6 @@ class RL_WMP_Runner(RunnerLogger):
         # adaptive sampling probability (prob to use ground truth)
         use_estimated_values = torch.zeros(n_envs, dtype=torch.bool, device=self.device)
 
-
-
         for self.cur_it in range(self.start_it, self.start_it + self.cfg.max_iterations):
             start_time = time.time()
             self.episode_rew.clear()
@@ -75,7 +73,7 @@ class RL_WMP_Runner(RunnerLogger):
             # Rollout
             with torch.inference_mode():
                 for _ in range(self.num_steps_per_env):
-                    step_world_model = self.tot_steps % 5 == 0
+                    step_world_model = self.tot_steps % self.task_cfg.world_model.step_interval == 0
                     actions = self.alg.act(obs, critic_obs, step_world_model=step_world_model)
                     obs, critic_obs, rewards, dones, infos = env.step(actions)  # obs has changed to next_obs !! if done obs has been reset
                     self.alg.process_env_step(rewards, dones, infos, obs)
@@ -194,7 +192,11 @@ class RL_WMP_Runner(RunnerLogger):
 
     def play_act(self, obs, **kwargs):
         self.alg.actor.eval()
-        return self.alg.play_act(obs, **kwargs)
+
+        step_world_model = self.tot_steps % self.task_cfg.world_model.step_interval == 0
+        rtn = self.alg.play_act(obs, step_world_model=step_world_model, sample=False, **kwargs)
+        self.tot_steps += 1
+        return rtn
 
     def save(self, path, infos=None):
         state_dict = self.alg.save()

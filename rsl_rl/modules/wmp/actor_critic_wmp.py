@@ -5,7 +5,7 @@ from torch import nn
 class ActorWMP(nn.Module):
     is_recurrent = False
 
-    def __init__(self, env_cfg, train_cfg):
+    def __init__(self, env_cfg):
         super().__init__()
         activation = nn.ELU()
 
@@ -75,16 +75,9 @@ class ActorWMP(nn.Module):
         new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
         self.log_std.data = new_log_std.data
 
-    def get_hidden_state(self):
-        return self.obs_gru.get_hidden_state(), self.reconstructor.get_hidden_state()
-
-    def reset(self, dones):
-        self.obs_gru.reset(dones)
-        self.reconstructor.reset(dones)
-
 
 class CriticWMP(nn.Module):
-    def __init__(self, env_cfg, train_cfg):
+    def __init__(self, env_cfg):
         super().__init__()
         activation = nn.ELU()
 

@@ -99,16 +99,14 @@ class Go1BaseCfg(BaseConfig):
     class noise:
         add_noise = False
         noise_level = 1.0  # scales other values
-        quantize_height = True
 
         class noise_scales:
-            rotation = 0.0
             dof_pos = 0.01
-            dof_vel = 0.05
-            lin_vel = 0.05
-            ang_vel = 0.05
-            gravity = 0.02
-            height_measurements = 0.02
+            dof_vel = 1.5
+            lin_vel = 0.1
+            ang_vel = 0.2
+            gravity = 0.05
+            height_measurements = 0.1
 
     class domain_rand:
         randomize_start_pos = False
@@ -140,7 +138,7 @@ class Go1BaseCfg(BaseConfig):
         randomize_action_delay = True  # if False, max delay will be used
         randomize_action_delay_each_step = False
         action_delay_range = [(0, 2), (0, 4), (0, 8)]
-        action_delay_update_steps = 5000 * 24
+        action_delay_update_steps = 2000 * 24
 
         add_dof_lag = False
         randomize_dof_lag = True  # if False, max delay will be used

@@ -35,7 +35,7 @@ def train(args):
         # args.headless = False
         task_cfg.terrain.num_rows = 10
         task_cfg.terrain.num_cols = 10
-        task_cfg.env.num_envs = 2048
+        task_cfg.env.num_envs = 4096
     else:
         mode = "online"
 
