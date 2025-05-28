@@ -34,8 +34,8 @@ def train(args):
         mode = "disabled"
         # args.headless = False
         task_cfg.terrain.num_rows = 10
-        task_cfg.terrain.num_cols = 10
-        task_cfg.env.num_envs = 4096
+        task_cfg.terrain.num_cols = 2
+        task_cfg.env.num_envs = 1024
     else:
         mode = "online"
 

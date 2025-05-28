@@ -17,16 +17,22 @@ except ImportError:
 
 
 def symlog(x):
+    # This one is for label transformation
     if isinstance(x, float):
         if abs(x) < 1e-8:
             return 0.
         else:
             return math.copysign(1., x) * math.log(abs(x) + 1.0)
-    else:  # TODO: gradient!!!!!!!! See paper
+    else:
         return torch.sign(x) * torch.log(torch.abs(x) + 1.0)  # (batch_size, 1)
 
 
-class SoftSymlogNLLLoss(nn.Module):
+def symexp(x):
+    # Inverse of symlog
+    return torch.sign(x) * (torch.exp(torch.abs(x)) - 1)
+
+
+class SymexpTwoHotLoss(nn.Module):
     def __init__(self, low, high, num_buckets=255, device='cuda'):
         super().__init__()
         self.low = low
@@ -35,7 +41,7 @@ class SoftSymlogNLLLoss(nn.Module):
         self.device = device
 
         # Buckets evenly spaced in symlog space
-        self.buckets = torch.linspace(symlog(low), symlog(high), steps=num_buckets).to(device)
+        self.buckets = torch.linspace(symlog(low), symlog(high), steps=num_buckets, device=device)
 
     def forward(self, data, target):
         """
@@ -44,11 +50,11 @@ class SoftSymlogNLLLoss(nn.Module):
         """
 
         # 1. Transform target with symlog and convert to soft one-hot vector over buckets
-        x = symlog(target).unsqueeze(-1)  # (batch_size, 1)
+        x = symlog(target).unsqueeze(-1)
 
         # Find bucket indices just below and above target values
-        below = torch.sum((self.buckets <= x).to(torch.int64), dim=-1) - 1
-        above = torch.sum((self.buckets > x).to(torch.int64), dim=-1)
+        below = torch.sum(self.buckets <= x, dim=-1, dtype=torch.long) - 1
+        above = torch.sum(self.buckets > x, dim=-1, dtype=torch.long)
 
         # Clamp indices to valid range
         below = torch.clamp(below, 0, self.num_buckets - 1)
@@ -201,8 +207,8 @@ class PPO_WMP(BaseAlgorithm):
         self.learning_rate = self.cfg.learning_rate
         self.device = device
         self.mse_loss = nn.MSELoss()
-        self.rew_loss = SoftSymlogNLLLoss(low=-5., high=5.)
-        self.ot1_loss = SymlogMSELoss(reduction='mean')
+        self.symlog_mse = SymlogMSELoss()
+        self.symexp_two_hot_loss = SymexpTwoHotLoss(low=-5., high=5.)
 
         # world model
         self.world_model = RSSM(task_cfg.env, task_cfg).to(self.device)
@@ -254,6 +260,9 @@ class PPO_WMP(BaseAlgorithm):
         actor_obs, wm_obs = obs
 
         if step_world_model:
+            state_deter = self.world_model.get_deter().clone()
+            state_stoch = self.world_model.get_stoch().clone()
+
             act_his = self.wm_action_his.get_all().transpose(0, 1)
             self.world_model.step(wm_obs.proprio, wm_obs.depth, act_his, self.wm_dones)
             self.wm_dones[:] = False
@@ -262,8 +271,8 @@ class PPO_WMP(BaseAlgorithm):
                 prop=wm_obs.proprio,
                 depth=wm_obs.depth,
                 action_his=act_his,
-                state_deter=self.world_model.get_deter(),
-                state_stoch=self.world_model.get_stoch(),
+                state_deter=state_deter,
+                state_stoch=state_stoch,
                 reward=self.wm_rew_sum.unsqueeze(1),
             )
             self.wm_rew_sum[:] = 0.
@@ -319,7 +328,8 @@ class PPO_WMP(BaseAlgorithm):
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
-        mean_kl_div_loss = 0
+        mean_dyn_loss = 0
+        mean_rep_loss = 0
         mean_prop_loss = 0
         mean_depth_loss = 0
         mean_rew_loss = 0
@@ -350,14 +360,16 @@ class PPO_WMP(BaseAlgorithm):
         # update estimation
         if len(self.wm_dataset) > 100:
             for _ in range(train_steps_per_iter):
-                kl_div_loss, loss_prop, loss_depth, loss_rew = self._update_world_model()
+                dyn_loss, rep_loss, loss_prop, loss_depth, loss_rew = self._update_world_model()
 
-                mean_kl_div_loss += kl_div_loss
+                mean_dyn_loss += dyn_loss
+                mean_rep_loss += rep_loss
                 mean_prop_loss += loss_prop
                 mean_depth_loss += loss_depth
                 mean_rew_loss += loss_rew
 
-        mean_kl_div_loss /= num_updates
+        mean_dyn_loss /= num_updates
+        mean_rep_loss /= num_updates
         mean_prop_loss /= num_updates
         mean_depth_loss /= num_updates
         mean_rew_loss /= num_updates
@@ -376,7 +388,8 @@ class PPO_WMP(BaseAlgorithm):
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
-            'Loss/kl_div_loss': mean_kl_div_loss,
+            'Loss/dyn_loss': mean_dyn_loss,
+            'Loss/rep_loss': mean_rep_loss,
             'Loss/prop_loss': mean_prop_loss,
             'Loss/depth_loss': mean_depth_loss,
             'Loss/rew_loss': mean_rew_loss,
@@ -453,22 +466,21 @@ class PPO_WMP(BaseAlgorithm):
             data = self.wm_dataset.sample()
 
             if data is None:
-                return 0., 0., 0., 0.
+                return 0., 0., 0., 0., 0.
 
             prop, depth, action_his, state_deter, state_stoch, reward = data.values()
 
-            prior, post, prop_pred, depth_pred, rew_pred = self.world_model.train_step(prop, depth, action_his, state_deter, state_stoch)
+            prior_digits, post_digits, prop_pred, depth_pred, rew_pred = self.world_model.train_step(prop, depth, action_his, state_deter, state_stoch)
 
-            # TODO: make sure I understand all losses!!!
             # KL Divergence
-            kl_div_loss, _, _ = self.kl_loss(prior, post)
+            loss, dyn_loss, rep_loss = self.compute_dyn_rep_loss(prior_digits, post_digits)
 
             # maximum likelihood
-            loss_prop = self.ot1_loss(prop_pred, prop)
+            loss_prop = self.symlog_mse(prop_pred, prop)
             loss_depth = self.mse_loss(depth_pred, depth)
-            loss_rew = self.rew_loss(rew_pred, reward)
+            loss_rew = self.symexp_two_hot_loss(rew_pred, reward)
 
-            loss = kl_div_loss + 1.0 * loss_prop + 1.0 * loss_depth + 1.0 * loss_rew
+            loss += 1.0 * loss_prop + 1.0 * loss_depth + 1.0 * loss_rew
 
         # Gradient step
         self.optimizer_wm.zero_grad()
@@ -476,23 +488,23 @@ class PPO_WMP(BaseAlgorithm):
         self.scaler_wm.step(self.optimizer_wm)
         self.scaler_wm.update()
 
-        return kl_div_loss.item(), loss_prop.item(), loss_depth.item(), loss_rew.item()
+        return dyn_loss.item(), rep_loss.item(), loss_prop.item(), loss_depth.item(), loss_rew.item()
 
-    def kl_loss(self, prior, post, free=1.0, dyn_scale=0.5, rep_scale=0.1):
-        dist = self.world_model.recurrent_model.get_dist
-
-        rep_loss = torch.distributions.kl.kl_divergence(
-            dist(post), dist(prior.detach()))
+    def compute_dyn_rep_loss(self, prior, post, free_bits=1.0, dyn_scale=0.5, rep_scale=0.1):
+        dist = self.world_model.get_dist
 
         dyn_loss = torch.distributions.kl.kl_divergence(
             dist(post.detach()), dist(prior))
 
+        rep_loss = torch.distributions.kl.kl_divergence(
+            dist(post), dist(prior.detach()))
+
         # this is implemented using maximum at the original repo as the gradients are not back-propagated for the out of limits.
-        rep_loss = torch.clip(rep_loss, min=free)
-        dyn_loss = torch.clip(dyn_loss, min=free)
+        dyn_loss = torch.clip(dyn_loss, min=free_bits).mean()
+        rep_loss = torch.clip(rep_loss, min=free_bits).mean()
         loss = dyn_scale * dyn_loss + rep_scale * rep_loss
 
-        return loss.mean(), dyn_loss, rep_loss
+        return loss, dyn_loss, rep_loss
 
     def play_act(self, obs, step_world_model=True, **kwargs):
         actor_obs, wm_obs = obs
@@ -509,6 +521,7 @@ class PPO_WMP(BaseAlgorithm):
 
     def load(self, loaded_dict, load_optimizer=True):
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
+        self.world_model.load_state_dict(loaded_dict['world_model_state_dict'])
         self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
         if load_optimizer:
@@ -521,6 +534,7 @@ class PPO_WMP(BaseAlgorithm):
 
     def save(self):
         return {
+            'world_model_state_dict': self.world_model.state_dict(),
             'actor_state_dict': self.actor.state_dict(),
             'critic_state_dict': self.critic.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),

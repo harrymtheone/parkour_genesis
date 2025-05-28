@@ -94,6 +94,7 @@ class Go1_WMP_Cfg(Go1BaseCfg):
 
         push_robots = False
         action_delay = True
+        action_delay_range = [(0, 2)]
         add_dof_lag = False
         add_imu_lag = False
 
@@ -144,6 +145,16 @@ class Go1_WMP_Cfg(Go1BaseCfg):
     class world_model:
         step_interval = 5
 
+        n_stoch = 32
+        n_discrete = 32
+        n_deter = 512
+        n_mlp_enc = 1024
+        n_cnn_enc = 4096
+        hidden_size = 512
+        state_initial = 'learned'
+
+        unimix_ratio = 0.01
+
     class policy:
         # actor parameters
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
@@ -179,4 +190,4 @@ class Go1_WMP_Cfg(Go1BaseCfg):
         runner_name = 'rl_wmp'
         algorithm_name = 'ppo_wmp'
 
-        max_iterations = 10000  # number of policy updates
+        max_iterations = 100000  # number of policy updates

@@ -75,30 +75,24 @@ class Normalizer(RunningMeanStd):
             self.update(torch.vstack(tuple(policy_batch) + tuple(expert_batch)).cpu().numpy())
 
 
-class OneHotDist(torch.distributions.OneHotCategorical):
-    def __init__(self, probs=None, logits=None, unimix_ratio=0.0):
-        if logits is not None and unimix_ratio > 0.0:
-            probs = torch.softmax(logits, dim=-1)
-            probs = probs * (1.0 - unimix_ratio) + unimix_ratio / probs.shape[-1]
-            logits = torch.log(probs)
-            super().__init__(logits=logits, probs=None)
-        else:
-            super().__init__(logits=logits, probs=probs)
+class UniMixOneHotCategorical(torch.distributions.OneHotCategorical):
+    def __init__(self, logits, unimix_ratio=0.0):
+        assert unimix_ratio > 0.
+
+        probs = torch.softmax(logits, dim=-1)
+        probs = probs * (1.0 - unimix_ratio) + unimix_ratio / probs.shape[-1]
+        logits = torch.log(probs)
+
+        super().__init__(probs=None, logits=logits)
 
     @property
     def mode(self):
-        _mode = nn.functional.one_hot(
-            torch.argmax(super().logits, dim=-1),
-            super().logits.shape[-1]
-        )
-        return _mode.detach() + super().logits - super().logits.detach()
+        _mode = super().mode
+        return _mode.detach() + self.logits - self.logits.detach()
 
-    def sample(self, sample_shape=(), seed=None):
-        if seed is not None:
-            raise ValueError("need to check")
+    def sample(self, sample_shape=torch.Size()):
         sample = super().sample(sample_shape)
         probs = super().probs
-        while len(probs.shape) < len(sample.shape):
-            probs = probs[None]
-        sample += probs - probs.detach()
-        return sample
+
+        assert sample.shape == probs.shape
+        return sample + probs - probs.detach()
