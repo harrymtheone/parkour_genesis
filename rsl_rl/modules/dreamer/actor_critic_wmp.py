@@ -9,6 +9,14 @@ class ActorWMP(nn.Module):
         super().__init__()
         activation = nn.ELU()
 
+        self.history_encoder = nn.Sequential(
+            nn.Linear(210 + 15, 256),  # instead of remove cmd, I set cmd to zero
+            activation,
+            nn.Linear(256, 128),
+            activation,
+            nn.Linear(128, 32),
+        )
+
         self.wm_feature_encoder = nn.Sequential(
             nn.Linear(512, 64),
             activation,
@@ -18,7 +26,7 @@ class ActorWMP(nn.Module):
         )
 
         self.actor = nn.Sequential(
-            nn.Linear(env_cfg.n_proprio + 32, 256),
+            nn.Linear(env_cfg.n_proprio + 32 + 32, 256),
             activation,
             nn.Linear(256, 128),
             activation,
@@ -34,8 +42,10 @@ class ActorWMP(nn.Module):
         torch.distributions.Normal.set_default_validate_args = False
 
     def act(self, obs, wm_feature, eval_=False, **kwargs):
+        his_enc = self.history_encoder(obs.prop_his.flatten(1))
         wm_enc = self.wm_feature_encoder(wm_feature)
-        mean = self.actor(torch.cat([obs.proprio, wm_enc], dim=1))
+
+        mean = self.actor(torch.cat([obs.proprio, his_enc, wm_enc], dim=1))
 
         if eval_:
             return mean
@@ -71,12 +81,15 @@ class CriticWMP(nn.Module):
         super().__init__()
         activation = nn.ELU()
 
-        self.scan_enc = nn.Sequential(
-            nn.Linear(env_cfg.n_scan * 2, 256),
+        assert env_cfg.len_critic_his == 50
+        self.his_enc = nn.Sequential(
+            nn.Conv1d(in_channels=env_cfg.num_critic_obs, out_channels=64, kernel_size=8, stride=4),
             activation,
-            nn.Linear(256, 128),
+            nn.Conv1d(in_channels=64, out_channels=64, kernel_size=6, stride=1),
             activation,
-            nn.Linear(128, 64),
+            nn.Conv1d(in_channels=64, out_channels=64, kernel_size=6, stride=1),
+            activation,
+            nn.Flatten()
         )
 
         self.wm_feature_encoder = nn.Sequential(
@@ -88,7 +101,7 @@ class CriticWMP(nn.Module):
         )
 
         self.critic = nn.Sequential(
-            nn.Linear(env_cfg.num_critic_obs + 64 + 64, 512),
+            nn.Linear(128, 512),
             activation,
             nn.Linear(512, 256),
             activation,
@@ -98,8 +111,6 @@ class CriticWMP(nn.Module):
         )
 
     def evaluate(self, critic_obs, wm_feature):
-        scan = torch.cat([critic_obs.scan, critic_obs.base_edge_mask], dim=2).flatten(1)
-        scan_enc = self.scan_enc(scan)
-
+        his_enc = self.his_enc(critic_obs.priv_his.transpose(1, 2))
         wm_enc = self.wm_feature_encoder(wm_feature)
-        return self.critic(torch.cat([critic_obs.priv, scan_enc, wm_enc], dim=1))
+        return self.critic(torch.cat([his_enc, wm_enc], dim=1))

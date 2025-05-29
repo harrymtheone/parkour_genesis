@@ -4,7 +4,7 @@ import torch
 
 from legged_gym.envs.base.quadruped_env import QuadrupedEnv
 from .go1_base_env import mirror_proprio_by_x, mirror_dof_prop_by_x
-from ..base.utils import ObsBase, HistoryBuffer
+from ..base.utils import ObsBase
 from ...utils.math import transform_by_yaw
 
 
@@ -15,9 +15,8 @@ class WorldModelObs(ObsBase):
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his):
+    def __init__(self, proprio):
         self.proprio = proprio.clone()
-        self.prop_his = prop_his.clone()
 
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
@@ -27,7 +26,6 @@ class ActorObs(ObsBase):
     def mirror(self):
         return ActorObs(
             mirror_proprio_by_x(self.proprio),
-            mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
         )
 
     @staticmethod
@@ -43,9 +41,9 @@ class ObsNext(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_his, scan, base_edge_mask):
+    def __init__(self, priv, scan, base_edge_mask):
         super().__init__()
-        self.priv_his = priv_his.clone()
+        self.priv = priv.clone()
         self.scan = scan.clone()
         self.base_edge_mask = base_edge_mask.clone()
 
@@ -55,9 +53,6 @@ class Go1WMPEnvironment(QuadrupedEnv):
     def _init_buffers(self):
         super()._init_buffers()
         env_cfg = self.cfg.env
-
-        self.prop_his_buf = HistoryBuffer(env_cfg.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
-        self.critic_his_buf = HistoryBuffer(env_cfg.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)
         self.feet_hmap_points = self._init_height_points(self.cfg.terrain.feet_pts_x, self.cfg.terrain.feet_pts_y)
@@ -143,20 +138,15 @@ class Go1WMPEnvironment(QuadrupedEnv):
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
 
         # compose actor observation
-        actor_obs = ActorObs(proprio, self.prop_his_buf.get())
+        actor_obs = ActorObs(proprio)
         actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose world model observation
         world_model_obs = WorldModelObs(proprio, self.sensors.get('depth_0'))
         self.actor_obs = [actor_obs, world_model_obs]
 
-        # update history buffer
-        reset_flag = self.episode_length_buf <= 1
-        self.prop_his_buf.append(proprio, reset_flag)
-
         # compose critic observation
-        self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask)
+        self.critic_obs = CriticObs(priv_obs, scan, base_edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):
@@ -174,7 +164,7 @@ class Go1WMPEnvironment(QuadrupedEnv):
             img = np.clip((depth_img + 0.5) * 255, 0, 255).astype(np.uint8)
             # img = np.clip(depth_img / self.cfg.sensors.depth_0.far_clip * 255, 0, 255).astype(np.uint8)
 
-            cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
+            cv2.imshow("depth_processed", cv2.resize(img, (640, 640)))
             cv2.waitKey(1)
 
             # # draw points cloud

@@ -1,3 +1,5 @@
+import cv2
+
 try:
     import isaacgym, torch
 except ImportError:
@@ -29,7 +31,7 @@ def play(args):
     task_cfg.play.control = False
     task_cfg.env.num_envs = 16
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
-    task_cfg.terrain.num_rows = 1
+    task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
     task_cfg.terrain.curriculum = True
     # task_cfg.terrain.max_difficulty = True
@@ -47,10 +49,10 @@ def play(args):
     task_cfg.domain_rand.push_interval_s = 8
 
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 1,
-        'rough_slope': 1,
-        'stairs_up': 1,
-        'stairs_down': 1,
+        'smooth_slope': 0,
+        'rough_slope': 0,
+        'stairs_up': 0,
+        'stairs_down': 0,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
@@ -58,7 +60,7 @@ def play(args):
         'parkour': 0,
         'parkour_gap': 0,
         'parkour_box': 0,
-        'parkour_step': 0,
+        'parkour_step': 1,
         'parkour_stair': 0,
         'parkour_mini_stair': 0,
         'parkour_flat': 0,
@@ -70,9 +72,10 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
     env = task_registry.make_env(args=args, task_cfg=task_cfg)
     obs, obs_critic = env.get_observations(), env.get_critic_observations()
-    env.sim.clear_lines = True
+    dones = torch.ones(env.num_envs, dtype=torch.bool, device=args.device)
 
     # load policy
+    env.sim.clear_lines = True
     task_cfg.runner.resume = True
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
@@ -80,24 +83,33 @@ def play(args):
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, eval_=True)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, eval_=True, dones=dones)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
 
-            if type(rtn) is tuple:
-                if len(rtn) == 2:
-                    actions, _ = rtn
-                elif len(rtn) == 4:
-                    actions, recon_rough, recon_refine, est = rtn
+            actions = rtn['actions']
 
-                    if len(recon_rough) > 0:
-                        args.est = est[env.lookat_id, :3] / 2
+            if 'wm_depth' in rtn:
+                depth_img = rtn['wm_depth'][env.lookat_id, 0]
 
-                        env.draw_recon(recon_rough)
-                        # env.draw_recon(recon_refine)
-                        # env.draw_est_hmap(est)
-            else:
-                actions = rtn
+                img = torch.clip((depth_img + 0.5) * 255, 0, 255).to(torch.uint8)
+                cv2.imshow("wm_depth", cv2.resize(img.cpu().numpy(), (640, 640)))
+                cv2.waitKey(1)
+
+            # if type(rtn) is tuple:
+            #     if len(rtn) == 2:
+            #         actions, _ = rtn
+            #     elif len(rtn) == 4:
+            #         actions, recon_rough, recon_refine, est = rtn
+            #
+            #         if len(recon_rough) > 0:
+            #             args.est = est[env.lookat_id, :3] / 2
+            #
+            #             env.draw_recon(recon_rough)
+            #             # env.draw_recon(recon_refine)
+            #             # env.draw_est_hmap(est)
+            # else:
+            #     actions = rtn
 
             # env.draw_recon(obs.scan)
             # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)

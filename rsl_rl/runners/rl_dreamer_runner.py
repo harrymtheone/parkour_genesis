@@ -23,7 +23,7 @@ class RunnerLogger:
     p_smpl = 1.
 
 
-class RL_WMP_Runner(RunnerLogger):
+class RL_Dreamer_Runner(RunnerLogger):
     def __init__(self, task_cfg, log_dir=None, device=torch.device('cpu')):
         self.task_cfg = task_cfg
         self.cfg = task_cfg.runner

@@ -154,8 +154,8 @@ class CircularBuffer:
             batch_size: int,
             data_shape: Sequence[int],
             device: torch.device,
-            dtype=torch.float,
-            buf_device: torch.device = None):
+            buf_device: torch.device = None,
+            dtype=torch.float):
         self._batch_size = batch_size
         self._device = device
         self._buf_device = self._device if buf_device is None else buf_device
@@ -209,6 +209,10 @@ class CircularBuffer:
     @property
     def shape(self):
         return self._buffer.shape
+
+    @property
+    def dtype(self):
+        return self._buffer.dtype
 
 
 class DelayBufferCircular:

@@ -3,7 +3,7 @@ import numpy as np
 from .go1_base_config import Go1BaseCfg
 
 
-class Go1_WMP_Cfg(Go1BaseCfg):
+class Go1_Dreamer_Cfg(Go1BaseCfg):
     class env(Go1BaseCfg.env):
         num_envs = 3500  # 6144
 
@@ -188,6 +188,6 @@ class Go1_WMP_Cfg(Go1BaseCfg):
 
     class runner(Go1BaseCfg.runner):
         runner_name = 'rl_dreamer'
-        algorithm_name = 'ppo_wmp'
+        algorithm_name = 'ppo_dreamer'
 
         max_iterations = 100000  # number of policy updates
