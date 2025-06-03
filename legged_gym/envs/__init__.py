@@ -7,11 +7,13 @@ from .T1.config.t1_phase_config import T1_Phase_Cfg, T1_Phase_Stair_Cfg
 from .T1.config.t1_pie_config import T1PIECfg
 from .T1.config.t1_priv_config import T1PrivCfg
 from .T1.config.t1_zju_config import T1_ZJU_Cfg, T1_ZJU_Stair_Cfg, T1_ZJU_Parkour_Cfg
+from .T1.config.t1_bbm_config import T1_BBM_Cfg
 from .T1.t1_dreamwaq_environment import T1DreamWaqEnvironment
 from .T1.t1_phase_environment import T1_Phase_Environment
 from .T1.t1_pie_environment import T1PIEEnvironment
 from .T1.t1_priv_environment import T1PrivEnvironment
 from .T1.t1_zju_environment import T1ZJUEnvironment
+from .T1.t1_bbm_environment import T1_BBM_Environment
 from .go1 import Go1ZJUEnvironment, Go1WMPEnvironment
 from .go1 import Go1_ZJU_Cfg, Go1_ZJU_Pit_Cfg, Go1_WMP_Cfg, Go1_Dreamer_Cfg
 from .pdd.config.pdd_dreamwaq_config import PddDreamWaqCfg, PddDreamWaqCfgPPO, PddDreamWaqGRUCfgPPO
@@ -40,6 +42,8 @@ task_list = [
 
     ['t1_mc', T1ZJUEnvironment, T1_Multi_Critic_Cfg()],
     ['t1_mc_stair', T1ZJUEnvironment, T1_Multi_Critic_Stair_Cfg()],
+
+    ['t1_bbm', T1_BBM_Environment, T1_BBM_Cfg()],
 
     ['t1_phase', T1_Phase_Environment, T1_Phase_Cfg()],
     ['t1_phase_stair', T1_Phase_Environment, T1_Phase_Stair_Cfg()],

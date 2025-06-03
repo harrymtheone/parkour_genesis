@@ -7,6 +7,7 @@ from .ppo_wmp import PPO_WMP
 from .ppo_dreamer import PPO_Dreamer
 from .ppo_zju import PPO_ZJU
 from .ppo_zju_multi_critic import PPO_ZJU_Multi_Critic
+from .ppo_bbm import PPO_BBM
 
 algorithm_dict = {
     'ppo_priv': PPO_Priv,
@@ -17,5 +18,6 @@ algorithm_dict = {
     'ppo_wmp': PPO_WMP,
     'ppo_dreamer': PPO_Dreamer,
 
+    'ppo_bbm': PPO_BBM,
     'ppo_phase': PPO_Phase,
 }

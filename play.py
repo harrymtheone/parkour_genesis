@@ -49,8 +49,8 @@ def play(args):
     task_cfg.domain_rand.push_interval_s = 8
 
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 0,
-        'rough_slope': 0,
+        'smooth_slope': 1,
+        'rough_slope': 1,
         'stairs_up': 0,
         'stairs_down': 0,
         'discrete': 0,
@@ -60,7 +60,7 @@ def play(args):
         'parkour': 0,
         'parkour_gap': 0,
         'parkour_box': 0,
-        'parkour_step': 1,
+        'parkour_step': 0,
         'parkour_stair': 0,
         'parkour_mini_stair': 0,
         'parkour_flat': 0,
@@ -93,7 +93,7 @@ def play(args):
                 depth_img = rtn['wm_depth'][env.lookat_id, 0]
 
                 img = torch.clip((depth_img + 0.5) * 255, 0, 255).to(torch.uint8)
-                cv2.imshow("wm_depth", cv2.resize(img.cpu().numpy(), (640, 640)))
+                cv2.imshow("wm_depth", cv2.resize(img.cpu().numpy(), (img.shape[0] * 5, img.shape[1] * 5)))
                 cv2.waitKey(1)
 
             # if type(rtn) is tuple:

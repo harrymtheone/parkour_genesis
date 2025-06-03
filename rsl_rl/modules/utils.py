@@ -49,6 +49,29 @@ def gru_wrapper(func, *args, **kwargs):
         return rtn.unflatten(0, (n_steps, -1))
 
 
+class UniMixOneHotCategorical(torch.distributions.OneHotCategorical):
+    def __init__(self, logits, unimix_ratio=0.0):
+        assert unimix_ratio > 0.
+
+        probs = torch.softmax(logits, dim=-1)
+        probs = probs * (1.0 - unimix_ratio) + unimix_ratio / probs.shape[-1]
+        logits = torch.log(probs)
+
+        super().__init__(probs=None, logits=logits)
+
+    @property
+    def mode(self):
+        _mode = super().mode
+        return _mode.detach() + self.logits - self.logits.detach()
+
+    def sample(self, sample_shape=torch.Size()):
+        sample = super().sample(sample_shape)
+        probs = super().probs
+
+        assert sample.shape == probs.shape
+        return sample.detach() + probs - probs.detach()
+
+
 class UniversalCritic(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
