@@ -29,8 +29,6 @@ class RSSM(nn.Module):
         if self.initial == "learned":
             self.W = nn.Parameter(torch.zeros(1, self.cfg.n_deter))  # TODO: how is this one updated?
 
-        # self.init_model_state(torch.ones(env_cfg.num_envs, dtype=torch.bool))
-
     def step(self, proprio, depth, prev_actions, is_first_step):
         if torch.any(is_first_step):
             self.reset(is_first_step)
@@ -50,7 +48,7 @@ class RSSM(nn.Module):
             state_stoch = state_stoch.clone()
             self.reset(is_first_step.squeeze(2), state_deter=state_deter, state_stoch=state_stoch)
 
-        state_deter_new = self.sequence_model(state_deter[0].unsqueeze(0), state_stoch, action_his)
+        state_deter_new = self.sequence_model(state_deter[0].contiguous().unsqueeze(0), state_stoch, action_his)
 
         prior_digits = gru_wrapper(self.dynamics.forward, state_deter_new)
 
@@ -73,16 +71,11 @@ class RSSM(nn.Module):
         post_digits = self.encoder(self.state_deter, proprio, depth)
 
         if sample:
-            stoch = self.get_dist(post_digits).sample()
-        else:
-            stoch = self.get_dist(post_digits).mode
-
-        prop, depth, rew = self.decoder(self.state_deter, stoch)
-
-        if sample:
             self.state_stoch[:] = self.get_dist(post_digits).sample()
         else:
             self.state_stoch[:] = self.get_dist(post_digits).mode
+
+        prop, depth, rew = self.decoder(self.state_deter, self.state_stoch)
 
         return {'wm_prop': prop, 'wm_depth': depth, 'wm_rew': rew}
 

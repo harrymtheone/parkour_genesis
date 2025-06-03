@@ -5,7 +5,7 @@ from .go1_base_config import Go1BaseCfg
 
 class Go1_Dreamer_Cfg(Go1BaseCfg):
     class env(Go1BaseCfg.env):
-        num_envs = 3500  # 6144
+        num_envs = 128  # 6144
 
         n_proprio = 45  # 3 + 3 + 3 + 3 * 12
         len_prop_his = 5

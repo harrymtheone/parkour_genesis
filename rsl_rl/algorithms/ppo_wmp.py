@@ -178,7 +178,7 @@ class WorldModelDataset:
             for idx, end_idx in zip(batch_idx, batch_end_ids):
                 data_k.append(self.datasets[k][idx, end_idx - batch_length: end_idx])
 
-            sampled_data[k] = torch.stack(data_k, dim=0).to(self.device)
+            sampled_data[k] = torch.stack(data_k, dim=0).transpose(0, 1).to(self.device)
 
         return sampled_data
 

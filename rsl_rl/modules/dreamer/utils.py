@@ -95,4 +95,4 @@ class UniMixOneHotCategorical(torch.distributions.OneHotCategorical):
         probs = super().probs
 
         assert sample.shape == probs.shape
-        return sample + probs - probs.detach()
+        return sample.detach() + probs - probs.detach()
