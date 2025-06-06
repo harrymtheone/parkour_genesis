@@ -58,7 +58,7 @@ class HumanoidEnv(ParkourTask):
         super()._refresh_variables()
 
         contact = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=-1) > 2.
-        self.contact_filt[:] = contact | self.last_contacts | self._get_stance_mask()
+        self.contact_filt[:] = contact | self.last_contacts
 
         if self.sim.terrain is not None:
             feet_pos_xy = self.sim.link_pos[:, self.feet_indices, :2] + self.cfg.terrain.border_size

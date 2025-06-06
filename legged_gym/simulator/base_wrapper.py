@@ -216,11 +216,10 @@ class BaseWrapper:
                                                        self.cfg.domain_rand.friction_range[1],
                                                        (self.num_envs, 1),
                                                        device=self.device)
-            # self.compliance_coeffs = torch_rand_float(self.cfg.domain_rand.compliance_range[0],
-            #                                           self.cfg.domain_rand.compliance_range[1],
-            #                                           (self.num_envs, 1),
-            #                                           device=self.device)
-
+            self.compliance_coeffs = torch_rand_float(self.cfg.domain_rand.compliance_range[0],
+                                                      self.cfg.domain_rand.compliance_range[1],
+                                                      (self.num_envs, 1),
+                                                      device=self.device)
             self.restitution_coeffs = torch_rand_float(self.cfg.domain_rand.restitution_range[0],
                                                        self.cfg.domain_rand.restitution_range[1],
                                                        (self.num_envs, 1),

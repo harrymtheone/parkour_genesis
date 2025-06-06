@@ -18,7 +18,7 @@ slowmo = 1
 
 
 def play():
-    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_006', 2300
+    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq_p2', 't1_dream_030r1', 20000
 
     args = Namespace()
     args.proj_name = proj
@@ -41,15 +41,15 @@ def play():
     task_cfg.env.num_envs = 1
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 10
-    task_cfg.terrain.curriculum = True
-    task_cfg.terrain.max_difficulty = False
-    task_cfg.terrain.max_init_terrain_level = 9
-    # env_cfg.asset.disable_gravity = True
-
-    # env_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
-    task_cfg.domain_rand.push_robots = False
-    task_cfg.domain_rand.push_interval_s = 6
-    task_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
+    # task_cfg.terrain.curriculum = True
+    # task_cfg.terrain.max_difficulty = False
+    # task_cfg.terrain.max_init_terrain_level = 9
+    # # env_cfg.asset.disable_gravity = True
+    #
+    # # env_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
+    # task_cfg.domain_rand.push_robots = False
+    # task_cfg.domain_rand.push_interval_s = 6
+    # task_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
@@ -71,7 +71,7 @@ def play():
 
     # prepare environment
     args.n_rendered_envs = task_cfg.env.num_envs
-    env, _ = task_registry.make_env(args=args, task_cfg=task_cfg)
+    env = task_registry.make_env(args=args, task_cfg=task_cfg)
     obs = env.get_observations()
     env.sim.clear_lines = True
 

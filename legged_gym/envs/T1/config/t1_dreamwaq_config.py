@@ -44,7 +44,7 @@ class T1DreamWaqCfg(T1BaseCfg):
 
         push_robots = switch
         action_delay = switch
-        add_dof_lag = switch
+        add_dof_lag = False
         add_imu_lag = False
 
         randomize_torque = switch
@@ -54,15 +54,15 @@ class T1DreamWaqCfg(T1BaseCfg):
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = switch
-        randomize_coulomb_friction = switch
+        randomize_coulomb_friction = False
 
     class rewards:
-        base_height_target = 0.7
+        base_height_target = 0.64
         feet_height_target = 0.04
         feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
-        only_positive_rewards_until_epoch = 1e10  # after the epoch, turn off only_positive_reward
+        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
@@ -90,8 +90,8 @@ class T1DreamWaqCfg(T1BaseCfg):
             feet_contact_forces = -0.001
 
             # vel tracking
-            tracking_lin_vel = 1.6
-            tracking_ang_vel = 1.1
+            tracking_lin_vel = 2.5
+            tracking_ang_vel = 1.5
             vel_mismatch_exp = 0.5
 
             # base pos
@@ -101,7 +101,8 @@ class T1DreamWaqCfg(T1BaseCfg):
             base_acc = 0.2
 
             # energy
-            action_smoothness = -0.003
+            action_smoothness = -3e-3
+            dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
@@ -137,11 +138,12 @@ class T1DreamWaqCfg(T1BaseCfg):
         runner_name = 'rl_dream'
         algorithm_name = 'ppo_dreamwaq'
 
-        max_iterations = 1000  # number of policy updates
+        max_iterations = 2000  # number of policy updates
 
 
 class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):
     class terrain(T1DreamWaqCfg.terrain):
+        description_type = 'trimesh'
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
@@ -151,8 +153,8 @@ class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):
         curriculum = True
 
         terrain_dict = {
-            'smooth_slope': 1,
-            'rough_slope': 0,
+            'smooth_slope': 3,
+            'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
             'discrete': 0,
@@ -170,9 +172,9 @@ class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):
 
     class domain_rand(T1DreamWaqCfg.domain_rand):
         push_robots = True
-        push_duration = [0.2, 0.3]
+        push_duration = [0.1, 0.2, 0.3]
 
-        action_delay_range = [(0, 10), (5, 15), (5, 20)]
+        action_delay_range = [(0, 4), (1, 4)]
         action_delay_update_steps = 2000 * 24
 
     class control(T1DreamWaqCfg.control):
@@ -190,6 +192,10 @@ class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):
             'Waist': 3,
             'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
         }
+
+    class algorithm(T1DreamWaqCfg.algorithm):
+        continue_from_last_std = False
+        # init_noise_std = 0.8
 
     class runner(T1DreamWaqCfg.runner):
         max_iterations = 20000  # number of policy updates

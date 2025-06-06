@@ -217,6 +217,24 @@ class RSSM(nn.Module):
             self.reset(is_first_step, state_deter=state_deter, state_stoch=state_stoch)
 
         state_deter_new = self.sequence_model(
+            state_deter[0].contiguous().unsqueeze(0), state_stoch, prev_actions)
+
+        post_digits = gru_wrapper(self.encoder.forward, state_deter_new, prop_rssm, depth)
+        state_stoch_new = self.get_dist(post_digits).sample()
+
+        return gru_wrapper(self.get_feature, prop, state_deter_new, state_stoch_new)
+
+    def predict(self, prop, depth, state_deter, state_stoch, is_first_step):
+        prop_rssm = prop[:, :, :-self.num_actions].clone()
+        prop_rssm[:, :, 6: 6 + 5] = 0.
+        prev_actions = prop[:, :, -self.num_actions:]
+
+        if torch.any(is_first_step):
+            state_deter = state_deter.clone()
+            state_stoch = state_stoch.clone()
+            self.reset(is_first_step, state_deter=state_deter, state_stoch=state_stoch)
+
+        state_deter_new = self.sequence_model(
             state_deter[0].contiguous().unsqueeze(0), state_stoch, prev_actions
         )
 
@@ -227,9 +245,7 @@ class RSSM(nn.Module):
 
         prop_pred, depth_pred, rew_pred = gru_wrapper(self.decoder, state_deter_new, state_stoch_new)
 
-        # return prior_digits, post_digits, prop, depth, rew
         return prop_pred, depth_pred, rew_pred
-        # return self.get_feature(prop, state_deter_new, state_stoch_new).detach(), prop_pred, depth_pred, rew_pred
 
     def play_step(self, proprio, depth, is_first_step, sample=True):
         prop_rssm = proprio[:, :-self.num_actions]
@@ -278,10 +294,8 @@ class RSSM(nn.Module):
             state_stoch = self.state_stoch
 
         if self.cfg.actor_input_type == 0:
-            return state_deter.clone()
-        elif self.cfg.actor_input_type == 1:
             return torch.cat([state_deter, state_stoch.flatten(1)], dim=1)
-        elif self.cfg.actor_input_type == 2:
+        elif self.cfg.actor_input_type == 1:
             return torch.cat([proprio, state_deter, state_stoch.flatten(1)], dim=1)
         else:
             raise NotImplementedError
@@ -319,11 +333,6 @@ class Actor(nn.Module):
         self.actor_input_type = rssm_cfg.actor_input_type
 
         if self.actor_input_type == 0:
-            self.actor = make_linear_layers(rssm_cfg.n_deter, *task_cfg.policy.actor_hidden_dims, task_cfg.env.num_actions,
-                                            activation_func=activation,
-                                            output_activation=False)
-
-        elif self.actor_input_type == 1:
             state_dim = rssm_cfg.n_deter + rssm_cfg.n_stoch * rssm_cfg.n_discrete
             self.actor = make_linear_layers(state_dim, *task_cfg.policy.actor_hidden_dims, task_cfg.env.num_actions,
                                             activation_func=activation,
@@ -340,7 +349,7 @@ class Actor(nn.Module):
                 nn.Linear(128, task_cfg.env.num_actions),
             )
 
-        self.log_std = nn.Parameter(torch.ones(task_cfg.env.num_actions), requires_grad=False)
+        self.log_std = nn.Parameter(torch.ones(task_cfg.env.num_actions), requires_grad=True)
         self.distribution = None
 
         # disable args validation for speedup

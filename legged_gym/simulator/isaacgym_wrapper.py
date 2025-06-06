@@ -222,7 +222,7 @@ class IsaacGymWrapper(BaseWrapper):
         if self.cfg.domain_rand.randomize_friction:
             for s in range(len(props)):
                 props[s].friction = self.friction_coeffs[env_id]
-                # props[s].compliance = self.compliance_coeffs[env_id]
+                props[s].compliance = self.compliance_coeffs[env_id]
                 props[s].restitution = self.restitution_coeffs[env_id]
 
     def _process_dof_props(self, props, env_id: int):

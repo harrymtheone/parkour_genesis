@@ -34,7 +34,7 @@ class T1_BBM_Cfg(T1BaseCfg):
             pitch_range = [-3, 3]
 
             data_format = 'depth'  # depth, cloud, hmap
-            update_interval = 10
+            update_interval = 1
             delay_prop = (10, 1)  # Gaussian (mean, std)
 
             resolution = (64, 64)  # width, height
@@ -202,7 +202,7 @@ class T1_BBM_Cfg(T1BaseCfg):
         hidden_size = 512
         state_initial: Literal['zeros', 'learned'] = 'zeros'
 
-        actor_input_type: Literal[0, 1, 2] = 2  # 0: only deter, 1: deter & stoch, 2: deter & stoch & proprio
+        actor_input_type: Literal[0, 1] = 1  # 0: deter & stoch, 1: deter & stoch & proprio
 
         unimix_ratio = 0.01
 
@@ -212,8 +212,8 @@ class T1_BBM_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 4
-        num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
+        num_learning_epochs = 2
+        num_mini_batches = 10  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
         gamma = 0.99
@@ -222,7 +222,7 @@ class T1_BBM_Cfg(T1BaseCfg):
         max_grad_norm = 1.
 
         continue_from_last_std = True
-        init_noise_std = 0.5
+        init_noise_std = 1.0
 
         use_amp = True
 

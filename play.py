@@ -29,7 +29,7 @@ def play(args):
 
     # override some parameters for testing
     task_cfg.play.control = False
-    task_cfg.env.num_envs = 16
+    task_cfg.env.num_envs = 4
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
@@ -40,8 +40,8 @@ def play(args):
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
-    task_cfg.domain_rand.action_delay = False
-    task_cfg.domain_rand.action_delay_range = [(0, 5)]
+    task_cfg.domain_rand.action_delay = True
+    task_cfg.domain_rand.action_delay_range = [(2, 2)]
     task_cfg.domain_rand.add_dof_lag = False
     task_cfg.domain_rand.dof_lag_range = (0, 10)
     task_cfg.domain_rand.push_robots = False
@@ -83,8 +83,7 @@ def play(args):
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, eval_=True, dones=dones)
-            # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True, dones=dones)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
 
             actions = rtn['actions']
@@ -96,23 +95,18 @@ def play(args):
                 cv2.imshow("wm_depth", cv2.resize(img.cpu().numpy(), (img.shape[0] * 5, img.shape[1] * 5)))
                 cv2.waitKey(1)
 
-            # if type(rtn) is tuple:
-            #     if len(rtn) == 2:
-            #         actions, _ = rtn
-            #     elif len(rtn) == 4:
-            #         actions, recon_rough, recon_refine, est = rtn
-            #
-            #         if len(recon_rough) > 0:
-            #             args.est = est[env.lookat_id, :3] / 2
-            #
-            #             env.draw_recon(recon_rough)
-            #             # env.draw_recon(recon_refine)
-            #             # env.draw_est_hmap(est)
-            # else:
-            #     actions = rtn
+            if 'recon_refine' in rtn:
+                recon_rough = rtn['recon_rough']
+                recon_refine = rtn['recon_refine']
+                est = rtn['estimation']
 
-            # env.draw_recon(obs.scan)
-            # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
+                args.est = est[env.lookat_id, :3] / 2
+
+                env.draw_recon(recon_rough)
+                # env.draw_recon(recon_refine)
+                # env.draw_est_hmap(est)
+                # env.draw_recon(obs.scan)
+                # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.
@@ -133,32 +127,6 @@ def play(args):
                 env.refresh_graphics(clear_lines=False)
             env.refresh_graphics(clear_lines=True)
 
-            # # visualize FFT
-            # joint_idx = 4
-            # feet_act_his.append(actions[env.lookat_id, joint_idx].item())
-            # if step_i % 50 == 49:
-            #     X = np.fft.fft(feet_act_his)
-            #     freqs = np.fft.fftfreq(len(feet_act_his), d=env.dt)
-            #
-            #     sorted_indices = np.argsort(freqs)
-            #     freqs_sorted = freqs[sorted_indices]
-            #     X_sorted = X[sorted_indices]
-            #
-            #     line0.set_data(range(len(feet_act_his)), env.actions_his_buf.get_all()[:, env.lookat_id, joint_idx].tolist()[::-1])
-            #     line1.set_data(freqs_sorted, np.abs(X_sorted))
-            #     line2.set_data(range(len(feet_act_his)), env.actions_filtered_his_buf.get_all()[:, env.lookat_id, joint_idx].tolist()[::-1])
-            #
-            #     axs[0].relim()
-            #     axs[0].autoscale_view()
-            #     axs[1].relim()
-            #     axs[1].autoscale_view()
-            #     axs[2].relim()
-            #     axs[2].autoscale_view()
-            #
-            #     plt.draw()
-            #     plt.pause(0.1)  # Pause for GUI update
-            #     feet_act_his.clear()
-
             actions = actions.cpu().numpy()
             # t1_vis.plot({
             #     'Waist': actions[env.lookat_id, 0],
@@ -177,7 +145,7 @@ def play(args):
             # })
 
             dof_vel = env.sim.dof_vel.cpu().numpy()
-            # t1_vis.plot1{
+            # t1_vis.plot({
             #     'Left_Hip_Pitch': dof_vel[env.lookat_id, 11],
             #     'Left_Hip_Roll': dof_vel[env.lookat_id, 12],
             #     'Left_Hip_Yaw': dof_vel[env.lookat_id, 13],
@@ -209,7 +177,7 @@ if __name__ == '__main__':
     # line2, = axs[2].plot([], [])
 
     # t1_vis = vis.T1ActionsVisualizer()
-    # t1_vis = vis.T1DofVelVisualizer()
+    t1_vis = vis.T1DofVelVisualizer()
     # t1_vis = T1GravityVisualizer()
 
     with torch.inference_mode():

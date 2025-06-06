@@ -124,8 +124,7 @@ class PPO_BBM(BaseAlgorithm):
 
         kl_change = []
         num_updates = 0
-
-        for batch in self.storage.mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs):
+        for batch in self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs):
             # update policy
             value_loss, surrogate_loss, entropy_loss, kl_mean = self._update_policy(batch)
             kl_change.append(kl_mean)
@@ -135,21 +134,18 @@ class PPO_BBM(BaseAlgorithm):
             mean_entropy_loss += entropy_loss
             mean_kl += kl_mean
 
-        mean_value_loss /= num_updates
-        mean_surrogate_loss /= num_updates
-        mean_entropy_loss /= num_updates
-        mean_kl /= num_updates
-
-        for batch in self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs):
-            # update estimation
-            # dyn_loss, rep_loss, loss_prop, loss_depth, loss_rew = self._update_rssm(batch)
+            # update RSSM
             loss_prop, loss_depth, loss_rew = self._update_rssm(batch)
-
             # mean_dyn_loss += dyn_loss
             # mean_rep_loss += rep_loss
             mean_prop_loss += loss_prop
             mean_depth_loss += loss_depth
             mean_rew_loss += loss_rew
+
+        mean_value_loss /= num_updates
+        mean_surrogate_loss /= num_updates
+        mean_entropy_loss /= num_updates
+        mean_kl /= num_updates
 
         mean_dyn_loss /= num_updates
         mean_rep_loss /= num_updates
@@ -180,8 +176,21 @@ class PPO_BBM(BaseAlgorithm):
 
     def _update_policy(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+
+            # ############################ Dynamics ############################
+            obs_batch = batch['observations']
+            state_deter_batch = batch['state_deter']
+            state_stoch_batch = batch['state_stoch']
+            is_first_step_batch = batch['is_first_step']
+
+            prop = obs_batch.proprio
+            depth = obs_batch.depth
+
+            with torch.no_grad():
+                wm_feature = self.rssm.train_step(prop, depth, state_deter_batch, state_stoch_batch, is_first_step_batch)
+
+            # ############################ PPO ############################
             critic_obs_batch = batch['critic_observations']
-            wm_feature_batch = batch['wm_feature']
             actions_batch = batch['actions']
             target_values_batch = batch['values']
             advantages_batch = batch['advantages']
@@ -190,7 +199,7 @@ class PPO_BBM(BaseAlgorithm):
             old_sigma_batch = batch['action_sigma']
             old_actions_log_prob_batch = batch['actions_log_prob']
 
-            self.actor.train_act(wm_feature_batch)
+            self.actor.train_act(wm_feature.detach())
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -228,22 +237,20 @@ class PPO_BBM(BaseAlgorithm):
 
             loss = (surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss)
 
-        # Use KL to adaptively update learning rate
-        if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-            for param_group in self.optimizer.param_groups:
-                param_group['lr'] = self.learning_rate
+            # Use KL to adaptively update learning rate
+            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = self.learning_rate
 
-        # Gradient step
-        self.optimizer.zero_grad()
-        self.scaler.scale(loss).backward()
-        # self.scaler.unscale_(self.optimizer)
-        # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
+            # Gradient step
+            self.optimizer.zero_grad()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
         return value_loss.item(), surrogate_loss.item(), entropy_loss.item(), kl_mean
 
-    def _update_rssm(self, batch: dict, batch_size=16):
+    def _update_rssm(self, batch: dict, batch_size=32):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations'][:, :batch_size]
             state_deter_batch = batch['state_deter'][:, :batch_size]
@@ -251,13 +258,10 @@ class PPO_BBM(BaseAlgorithm):
             is_first_step_batch = batch['is_first_step'][:, :batch_size]
             rewards_batch = batch['rewards'][:, :batch_size]
 
-            # prop, depth, action_his, state_deter, state_stoch, reward, is_first_step = data.values()
             prop = obs_batch.proprio
             depth = obs_batch.depth
 
-            # prior_digits, post_digits, prop_pred, depth_pred, rew_pred = self.rssm.train_step(
-            #     prop, depth, state_deter_batch, state_stoch_batch, is_first_step_batch)
-            prop_pred, depth_pred, rew_pred = self.rssm.train_step(
+            prop_pred, depth_pred, rew_pred = self.rssm.predict(
                 prop, depth, state_deter_batch, state_stoch_batch, is_first_step_batch)
 
             # KL Divergence

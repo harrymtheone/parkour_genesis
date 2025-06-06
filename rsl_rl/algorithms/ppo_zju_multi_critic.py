@@ -4,8 +4,7 @@ from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.model_zju_exp import EstimatorNoRecon, EstimatorGRU
 from rsl_rl.modules.utils import UniversalCritic
-# from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
-from rsl_rl.storage import RolloutStorage
+from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from .alg_base import BaseAlgorithm
 
 try:
@@ -85,19 +84,20 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         # Rollout Storage
         self.transition = Transition(self.enable_reconstructor)
-        # self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
-        self.storage = RolloutStorage(task_cfg, self.device)
+        self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
-        self.storage.register_storage('rewards_contact', 0, (1,))
-        self.storage.register_storage('values_contact', 0, (1,))
-        self.storage.register_storage('returns_contact', 0, (1,))
+        # self.storage = RolloutStorage(task_cfg, self.device)
 
-        self.storage.register_storage('obs_enc_hidden_states', 1, (1, task_cfg.policy.obs_gru_hidden_size))
-        if self.enable_reconstructor:
-            self.storage.register_storage('recon_hidden_states', 1, (2, task_cfg.policy.recon_gru_hidden_size))
-            self.storage.register_storage('observations_next', 2, cfg=task_cfg.env.obs_next)
-
-        self.storage.compose_storage()
+        # self.storage.register_storage('rewards_contact', 0, (1,))
+        # self.storage.register_storage('values_contact', 0, (1,))
+        # self.storage.register_storage('returns_contact', 0, (1,))
+        #
+        # self.storage.register_storage('obs_enc_hidden_states', 1, (1, task_cfg.policy.obs_gru_hidden_size))
+        # if self.enable_reconstructor:
+        #     self.storage.register_storage('recon_hidden_states', 1, (2, task_cfg.policy.recon_gru_hidden_size))
+        #     self.storage.register_storage('observations_next', 2, cfg=task_cfg.env.obs_next)
+        #
+        # self.storage.compose_storage()
 
     def act(self, obs, obs_critic, use_estimated_values: torch.Tensor = None, **kwargs):
         # act function should run within torch.inference_mode context
@@ -403,12 +403,14 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             return estimation_loss, recon_rough_loss, recon_refine_loss
 
     def play_act(self, obs, **kwargs):
-        if 'use_estimated_values' in kwargs:
-            use_estimated_values_bool = kwargs['use_estimated_values']
-            kwargs['use_estimated_values'] = use_estimated_values_bool & torch.ones(
-                self.task_cfg.env.num_envs, 1, dtype=torch.bool, device=self.device)
+        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+            if 'use_estimated_values' in kwargs:
+                use_estimated_values_bool = kwargs['use_estimated_values']
+                kwargs['use_estimated_values'] = use_estimated_values_bool & torch.ones(
+                    self.task_cfg.env.num_envs, 1, dtype=torch.bool, device=self.device)
 
-        return self.actor.act(obs, **kwargs)
+            mean, recon_rough, recon_refine, est = self.actor.act(obs, **kwargs)
+            return {'actions': mean, 'recon_rough': recon_rough, 'recon_refine': recon_refine, 'estimation': est}
 
     def train(self):
         self.actor.train()

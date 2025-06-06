@@ -130,8 +130,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
         push_robots = True
         action_delay = True
-        action_delay_range = [(0, 5)]
-        add_dof_lag = True
+        action_delay_range = [(0, 4)]
+        add_dof_lag = False
         add_imu_lag = False
 
         randomize_torque = True
@@ -141,14 +141,14 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = True
-        randomize_coulomb_friction = True
+        randomize_coulomb_friction = False
 
     class rewards:
         base_height_target = 0.64
         feet_height_target = 0.04
         feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
         only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
@@ -193,9 +193,9 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
             # energy
             action_smoothness = -3e-3
+            dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
-            dof_vel_smoothness = -1e-3
             dof_acc = -1e-7
             collision = -1.
 
@@ -226,7 +226,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 4
+        num_learning_epochs = 8
         num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed

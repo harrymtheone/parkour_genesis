@@ -192,7 +192,8 @@ class T1ZJUEnvironment(T1BaseEnv):
         scan_edge = torch.stack([scan, base_edge_mask], dim=1)
 
         if self.cfg.sensors.activated:
-            self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), self.sensors.get('depth_0').squeeze(2), priv_actor_obs, scan_edge)
+            depth = self.sensors.get('depth_0').squeeze(2).half()
+            self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth, priv_actor_obs, scan_edge)
         else:
             self.actor_obs = ActorObsNoDepth(proprio, self.prop_his_buf.get(), priv_actor_obs, scan_edge)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)

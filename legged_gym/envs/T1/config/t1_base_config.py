@@ -95,7 +95,7 @@ class T1BaseCfg(BaseConfig):
         sw_switch = True
 
         class flat_ranges:
-            lin_vel_x = [-1.0, 1.0]
+            lin_vel_x = [-0.6, 1.0]
             lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]
 
@@ -114,10 +114,10 @@ class T1BaseCfg(BaseConfig):
         noise_level = 1.0  # scales other values
 
         class noise_scales:
-            dof_pos = 0.02
-            dof_vel = 1.5
+            dof_pos = 0.01
+            dof_vel = 0.1
             lin_vel = 0.1
-            ang_vel = 0.2
+            ang_vel = 0.1
             gravity = 0.1
             height_measurements = 0.1
 
@@ -149,7 +149,7 @@ class T1BaseCfg(BaseConfig):
 
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
-        action_delay_range = [(0, 5), (0, 10), (0, 15), (0, 20)]
+        action_delay_range = [(0, 2), (0, 4)]
         action_delay_update_steps = 2000 * 24
 
         add_dof_lag = False
@@ -170,9 +170,9 @@ class T1BaseCfg(BaseConfig):
         com_displacement_range = [-0.05, 0.05]
 
         randomize_friction = False
-        friction_range = [0.2, 1.3]
-        # compliance_range = [0.5, 1.5]
-        restitution_range = [0., 0.4]
+        friction_range = [0.2, 2.0]
+        compliance_range = [0.5, 1.5]
+        restitution_range = [0.1, 0.9]
 
         randomize_joint_stiffness = False
         joint_stiffness_range = [0., 0.]
@@ -194,8 +194,8 @@ class T1BaseCfg(BaseConfig):
         motor_offset_range = [-0.035, 0.035]  # Offset to add to the motor angles
 
         randomize_gains = False
-        kp_multiplier_range = [0.8, 1.2]
-        kd_multiplier_range = [0.8, 1.2]
+        kp_multiplier_range = [0.95, 1.05]
+        kd_multiplier_range = [0.95, 1.05]
 
         randomize_torque = False
         torque_multiplier_range = [0.8, 1.2]
@@ -269,7 +269,7 @@ class T1BaseCfg(BaseConfig):
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
-        decimation = 10
+        decimation = 4
 
     class asset:
         file = LEGGED_GYM_ROOT_DIR + '/robots/T1/T1_serial.urdf'
@@ -303,7 +303,7 @@ class T1BaseCfg(BaseConfig):
         lookat = [11., 5, 3.]  # [m]
 
     class sim:
-        dt = 0.002
+        dt = 0.005
         substeps = 1
         gravity = [0., 0., -9.81]  # [m/s^2]
         up_axis = 1  # 0 is y, 1 is z
@@ -312,7 +312,7 @@ class T1BaseCfg(BaseConfig):
             num_threads = 10
             solver_type = 1  # 0: pgs, 1: tgs
             num_position_iterations = 4
-            num_velocity_iterations = 0
+            num_velocity_iterations = 1
             contact_offset = 0.01  # [m]
             rest_offset = 0.0  # [m]
             bounce_threshold_velocity = 0.5  # 0.5 [m/s]
