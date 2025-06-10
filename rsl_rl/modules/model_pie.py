@@ -121,13 +121,13 @@ class Policy(nn.Module):
         self.vae = EstimatorVAE(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
-        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
+        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
         self.distribution = None
 
     def act(self,
             obs: ActorObs,
             eval_=False,
-            ):  # <-- my mood be like
+            **kwargs):  # <-- my mood be like
         # encode history proprio
         gru_out = self.estimator.inference_forward(obs.prop_his, obs.depth)
         vae_mu = self.vae(gru_out)
@@ -177,7 +177,7 @@ class Policy(nn.Module):
         return self.distribution.entropy().sum(dim=-1)
 
     def reset_std(self, std, device):
-        new_log_std = torch.log(std * torch.ones_like(self.std.data, device=device))
+        new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
         self.log_std.data = new_log_std.data
 
     def get_hidden_states(self):

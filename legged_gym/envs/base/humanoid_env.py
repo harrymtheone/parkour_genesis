@@ -289,7 +289,7 @@ class HumanoidEnv(ParkourTask):
             torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma) - 1 + math.exp(-self.cfg.commands.parkour_vel_tolerance * 0.3)
         )
 
-        rew[self.env_class < 2] = 0.
+        rew[self.env_class < 4] = 0.
         return rew
 
     def _reward_tracking_ang_vel(self):

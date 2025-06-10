@@ -47,8 +47,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             pitch_range = [-3, 3]
 
             data_format = 'depth'  # depth, cloud, hmap
-            update_interval = 10
-            delay_prop = (10, 1)  # Gaussian (mean, std)
+            update_interval = 5
+            delay_prop = (5, 1)  # Gaussian (mean, std)
 
             resolution = (106, 60)  # width, height
             resized = DEPTH_RESIZED
@@ -66,7 +66,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 8.  # time before command are changed[s]
 
-        lin_vel_clip = 0.1
+        lin_vel_clip = 0.2
         ang_vel_clip = 0.2
         parkour_vel_tolerance = 0.3
 
@@ -93,7 +93,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 3,
+            'smooth_slope': 2,
             'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
@@ -105,8 +105,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,
-            'parkour_mini_stair': 1,
+            'parkour_stair': 0,
+            'parkour_mini_stair': 0,
             'parkour_flat': 0,
         }
 
@@ -130,7 +130,6 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
         push_robots = True
         action_delay = True
-        action_delay_range = [(0, 4)]
         add_dof_lag = False
         add_imu_lag = False
 
@@ -173,7 +172,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             feet_rotation = 0.5
 
             # vel tracking
-            tracking_lin_vel = 2.0
+            tracking_lin_vel = 2.5
             tracking_goal_vel = 3.0
             tracking_ang_vel = 2.5
             vel_mismatch_exp = 0.5
@@ -193,7 +192,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
             # energy
             action_smoothness = -3e-3
-            dof_vel_smoothness = -1e-3
+            # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
@@ -244,7 +243,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         runner_name = 'rl_dream'  # rl, distil, mixed
         algorithm_name = 'ppo_zju_mc'
 
-        max_iterations = 20000  # number of policy updates
+        max_iterations = 6000  # number of policy updates
 
 
 # -----------------------------------------------------------------------------------------------
@@ -257,8 +256,8 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
         push_duration = [0.3]
 
         action_delay = True
-        action_delay_range = [(0, 5), (0, 10)]
-        action_delay_update_steps = 2000 * 24
+        action_delay_range = [(0, 4), (0, 6)]
+        action_delay_update_steps = 10000 * 24
 
     class terrain(T1_Multi_Critic_Cfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
@@ -281,6 +280,9 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             'parkour_mini_stair': 0,
             'parkour_flat': 0,
         }
+
+    class rewards(T1_Multi_Critic_Cfg.rewards):
+        dof_vel_smoothness = -1e-3
 
     class control(T1BaseCfg.control):
         # PD Drive parameters:

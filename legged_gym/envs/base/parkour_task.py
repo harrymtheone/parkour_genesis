@@ -363,7 +363,7 @@ class ParkourTask(BaseTask):
             self.commands[env_ids_flat, 2] = sample_cmd(self.cmd_ranges_flat["ang_vel_yaw"],
                                                         self.cfg.commands.ang_vel_clip,
                                                         len(env_ids_flat))
-            motion_type[env_ids_flat] = sample_motion_type([2, 2, 2, 4], len(env_ids_flat))
+            motion_type[env_ids_flat] = sample_motion_type([1, 4, 1, 4], len(env_ids_flat))
 
         # sample command for stair terrain (heading mode, yaw command is updated by heading)
         env_ids_stair = env_ids[torch.logical_and(self.env_class[env_ids] >= 2, self.env_class[env_ids] < 4)]

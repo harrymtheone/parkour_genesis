@@ -1,7 +1,7 @@
 from .t1_base_config import T1BaseCfg
 
 
-class T1PIECfg(T1BaseCfg):
+class T1_PIE_Cfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
 
@@ -22,14 +22,12 @@ class T1PIECfg(T1BaseCfg):
         activated = True
 
         class depth_0:
-            # link_attached_to = 'Trunk'
-            # position = [0.15, 0, 0.38]  # front camera
-            link_attached_to = 'Waist'
-            position = [0.1, 0, 0.]  # front camera
+            link_attached_to = 'H2'
+            position = [0.07, 0, 0.09]  # front camera
 
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-            pitch = 30  # positive is looking down
-            pitch_range = [-1, 1]
+            pitch = 0  # positive is looking down
+            pitch_range = [-3, 3]
 
             data_format = 'depth'  # depth, cloud
             update_interval = 5  # 5 works without retraining, 8 worse
@@ -47,8 +45,6 @@ class T1PIECfg(T1BaseCfg):
     class terrain(T1BaseCfg.terrain):
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
-
-        # curriculum = False
 
         terrain_dict = {
             'smooth_slope': 1,
@@ -75,20 +71,20 @@ class T1PIECfg(T1BaseCfg):
 
         randomize_start_pos = switch
         randomize_start_y = switch
-        randomize_start_yaw = False
+        randomize_start_yaw = switch
         randomize_start_vel = switch
         randomize_start_pitch = switch
 
-        randomize_start_dof_pos = True
-        randomize_start_dof_vel = True
+        randomize_start_dof_pos = False
+        randomize_start_dof_vel = False
 
         randomize_friction = switch
         randomize_base_mass = switch
         randomize_link_mass = switch
         randomize_com = switch
 
-        push_robots = False
-        action_delay = False
+        push_robots = True
+        action_delay = True
         add_dof_lag = False
         add_imu_lag = False
 
@@ -113,7 +109,7 @@ class T1PIECfg(T1BaseCfg):
         EMA_update_alpha = 0.99
 
         cycle_time = 0.7  # 0.64
-        target_joint_pos_scale = 0.3  # 0.19
+        target_joint_pos_scale = 0.2
 
         min_dist = 0.2
         max_dist = 0.5
@@ -124,32 +120,35 @@ class T1PIECfg(T1BaseCfg):
         class scales:
             joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 0.2  # 0.2
-            feet_air_time = 1.
-            feet_slip = -1.
+            feet_clearance = 1.0  # 0.2
+            # feet_air_time = 1.
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
 
             # contact
-            feet_contact_forces = -0.01
-            # feet_stumble = 0.  # -1.0
-            # feet_edge = 0.  # -1.0
+            feet_slip = -1.
+            feet_contact_forces = -0.001
+            feet_stumble = -1.0
+            # feet_edge = 0.
+            foothold = -1.0
 
             # vel tracking
-            tracking_lin_vel = 1.2
-            tracking_goal_vel = 1.5
-            tracking_ang_vel = 1.1
+            tracking_lin_vel = 2.5
+            tracking_goal_vel = 2.5
+            tracking_ang_vel = 1.5
             vel_mismatch_exp = 0.5
 
+            timeout = -1.0
+
             # base pos
-            # default_joint_pos = 0.5
+            default_joint_pos = 1.5
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
 
             # energy
-            action_smoothness = -0.003
+            action_smoothness = -3e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
@@ -158,7 +157,6 @@ class T1PIECfg(T1BaseCfg):
     class policy:
         # actor parameters
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
-        init_noise_std = 1.0
 
         # critic parameters
         critic_hidden_dims = [512, 256, 128]
@@ -166,9 +164,7 @@ class T1PIECfg(T1BaseCfg):
         use_recurrent_policy = True
         estimator_gru_hidden_size = 256
 
-        len_base_vel = 3
-        len_latent_feet = 8
-        len_latent_body = 16
+        len_estimation = 3
         len_hmap_latent = 128
 
     class algorithm:
@@ -177,8 +173,8 @@ class T1PIECfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 10
-        num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
+        num_learning_epochs = 4
+        num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
         gamma = 0.99
@@ -194,4 +190,58 @@ class T1PIECfg(T1BaseCfg):
         runner_name = 'rl_dream'  # rl, distil, mixed
         algorithm_name = 'ppo_pie'
 
+        max_iterations = 6000  # number of policy updates
+
+
+class T1_PIE_Stair_Cfg(T1_PIE_Cfg):
+    class terrain(T1_PIE_Cfg.terrain):
+        num_rows = 10  # number of terrain rows (levels), spread is beneficial!
+        num_cols = 20  # number of terrain cols (types)
+
+        terrain_dict = {
+            'smooth_slope': 2,
+            'rough_slope': 1,
+            'stairs_up': 0,
+            'stairs_down': 0,
+            'discrete': 0,
+            'stepping_stone': 0,
+            'gap': 0,
+            'pit': 0,
+            'parkour': 0,
+            'parkour_gap': 0,
+            'parkour_box': 0,
+            'parkour_step': 0,
+            'parkour_stair': 1,
+            'parkour_flat': 0,
+        }
+
+    class domain_rand(T1_PIE_Cfg.domain_rand):
+        randomize_start_yaw = False
+
+        action_delay_range = [(0, 4)]
+
+    class rewards(T1_PIE_Cfg.rewards):
+        only_positive_rewards = False
+
+    class control(T1BaseCfg.control):
+        # PD Drive parameters:
+        stiffness = {
+            'Head': 30,
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+            'Waist': 100,
+            'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
+        }
+
+        damping = {
+            'Head': 1,
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+            'Waist': 3,
+            'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
+        }
+
+    class algorithm(T1_PIE_Cfg.algorithm):
+        continue_from_last_std = False
+        init_noise_std = 0.6
+
+    class runner(T1_PIE_Cfg.runner):
         max_iterations = 50000  # number of policy updates

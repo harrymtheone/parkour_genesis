@@ -14,6 +14,10 @@ class ActorObs(ObsBase):
 
 
 class T1PrivEnvironment(T1BaseEnv):
+    def _init_robot_props(self):
+        super()._init_robot_props()
+        self.yaw_roll_dof_indices = self.sim.create_indices(
+            self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -21,10 +25,14 @@ class T1PrivEnvironment(T1BaseEnv):
         env_cfg = self.cfg.env
         self.priv_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
-    def _init_robot_props(self):
-        super()._init_robot_props()
-        self.yaw_roll_dof_indices = self.sim.create_indices(
-            self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
+        self.goal_task_timer = self._zero_tensor(self.num_envs)
+
+    def _post_physics_mid_step(self):
+        super()._post_physics_mid_step()
+
+        self.goal_task_timer[self.reached_goal_ids] = 0
+        timer_increase = ~self.reached_goal_ids & ~self.is_zero_command
+        self.goal_task_timer[timer_increase] += 1 * self.commands[timer_increase, 0] / self.cfg.commands.parkour_ranges.lin_vel_x[1]
 
     def _compute_observations(self):
         """
@@ -68,42 +76,14 @@ class T1PrivEnvironment(T1BaseEnv):
             # self._draw_height_field(draw_guidance=True)
             # self._draw_edge()
             # self._draw_camera()
-            self._draw_feet_at_edge()
+            # self._draw_feet_at_edge()
+            self._draw_foothold()
 
         super().render()
 
-    # def _reward_joint_pos(self):
-    #     """
-    #     Calculates the reward based on the difference between the current joint positions and the target joint positions.
-    #     """
-    #     diff = self.sim.dof_pos - torch.where(
-    #         self.is_zero_command.unsqueeze(1),
-    #         self.init_state_dof_pos,
-    #         self.ref_dof_pos
-    #     )
-    #     diff = diff[:, self.dof_activated]
-    #
-    #     rew = torch.exp(-2 * torch.norm(diff, dim=1)) - 0.2 * torch.norm(diff, dim=1).clamp(0, 0.5)
-    #
-    #     rew[self.env_class >= 2] *= 0.1  # stair
-    #     rew[~self.phase_enabled] = 0.
-    #     return rew
-    #
-    # def _reward_feet_contact_number(self):
-    #     """
-    #     Calculates a reward based on the number of feet contacts aligning with the gait phase.
-    #     Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
-    #     """
-    #     rew = torch.where(self.contact_filt == self._get_stance_mask(), 1, -0.3)
-    #
-    #     rew[self.env_class >= 2] *= 0.1  # stair
-    #     rew[~self.phase_enabled] = 0.
-    #     return torch.mean(rew, dim=1)
-    #
-    # def _reward_feet_clearance(self):
-    #     # encourage the robot to lift its legs when it moves
-    #     rew_no_phase = (self.feet_height / self.cfg.rewards.feet_height_target).clip(min=-1, max=1)
-    #     rew_phase = torch.where(self._get_stance_mask(), -torch.abs(rew_no_phase), rew_no_phase)
-    #
-    #     rew = torch.where(self.phase_enabled.unsqueeze(1), rew_phase, rew_no_phase)
-    #     return rew.sum(dim=1)
+    def _reward_timeout(self):
+        time_out = self.goal_task_timer - 100
+        effective_out = torch.clamp(time_out, min=0)
+        time_out_rew = effective_out * 0.001
+        time_out_rew[self.env_class < 4] = 0.
+        return time_out_rew

@@ -436,12 +436,12 @@ def parkour_stair_terrain(
             return round(random.uniform(-goal_deviation, goal_deviation) / terrain.horizontal_scale)
 
         goals = np.zeros((3, 2))
-        goals[0] = [platform_len + round(4.0 / terrain.horizontal_scale), mid_y + rand_deviation()]
-        goals[1] = [platform_len + round(8.0 / terrain.horizontal_scale), mid_y + rand_deviation()]
-        goals[-1] = [dis_x - round(1.0 / terrain.horizontal_scale), mid_y]
+        end_x = dis_x - round(1.0 / terrain.horizontal_scale)
+        step_x = int((end_x - platform_len) / 3)
 
-        # goals = np.zeros((1, 2))
-        # goals[0] = [dis_x - round(1.0 / terrain.horizontal_scale), mid_y]
+        goals[0] = [platform_len + 1 * step_x, mid_y + rand_deviation()]
+        goals[1] = [platform_len + 2 * step_x, mid_y + rand_deviation()]
+        goals[-1] = [end_x, mid_y]
 
         terrain.goals = goals * terrain.horizontal_scale
 

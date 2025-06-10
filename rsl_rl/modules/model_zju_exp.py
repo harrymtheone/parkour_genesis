@@ -246,7 +246,7 @@ class EstimatorGRU(nn.Module):
         self.mixer = Mixer(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
-        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
+        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions), requires_grad=True)
         self.distribution = None
 
     def act(self,

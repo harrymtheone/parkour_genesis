@@ -61,11 +61,16 @@ class T1PIEEnvironment(T1BaseEnv):
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
-    def update_reward_curriculum(self, epoch):
-        super().update_reward_curriculum(epoch)
+    def _init_buffers(self):
+        super()._init_buffers()
+        self.goal_task_timer = self._zero_tensor(self.num_envs)
 
-        self.reward_scales['feet_stumble'] = linear_change(0., -1.0, 5000, 10000, epoch)
-        self.reward_scales['feet_edge'] = linear_change(0., -1.0, 5000, 10000, epoch)
+    def _post_physics_mid_step(self):
+        super()._post_physics_mid_step()
+
+        self.goal_task_timer[self.reached_goal_ids] = 0
+        timer_increase = ~self.reached_goal_ids & ~self.is_zero_command
+        self.goal_task_timer[timer_increase] += 1 * self.commands[timer_increase, 0] / self.cfg.commands.parkour_ranges.lin_vel_x[1]
 
     def _compute_observations(self):
         """
@@ -127,8 +132,6 @@ class T1PIEEnvironment(T1BaseEnv):
 
         priv_actor = torch.cat((
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
-            self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
-            self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
         ), dim=-1)
 
         # compute height map
@@ -154,8 +157,8 @@ class T1PIEEnvironment(T1BaseEnv):
             self._draw_goals()
             # self._draw_height_field()
             # self._draw_edge()
-            self._draw_camera()
-            self._draw_feet_at_edge()
+            # self._draw_camera()
+            # self._draw_feet_at_edge()
 
         if self.cfg.sensors.activated:
             depth_img = self.sensors.get('depth_0')
@@ -177,3 +180,10 @@ class T1PIEEnvironment(T1BaseEnv):
             #     self.sim.draw_points(pts[indices], color=(1, 0, 0))
 
         super().render()
+
+    def _reward_timeout(self):
+        time_out = self.goal_task_timer - 100
+        effective_out = torch.clamp(time_out, min=0)
+        time_out_rew = effective_out * 0.001
+        time_out_rew[self.env_class < 4] = 0.
+        return time_out_rew

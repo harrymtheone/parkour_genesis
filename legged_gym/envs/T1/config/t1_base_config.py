@@ -88,7 +88,7 @@ class T1BaseCfg(BaseConfig):
         num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 8.  # time before command are changed[s]
 
-        lin_vel_clip = 0.1
+        lin_vel_clip = 0.2
         ang_vel_clip = 0.2
         parkour_vel_tolerance = 0.3
 
@@ -100,13 +100,13 @@ class T1BaseCfg(BaseConfig):
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [0.6, 1.5]
-            lin_vel_y = [-0.5, 0.5]
+            lin_vel_x = [0.3, 0.6]
+            lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.6, 1.5]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.3, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class noise:
@@ -144,7 +144,7 @@ class T1BaseCfg(BaseConfig):
                           (-5, 5))
         push_torque_max = (-50, 50)
         push_interval_s = 5
-        push_duration = [0.1, 0.2, 0.3]
+        push_duration = [0.1, 0.2]
         push_duration_update_steps = 2000 * 24
 
         action_delay = False

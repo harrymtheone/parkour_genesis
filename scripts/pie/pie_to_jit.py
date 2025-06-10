@@ -1,5 +1,3 @@
-from rsl_rl.modules.model_pie import EstimatorGRU, Actor
-
 try:
     import isaacgym, torch
 except ImportError:
@@ -7,44 +5,46 @@ except ImportError:
 
 import os
 
-from torch import nn
-
 from legged_gym.utils.task_registry import TaskRegistry
+from rsl_rl.modules.model_pie import EstimatorGRU, EstimatorVAE, Actor
+from torch import nn
 
 
 class Policy(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         self.estimator = EstimatorGRU(env_cfg, policy_cfg)
+        self.vae = EstimatorVAE(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
-        self.log_std = nn.Parameter(torch.log(policy_cfg.init_noise_std * torch.ones(env_cfg.num_actions)))
+        self.log_std = nn.Parameter(torch.ones(env_cfg.num_actions))
 
     def forward(self, proprio, prop_his, depth, hidden_states):  # <-- my mood be like
         # encode history proprio
-        vae_mu, vae_logvar, est, ot1, hmap, hidden_states = self.estimator(prop_his.unsqueeze(0), depth.unsqueeze(0), hidden_states)
+        gru_out = self.estimator(prop_his.unsqueeze(0), depth.unsqueeze(0), hidden_states)
+        vae_mu, vae_logvar, est, ot1, hmap = self.vae.estimate(gru_out)
         mean = self.actor(proprio, vae_mu.squeeze(0))
-        return mean, hmap.squeeze().view(32, 16), hidden_states
+        return mean, hidden_states, hmap.squeeze().view(32, 16)
 
 
 def trace():
     # proj, cfg, exptid, checkpoint = 't1', 't1_pie', 't1_pie_002', 25600
     # proj, cfg, exptid, checkpoint = 't1', 't1_pie', 't1_pie_004', 1300
-    proj, cfg, exptid, checkpoint = 't1', 't1_pie', 't1_pie_005', 5200
+    proj, cfg, exptid, checkpoint = 't1', 't1_pie_stair', 't1_pie_002st02', 6600
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):
         os.mkdir(trace_path)
 
     task_registry = TaskRegistry()
-    env_cfg, train_cfg = task_registry.get_cfg(name=cfg)
+    task_cfg = task_registry.get_cfg(name=cfg)
 
     device = torch.device('cpu')
-    load_path = os.path.join(f'../../logs/{proj}/', exptid, f'model_{checkpoint}.pt')
+    load_path = os.path.join(f'../../logs/{proj}/{task_cfg.runner.algorithm_name}', exptid, f'model_{checkpoint}.pt')
     print(f"Loading model from: {load_path}")
     state_dict = torch.load(load_path, map_location=device, weights_only=True)
 
-    model = Policy(env_cfg.env, train_cfg.policy)
+    model = Policy(task_cfg.env, task_cfg.policy)
     model.load_state_dict(state_dict['actor_state_dict'])
     model.eval()
 
@@ -63,10 +63,10 @@ def trace():
 
     with torch.no_grad():
         # Save the traced actor
-        proprio = torch.zeros(1, env_cfg.env.n_proprio, device=device)
-        prop_his = torch.zeros(1, env_cfg.env.len_prop_his, env_cfg.env.n_proprio, device=device)
-        depth_his = torch.zeros(1, env_cfg.env.len_depth_his, *reversed(env_cfg.sensors.depth_0.resized), device=device)
-        hidden_states = torch.zeros(1, 1, train_cfg.policy.estimator_gru_hidden_size, device=device)
+        proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
+        prop_his = torch.zeros(1, task_cfg.env.len_prop_his, task_cfg.env.n_proprio, device=device)
+        depth_his = torch.zeros(1, task_cfg.env.len_depth_his, *reversed(task_cfg.sensors.depth_0.resized), device=device)
+        hidden_states = torch.zeros(1, 1, task_cfg.policy.estimator_gru_hidden_size, device=device)
 
         trace_and_save(model, (proprio, prop_his, depth_his, hidden_states))
 

@@ -81,14 +81,8 @@ class CriticObs(ObsBase):
 
 
 class T1ZJUEnvironment(T1BaseEnv):
-    def _parse_cfg(self, args):
-        super()._parse_cfg(args)
-
     def _init_buffers(self):
         super()._init_buffers()
-
-        self.phase_increment_ratio = 1 + self._zero_tensor(self.num_envs)
-        # self.phase_increment_ratio = torch_rand_float(0.8, 1.2, (self.num_envs, 1), self.device).squeeze()
 
         bounding_box = self.cfg.sensors.depth_0.bounding_box  # x1, x2, y1, y2
         hmap_shape = self.cfg.sensors.depth_0.hmap_shape  # x dim, y dim
@@ -100,17 +94,6 @@ class T1ZJUEnvironment(T1BaseEnv):
 
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
-
-    def _post_physics_pre_step(self):
-        super()._post_physics_pre_step()
-
-        self.phase_length_buf[:] += self.dt * (self.phase_increment_ratio - 1)
-        self._update_phase()
-
-    def _reset_idx(self, env_ids: torch.Tensor):
-        super()._reset_idx(env_ids)
-
-        # self.phase_increment_ratio[env_ids] = torch_rand_float(0.8, 1.2, (len(env_ids), 1), self.device).squeeze()
 
     def _compute_observations(self):
         """

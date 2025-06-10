@@ -1,12 +1,11 @@
-import cv2
-
 try:
-    import isaacgym, torch
+    import isaacgym, torch  # NOQA
 except ImportError:
     import torch
 
 import time
 
+import cv2
 from rich.live import Live
 
 import vis
@@ -29,7 +28,7 @@ def play(args):
 
     # override some parameters for testing
     task_cfg.play.control = False
-    task_cfg.env.num_envs = 4
+    task_cfg.env.num_envs = 16
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
@@ -61,7 +60,7 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 0,
+        'parkour_stair': 1,
         'parkour_mini_stair': 0,
         'parkour_flat': 0,
     }
@@ -105,8 +104,9 @@ def play(args):
                 env.draw_recon(recon_rough)
                 # env.draw_recon(recon_refine)
                 # env.draw_est_hmap(est)
-                # env.draw_recon(obs.scan)
                 # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
+            else:
+                env.draw_recon(obs.scan)
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.

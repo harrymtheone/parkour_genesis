@@ -47,6 +47,8 @@ class PPO_PIE(BaseAlgorithm):
 
         # PPO components
         self.actor = Policy(task_cfg.env, task_cfg.policy).to(self.device)
+        self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
+
         self.critic = UniversalCritic(task_cfg.env, task_cfg.policy).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
@@ -270,7 +272,7 @@ class PPO_PIE(BaseAlgorithm):
         return kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, 0.
 
     def play_act(self, obs, **kwargs):
-        return self.actor.act(obs, eval_=True)
+        return {"actions": self.actor.act(obs, **kwargs)}
 
     def train(self):
         self.actor.train()
