@@ -9,7 +9,8 @@ class T1BaseEnv(HumanoidEnv):
     def _init_buffers(self):
         super()._init_buffers()
         env_cfg = self.cfg.env
-        self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
+        if hasattr(env_cfg, 'len_prop_his'):
+            self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
         self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)

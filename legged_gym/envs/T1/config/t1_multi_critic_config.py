@@ -117,7 +117,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         randomize_start_pos = True
         randomize_start_z = False
         randomize_start_yaw = True
-        randomize_start_vel = False
+        randomize_start_vel = True
         randomize_start_pitch = True
 
         randomize_start_dof_pos = False
@@ -282,7 +282,10 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
         }
 
     class rewards(T1_Multi_Critic_Cfg.rewards):
-        dof_vel_smoothness = -1e-3
+        class scales(T1_Multi_Critic_Cfg.rewards.scales):
+            dof_vel_smoothness = -1e-3
+
+            head_acc = -0.1
 
     class control(T1BaseCfg.control):
         # PD Drive parameters:

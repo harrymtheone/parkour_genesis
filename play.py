@@ -41,11 +41,9 @@ def play(args):
     # task_cfg.depth.angle_range = [-1, 1]
     task_cfg.domain_rand.action_delay = True
     task_cfg.domain_rand.action_delay_range = [(2, 2)]
-    task_cfg.domain_rand.add_dof_lag = False
-    task_cfg.domain_rand.dof_lag_range = (0, 10)
     task_cfg.domain_rand.push_robots = False
     task_cfg.domain_rand.push_duration = [0.3]
-    task_cfg.domain_rand.push_interval_s = 8
+    task_cfg.domain_rand.push_interval_s = 3
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
@@ -76,13 +74,14 @@ def play(args):
     # load policy
     env.sim.clear_lines = True
     task_cfg.runner.resume = True
+    task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
     with Live(vis.gen_info_panel(args, env)) as live:
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True, dones=dones)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, dones=dones)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
 
             actions = rtn['actions']
@@ -101,12 +100,12 @@ def play(args):
 
                 args.est = est[env.lookat_id, :3] / 2
 
-                env.draw_recon(recon_rough)
+                # env.draw_recon(recon_rough)
                 # env.draw_recon(recon_refine)
                 # env.draw_est_hmap(est)
                 # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
             else:
-                env.draw_recon(obs.scan)
+                env.draw_recon(obs_critic.scan)
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.

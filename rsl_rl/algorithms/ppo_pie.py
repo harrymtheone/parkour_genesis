@@ -280,10 +280,10 @@ class PPO_PIE(BaseAlgorithm):
 
     def load(self, loaded_dict, load_optimizer=True):
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
-        self.critic.load_state_dict(loaded_dict['critic_state_dict'])
-
-        if load_optimizer:
-            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+        # self.critic.load_state_dict(loaded_dict['critic_state_dict'])
+        #
+        # if load_optimizer:
+        #     self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)

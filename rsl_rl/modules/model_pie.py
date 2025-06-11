@@ -59,6 +59,10 @@ class EstimatorGRU(nn.Module):
             return None
         return self.hidden_states.detach()
 
+    def detach_hidden_states(self):
+        if self.hidden_states is not None:
+            self.hidden_states = self.hidden_states.detach()
+
     def reset(self, dones):
         self.hidden_states[:, dones] = 0.
 
@@ -182,6 +186,9 @@ class Policy(nn.Module):
 
     def get_hidden_states(self):
         return self.estimator.get_hidden_states()
+
+    def detach_hidden_states(self):
+        self.estimator.detach_hidden_states()
 
     def reset(self, dones):
         self.estimator.reset(dones)

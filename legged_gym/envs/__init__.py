@@ -5,7 +5,7 @@ from .T1.config.t1_multi_critic_config import T1_Multi_Critic_Cfg
 from .T1.config.t1_multi_critic_config import T1_Multi_Critic_Stair_Cfg
 from .T1.config.t1_phase_config import T1_Phase_Cfg, T1_Phase_Stair_Cfg
 from .T1.config.t1_pie_config import T1_PIE_Cfg, T1_PIE_Stair_Cfg
-from .T1.config.t1_priv_config import T1PrivCfg, T1PrivStairCfg
+from .T1.config.t1_priv_config import T1_Priv_Cfg, T1_Priv_Stair_Cfg, T1_Priv_Distil_Cfg
 from .T1.config.t1_zju_config import T1_ZJU_Cfg, T1_ZJU_Stair_Cfg, T1_ZJU_Parkour_Cfg
 from .T1.config.t1_bbm_config import T1_BBM_Cfg
 from .T1.t1_dreamwaq_environment import T1DreamWaqEnvironment
@@ -31,8 +31,9 @@ task_list = [
     #
     # ['pdd_zju', PddZJUEnvironment, PddZJUCfg(), PddZJUCfgPPO()],  # TODO: not finished yet
 
-    ['t1_priv', T1PrivEnvironment, T1PrivCfg()],
-    ['t1_priv_stair', T1PrivEnvironment, T1PrivStairCfg()],
+    ['t1_priv', T1PrivEnvironment, T1_Priv_Cfg()],
+    ['t1_priv_stair', T1PrivEnvironment, T1_Priv_Stair_Cfg()],
+    ['t1_priv_dis', T1PrivEnvironment, T1_Priv_Distil_Cfg()],
 
     ['t1_dreamwaq', T1DreamWaqEnvironment, T1DreamWaqCfg()],
     ['t1_dreamwaq_p2', T1DreamWaqEnvironment, T1DreamWaqPhase2Cfg()],

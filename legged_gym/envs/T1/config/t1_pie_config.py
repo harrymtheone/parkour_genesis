@@ -16,7 +16,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         len_critic_his = 50
 
         num_actions = 13
-        episode_length_s = 30  # episode length in seconds
+        episode_length_s = 40  # episode length in seconds
 
     class sensors:
         activated = True
@@ -47,7 +47,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 1,
+            'smooth_slope': 2,
             'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
@@ -98,12 +98,12 @@ class T1_PIE_Cfg(T1BaseCfg):
         randomize_coulomb_friction = False
 
     class rewards:
-        base_height_target = 0.6
+        base_height_target = 0.64
         feet_height_target = 0.05
-        feet_height_target_max = 0.06
+        feet_height_target_max = 0.07
         use_guidance_terrain = True
-        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
-        only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
+        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards_until_epoch = 1000  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
@@ -120,8 +120,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         class scales:
             joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 1.0  # 0.2
-            # feet_air_time = 1.
+            feet_clearance = 1.0
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
@@ -135,24 +134,81 @@ class T1_PIE_Cfg(T1BaseCfg):
 
             # vel tracking
             tracking_lin_vel = 2.5
-            tracking_goal_vel = 2.5
+            tracking_goal_vel = 3.0
             tracking_ang_vel = 1.5
             vel_mismatch_exp = 0.5
 
-            timeout = -1.0
-
             # base pos
-            default_joint_pos = 1.5
+            default_joint_pos = 1.0
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
 
             # energy
             action_smoothness = -3e-3
+            # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
             collision = -1.
+
+            timeout = -10.0
+
+            # # ######### New #########
+            #
+            # # gait
+            # joint_pos = 2.0
+            # feet_contact_number = 1.2
+            # feet_clearance = -1.0
+            # feet_distance = -0.2
+            # knee_distance = -0.2
+            # feet_rotation = -0.5
+            #
+            # # contact
+            # feet_slip = -1.
+            # feet_contact_forces = -0.001
+            # # feet_stumble = -1.0
+            # # foothold = -1.0
+            #
+            # # vel tracking
+            # tracking_lin_vel = 2.5
+            # tracking_goal_vel = 3.0
+            # tracking_ang_vel = 1.5
+            #
+            # # regularization
+            # default_joint_pos = 1.0
+            # lin_vel_z = -2.0
+            # ang_vel_xy = -0.05
+            # orientation = -1.0
+            # base_height = -10.0
+            # collision = -1.
+            #
+            # # energy
+            # dof_vel = -5e-4
+            # dof_acc = -1e-7
+            # action_smoothness = -1e-3
+            # dof_vel_smoothness = -5e-4
+            # # dof_pos_limits = -5.0
+            # torques = -1e-5
+            #
+            # alive = 0.1
+            # # termination = -10.
+
+    class control(T1BaseCfg.control):
+        # PD Drive parameters:
+        stiffness = {
+            'Head': 30,
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+            'Waist': 100,
+            'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
+        }
+
+        damping = {
+            'Head': 1,
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+            'Waist': 3,
+            'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
+        }
 
     class policy:
         # actor parameters
@@ -173,7 +229,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 4
+        num_learning_epochs = 8
         num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
@@ -218,26 +274,13 @@ class T1_PIE_Stair_Cfg(T1_PIE_Cfg):
     class domain_rand(T1_PIE_Cfg.domain_rand):
         randomize_start_yaw = False
 
+        push_robots = False
+
+        action_delay = True
         action_delay_range = [(0, 4)]
 
     class rewards(T1_PIE_Cfg.rewards):
         only_positive_rewards = False
-
-    class control(T1BaseCfg.control):
-        # PD Drive parameters:
-        stiffness = {
-            'Head': 30,
-            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
-            'Waist': 100,
-            'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
-        }
-
-        damping = {
-            'Head': 1,
-            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
-            'Waist': 3,
-            'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
-        }
 
     class algorithm(T1_PIE_Cfg.algorithm):
         continue_from_last_std = False

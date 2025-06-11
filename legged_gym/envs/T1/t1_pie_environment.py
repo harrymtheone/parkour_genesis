@@ -187,3 +187,76 @@ class T1PIEEnvironment(T1BaseEnv):
         time_out_rew = effective_out * 0.001
         time_out_rew[self.env_class < 4] = 0.
         return time_out_rew
+
+    def _reward_joint_pos(self):
+        """
+        Calculates the reward based on the difference between the current joint positions and the target joint positions.
+        """
+        diff = self.sim.dof_pos - torch.where(
+            self.is_zero_command.unsqueeze(1),
+            self.init_state_dof_pos,
+            self.ref_dof_pos
+        )
+        diff = torch.norm(diff[:, self.dof_activated], dim=1)
+
+        # diff = self.sim.dof_pos - self.ref_dof_pos
+        # diff = torch.norm(diff[:, self.dof_activated], dim=1)
+        # diff[self.is_zero_command] = 0.
+
+        rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
+        rew[self.env_class >= 2] *= 0.1
+        return rew
+
+    def _reward_feet_contact_number(self):
+        """
+        Calculates a reward based on the number of feet contacts aligning with the gait phase.
+        Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
+        """
+        rew = torch.where(self.contact_filt == self._get_stance_mask(), 1, -0.3)
+        rew[self.env_class >= 2] *= 0.1
+        return torch.mean(rew, dim=1)
+
+    # def _reward_lin_vel_z(self):
+    #     # Penalize z axis base linear velocity
+    #     return torch.square(self.base_lin_vel[:, 2])
+    #
+    # def _reward_ang_vel_xy(self):
+    #     # Penalize xy axes base angular velocity
+    #     return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
+    #
+    # def _reward_orientation(self):
+    #     # Penalize non flat base orientation
+    #     return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+    #
+    # def _reward_base_height(self):
+    #     # Penalize base height away from target
+    #     return torch.square(self.base_height - self.cfg.rewards.base_height_target)
+    #
+    # def _reward_feet_clearance(self):
+    #     # encourage the robot to lift its legs when it moves
+    #     x = self.feet_height.clip(min=self.cfg.rewards.feet_height_target, max=self.cfg.rewards.feet_height_target_max)
+    #     pos_err = torch.square(self.feet_height - x)
+    #     return torch.sum(pos_err, dim=1) / self.cfg.rewards.feet_height_target
+    #
+    # def _reward_feet_distance(self):
+    #     feet_pos = self.sim.link_pos[:, self.feet_indices, :2]
+    #     feet_dist = torch.norm(feet_pos[:, 0, :] - feet_pos[:, 1, :], dim=1)
+    #
+    #     x = feet_dist.clip(min=self.cfg.rewards.min_dist, max=self.cfg.rewards.max_dist)
+    #     pos_err = torch.square(feet_dist - x) / self.cfg.rewards.min_dist
+    #     return torch.sum(pos_err)
+    #
+    # def _reward_knee_distance(self):
+    #     knee_pos = self.sim.link_pos[:, self.knee_indices, :2]
+    #     knee_dist = torch.norm(knee_pos[:, 0, :] - knee_pos[:, 1, :], dim=1)
+    #
+    #     x = knee_dist.clip(min=self.cfg.rewards.min_dist, max=self.cfg.rewards.max_dist / 2)
+    #     pos_err = torch.square(knee_dist - x) / self.cfg.rewards.min_dist
+    #     return torch.sum(pos_err)
+    #
+    # def _reward_feet_rotation(self):
+    #     return torch.sum(self.feet_euler_xyz[..., :2].square(), dim=[1, 2])
+    #
+    # @staticmethod
+    # def _reward_alive():
+    #     return 1.

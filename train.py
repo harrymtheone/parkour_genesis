@@ -5,8 +5,6 @@ except ImportError:
 
 import os
 
-import wandb
-
 from legged_gym.simulator import SimulatorType
 from legged_gym.utils.helpers import get_args, class_to_dict
 from legged_gym.utils.task_registry import TaskRegistry
@@ -31,21 +29,21 @@ def train(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     if args.debug:
-        mode = "disabled"
         # args.headless = False
         task_cfg.terrain.num_rows = 10
         task_cfg.terrain.num_cols = 5
         task_cfg.env.num_envs = 64
-    else:
-        mode = "online"
 
-    # save training parameters
-    wandb.init(project=args.proj_name,
-               name=args.exptid,
-               group=task_cfg.runner.algorithm_name,
-               mode=mode,
-               dir=log_root,
-               config=class_to_dict(task_cfg))
+    if task_cfg.runner.logger_backend == 'wandb':
+        import wandb
+
+        # save training parameters
+        wandb.init(project=args.proj_name,
+                   name=args.exptid,
+                   group=task_cfg.runner.algorithm_name,
+                   mode="disabled" if args.debug else "online",
+                   dir=log_root,
+                   config=class_to_dict(task_cfg))
 
     ppo_runner = task_registry.make_alg_runner(task_cfg=task_cfg, args=args, log_root=log_root)
     env = task_registry.make_env(args=args, task_cfg=task_cfg)

@@ -24,10 +24,19 @@ class RunnerLogger:
 
 
 class RLDreamRunner(RunnerLogger):
-    def __init__(self, task_cfg, log_dir=None, device=torch.device('cpu')):
+    def __init__(self, task_cfg, log_root=None, model_dir=None, device=torch.device('cpu')):
         self.task_cfg = task_cfg
         self.cfg = task_cfg.runner
-        self.log_dir = log_dir
+
+        self.log_root = log_root
+        self.model_dir = model_dir
+        if self.cfg.logger_backend == 'tensorboard':
+            from torch.utils.tensorboard import SummaryWriter
+            tensorboard_dir = os.path.join(log_root, 'tensorboard', self.model_dir)  # NOQA
+            assert not os.path.exists(tensorboard_dir)
+
+            self.logger = SummaryWriter(log_dir=tensorboard_dir)  # NOQA
+
         self.device = torch.device(device) if type(device) is str else device
 
         # Create algorithm
@@ -71,33 +80,32 @@ class RLDreamRunner(RunnerLogger):
             self.episode_terrain_level.clear()
 
             # Rollout
-            with torch.inference_mode():
+            with torch.inference_mode(mode=self.cfg.inference_enabled):
                 for _ in range(self.num_steps_per_env):
                     actions = self.alg.act(obs, critic_obs, use_estimated_values=use_estimated_values.unsqueeze(1))
                     obs, critic_obs, rewards, dones, infos = env.step(actions)  # obs has changed to next_obs !! if done obs has been reset
                     self.alg.process_env_step(rewards, dones, infos, obs)
 
-                    if self.log_dir is not None:
-                        if 'episode_rew' in infos:
-                            self.episode_rew.append(infos['episode_rew'])
+                    if 'episode_rew' in infos:
+                        self.episode_rew.append(infos['episode_rew'])
 
-                        if 'episode_terrain_level' in infos:
-                            self.episode_terrain_level.append(infos['episode_terrain_level'])
+                    if 'episode_terrain_level' in infos:
+                        self.episode_terrain_level.append(infos['episode_terrain_level'])
 
-                        cur_reward_sum[:] += rewards
-                        cur_episode_length[:] += 1
+                    cur_reward_sum[:] += rewards
+                    cur_episode_length[:] += 1
 
-                        self.mean_base_height[:] = 0.99 * self.mean_base_height + 0.01 * env.base_height
-                        new_ids = torch.where(dones > 0)
-                        if len(new_ids[0]) > 0:
-                            last_env_reward[new_ids] = cur_reward_sum[new_ids]
-                            self.episode_rew_sum.extend(cur_reward_sum[new_ids].cpu().numpy().tolist())
-                            self.episode_length.extend(cur_episode_length[new_ids].cpu().numpy().tolist())
+                    self.mean_base_height[:] = 0.99 * self.mean_base_height + 0.01 * env.base_height
+                    new_ids = torch.where(dones > 0)
+                    if len(new_ids[0]) > 0:
+                        last_env_reward[new_ids] = cur_reward_sum[new_ids]
+                        self.episode_rew_sum.extend(cur_reward_sum[new_ids].cpu().numpy().tolist())
+                        self.episode_length.extend(cur_episode_length[new_ids].cpu().numpy().tolist())
 
-                            use_estimated_values[new_ids] = torch.rand(len(new_ids[0]), device=self.device) > self.p_smpl
+                        use_estimated_values[new_ids] = torch.rand(len(new_ids[0]), device=self.device) > self.p_smpl
 
-                            cur_reward_sum[new_ids] = 0.
-                            cur_episode_length[new_ids] = 0.
+                        cur_reward_sum[new_ids] = 0.
+                        cur_episode_length[new_ids] = 0.
 
                 # update AdaSmpl coefficient
                 if self.cur_it - self.start_it > 20:  # ensure there are enough samples
@@ -108,7 +116,8 @@ class RLDreamRunner(RunnerLogger):
 
                     # probability to use ground truth value
                     if self.cur_it > 10000:
-                        self.p_smpl = 0.999 * self.p_smpl + 0.001 * torch.tanh((coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
+                        self.p_smpl = 0.999 * self.p_smpl + 0.001 * torch.tanh(
+                            (coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
 
                 # Learning step
                 self.alg.compute_returns(critic_obs)
@@ -123,12 +132,11 @@ class RLDreamRunner(RunnerLogger):
 
             env.update_reward_curriculum(self.cur_it)
 
-            if self.log_dir is not None:
-                self.log(update_info)
+            self.log(update_info)
 
             if self.cur_it % self.save_interval == 0:
-                self.save(os.path.join(self.log_dir, f'model_{self.cur_it}.pt'))
-            self.save(os.path.join(self.log_dir, 'latest.pt'))
+                self.save(os.path.join(self.log_root, self.model_dir, f'model_{self.cur_it}.pt'))
+            self.save(os.path.join(self.log_root, self.model_dir, 'latest.pt'))
 
     def log(self, update_info, width=80, pad=35):
         self.tot_steps += self.num_steps_per_env * self.task_cfg.env.num_envs
@@ -136,14 +144,14 @@ class RLDreamRunner(RunnerLogger):
         self.tot_time += iteration_time
 
         # construct wandb logging dict
-        wandb_dict = {}
+        logger_dict = {}
 
         # logging episode reward
         ep_rew = self.episode_rew
         for rew_name in ep_rew[0]:
             rew_tensor = [ep[rew_name] for ep in ep_rew]
             rew_tensor = torch.stack(rew_tensor, dim=0)
-            wandb_dict['Episode_rew/' + rew_name] = torch.mean(rew_tensor).item()
+            logger_dict['Episode_rew/' + rew_name] = torch.mean(rew_tensor).item()
 
         # logging episode average terrain level
         ep_terrain_level = self.episode_terrain_level
@@ -151,20 +159,25 @@ class RLDreamRunner(RunnerLogger):
             for terrain_name in ep_terrain_level[0]:
                 level_tensor = [ep[terrain_name] for ep in ep_terrain_level]
                 level_tensor = torch.stack(level_tensor, dim=0)
-                wandb_dict['Terrain Level/' + terrain_name] = torch.mean(level_tensor).item()
+                logger_dict['Terrain Level/' + terrain_name] = torch.mean(level_tensor).item()
 
-        wandb_dict.update(self.terrain_coefficient_variation)
+        logger_dict.update(self.terrain_coefficient_variation)
 
         # logging update information
-        wandb_dict.update(update_info)
+        logger_dict.update(update_info)
 
         if len(self.episode_rew_sum) > 10:
-            wandb_dict['Train/mean_reward'] = statistics.mean(self.episode_rew_sum)  # use the latest 100 to compute
-            wandb_dict['Train/mean_episode_length'] = statistics.mean(self.episode_length)
-        wandb_dict['Train/base_height'] = self.mean_base_height.mean().item()
-        wandb_dict['Train/AdaSmpl'] = self.p_smpl
+            logger_dict['Train/mean_reward'] = statistics.mean(self.episode_rew_sum)  # use the latest 100 to compute
+            logger_dict['Train/mean_episode_length'] = statistics.mean(self.episode_length)
+        logger_dict['Train/base_height'] = self.mean_base_height.mean().item()
+        logger_dict['Train/AdaSmpl'] = self.p_smpl
 
-        wandb.log(wandb_dict, step=self.cur_it)
+        if self.cfg.logger_backend == 'wandb':
+            wandb.log(logger_dict, step=self.cur_it)
+        elif self.cfg.logger_backend == 'tensorboard':
+            for t, v in logger_dict.items():
+                self.logger.add_scalar(t, v, global_step=self.cur_it)
+            self.logger.flush()
 
         # logging string to print
         progress = f" \033[1m Learning iteration {self.cur_it}/{self.start_it + self.cfg.max_iterations} \033[0m "

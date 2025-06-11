@@ -56,7 +56,7 @@ class PPO_Priv(BaseAlgorithm):
         self.transition = Transition(self.actor.is_recurrent)
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
-    def act(self, obs, obs_critic, use_estimated_values=True, **kwargs):
+    def act(self, _, obs_critic, use_estimated_values=True, **kwargs):
         # store observations
         self.transition.critic_observations = obs_critic
         if self.actor.is_recurrent:

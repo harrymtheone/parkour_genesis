@@ -323,8 +323,13 @@ class T1BaseCfg(BaseConfig):
 
     class runner:
         num_steps_per_env = 24  # per iteration
+        inference_enabled = True
+
+        logger_backend = 'tensorboard'
+
         resume = False
         checkpoint = -1  # -1 = last saved model
+        resume_algorithm = None
 
         # logging
         save_interval = 100  # check for potential saves every this many iterations

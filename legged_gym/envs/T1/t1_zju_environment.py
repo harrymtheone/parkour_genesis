@@ -4,7 +4,7 @@ import torch
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_trans_quat, transform_by_yaw, torch_rand_float
+from ...utils.math import transform_by_trans_quat, transform_by_yaw
 
 
 class ActorObs(ObsBase):
@@ -94,6 +94,9 @@ class T1ZJUEnvironment(T1BaseEnv):
 
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
+
+        self.head_link_indices = self.sim.create_indices(
+            self.sim.get_full_names(['H2'], True), True)
 
     def _compute_observations(self):
         """
@@ -293,6 +296,10 @@ class T1ZJUEnvironment(T1BaseEnv):
 
         height_points = height_points.cpu().numpy()
         self.pending_vis_task.append(dict(points=height_points))
+
+    def _reward_head_acc(self):
+        head_acc = (self.last_link_vel - self.sim.link_vel)[:, self.head_link_indices]
+        return head_acc.square().sum(dim=[1, 2])
 
 
 def density_weighted_sampling(points, num_samples, k=10):

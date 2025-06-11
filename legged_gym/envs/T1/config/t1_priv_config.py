@@ -3,12 +3,9 @@ import numpy as np
 from .t1_base_config import T1BaseCfg
 
 
-class T1PrivCfg(T1BaseCfg):
+class T1_Priv_Cfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
-
-        n_proprio = 50
-        len_prop_his = 50
 
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
@@ -66,7 +63,7 @@ class T1PrivCfg(T1BaseCfg):
         randomize_link_mass = switch
         randomize_com = switch
 
-        push_robots = True
+        push_robots = False
         action_delay = True
         add_dof_lag = False
         add_imu_lag = False
@@ -110,7 +107,7 @@ class T1PrivCfg(T1BaseCfg):
 
             # contact
             feet_slip = -1.
-            # feet_contact_forces = -0.001
+            feet_contact_forces = -0.001
             feet_stumble = -1.0
             # feet_edge = 0.
             foothold = -1.0
@@ -123,13 +120,14 @@ class T1PrivCfg(T1BaseCfg):
             # timeout = -1.0
 
             # base pos
-            default_joint_pos = 0.5
+            default_joint_pos = 1.0
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
 
             # energy
             action_smoothness = -3e-3
+            dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
@@ -183,8 +181,8 @@ class T1PrivCfg(T1BaseCfg):
         max_iterations = 2000  # number of policy updates
 
 
-class T1PrivStairCfg(T1PrivCfg):
-    class terrain(T1PrivCfg.terrain):
+class T1_Priv_Stair_Cfg(T1_Priv_Cfg):
+    class terrain(T1_Priv_Cfg.terrain):
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
@@ -211,16 +209,61 @@ class T1PrivStairCfg(T1PrivCfg):
             'parkour_flat': 0,
         }
 
-    class domain_rand(T1PrivCfg.domain_rand):
+    class domain_rand(T1_Priv_Cfg.domain_rand):
         push_robots = False
-        push_duration = [0.2]
+        push_duration = [0.03]
         action_delay = True
         action_delay_range = [(0, 2), (0, 4)]
         action_delay_update_steps = 6000 * 24
 
-    class rewards(T1PrivCfg.rewards):
-        class scales(T1PrivCfg.rewards.scales):
+    class rewards(T1_Priv_Cfg.rewards):
+        class scales(T1_Priv_Cfg.rewards.scales):
             default_joint_pos = 1.5
 
-    class runner(T1PrivCfg.runner):
+    class runner(T1_Priv_Cfg.runner):
+        max_iterations = 50000  # number of policy updates
+
+
+class T1_Priv_Distil_Cfg(T1_Priv_Stair_Cfg):
+    class env(T1_Priv_Stair_Cfg.env):
+        num_envs = 256
+
+        n_proprio = 50
+        len_prop_his = 10
+
+        len_depth_his = 2
+
+    class sensors:
+        activated = True
+
+        class depth_0:
+            link_attached_to = 'H2'
+            position = [0.07, 0, 0.09]  # front camera
+
+            position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
+            pitch = 0  # positive is looking down
+            pitch_range = [-3, 3]
+
+            data_format = 'depth'  # depth, cloud
+            update_interval = 5  # 5 works without retraining, 8 worse
+            delay_prop = (5, 1)  # Gaussian (mean, std)
+
+            resolution = (106, 60)  # width, height
+            resized = (87, 58)  # (87, 58)
+            horizontal_fov = 87
+
+            near_clip = 0
+            far_clip = 2
+            dis_noise_global = 0.01  # in meters
+            dis_noise_gaussian = 0.01  # in meters
+
+    class runner(T1BaseCfg.runner):
+        runner_name = 'rl_dream'
+        algorithm_name = 'distiller'
+
+        inference_enabled = False
+        resume_algorithm = 'ppo_priv'
+
+        num_steps_per_env = 4
+
         max_iterations = 50000  # number of policy updates

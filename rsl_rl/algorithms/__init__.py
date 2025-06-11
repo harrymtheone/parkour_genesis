@@ -9,7 +9,11 @@ from .ppo_zju import PPO_ZJU
 from .ppo_zju_multi_critic import PPO_ZJU_Multi_Critic
 from .ppo_bbm import PPO_BBM
 
+from .distiller import Distiller
+
 algorithm_dict = {
+    'distiller': Distiller,
+
     'ppo_priv': PPO_Priv,
     'ppo_dreamwaq': PPODreamWaQ,
     'ppo_pie': PPO_PIE,

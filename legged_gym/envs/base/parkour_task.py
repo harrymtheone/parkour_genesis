@@ -40,6 +40,7 @@ class ParkourTask(BaseTask):
         self.last_last_dof_vel = torch.zeros_like(self.sim.dof_vel)
         self.last_torques = torch.zeros_like(self.torques)
         self.last_root_vel = torch.zeros_like(self.sim.root_lin_vel)
+        self.last_link_vel = torch.zeros_like(self.sim.link_vel)
 
         self.target_yaw = self._zero_tensor(self.num_envs)  # used by info panel in play.py
         if self.sim.terrain is not None:
@@ -109,6 +110,7 @@ class ParkourTask(BaseTask):
         self.last_last_dof_vel[env_ids] = 0.
         self.last_torques[env_ids] = 0.
         self.last_root_vel[:] = 0.
+        self.last_link_vel[:] = 0.
 
         if self.sim.terrain is not None:
             self.cur_goal_idx[env_ids] = 0
@@ -266,6 +268,7 @@ class ParkourTask(BaseTask):
         self.last_dof_vel[:] = self.sim.dof_vel
         self.last_torques[:] = self.torques
         self.last_root_vel[:] = self.sim.root_lin_vel
+        self.last_link_vel[:] = self.sim.link_vel
 
     def _update_terrain_curriculum(self, env_ids: torch.Tensor):
         """ Implements the game-inspired curriculum.
