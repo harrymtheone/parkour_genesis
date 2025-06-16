@@ -50,18 +50,9 @@ class EstimatorGRU(nn.Module):
 
 
 def trace():
-    # proj, cfg, exptid, checkpoint = 't1', 't1_zju', 't1_zju_002', 12100
-    # proj, cfg, exptid, checkpoint = 't1', 't1_zju', 't1_zju_002r1', 11200
-    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_002st04r2', 40000
-    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r1', 60300
-    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r2', 60000
-    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r6', 41300
-    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r7', 39100
-    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r9', 35300
-    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r10', 33200
-    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r11', 36000
-    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r12', 33100
-    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r13', 37200
+    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r16', 38000
+    # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r18', 41100
+    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r19', 35400
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):

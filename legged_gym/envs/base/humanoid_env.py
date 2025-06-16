@@ -180,10 +180,9 @@ class HumanoidEnv(ParkourTask):
         return torch.mean(rew, dim=1)
 
     def _reward_feet_clearance(self):
-        # encourage the robot to lift its legs when it moves
+        # # encourage the robot to lift its legs when it moves
         # rew = (self.feet_height > self.cfg.rewards.feet_height_target) * (self.feet_height < self.cfg.rewards.feet_height_target_max)
-        # rew = torch.clip(self.feet_height / self.cfg.rewards.feet_height_target, 0, 1)
-        # rew = torch.sum(rew * ~self._get_stance_mask(), dim=1, dtype=torch.float)
+        # return torch.sum(rew * ~self._get_stance_mask(), dim=1, dtype=torch.float)
 
         rew = (self.feet_height / self.cfg.rewards.feet_height_target).clip(min=-1, max=1)
         rew[self._get_stance_mask()] = 0.
@@ -507,14 +506,27 @@ class HumanoidEnv(ParkourTask):
 
     def _reward_feet_stumble(self):
         # Penalize feet hitting vertical surfaces
-        return torch.any(torch.norm(self.sim.contact_forces[:, self.feet_indices, :2], dim=2) >
-                         5 * torch.abs(self.sim.contact_forces[:, self.feet_indices, 2]), dim=1).float()
+        # return torch.any(torch.norm(self.sim.contact_forces[:, self.feet_indices, :2], dim=2) >
+        #                  5 * torch.abs(self.sim.contact_forces[:, self.feet_indices, 2]), dim=1).float()
 
-    # def _reward_dof_vel_limits(self):
-    #     # Penalize dof velocities too close to the limit
-    #     # clip to max error = 1 rad/s per joint to avoid huge penalties
-    #     self.dof_vel_limits[[4, 9]] = 10
-    #     return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits * self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)
+        force_xy = torch.norm(self.sim.contact_forces[:, self.feet_indices, :2], dim=2)
+        return torch.any(force_xy > 5 & ~self.contact_filt, dim=1).float()
+
+    def _reward_dof_pos_limits(self):
+        # Penalize dof positions too close to the limit
+        out_of_limits = -(self.sim.dof_pos - self.soft_dof_pos_limits[:, 0]).clip(max=0.)  # lower limit
+        out_of_limits += (self.sim.dof_pos - self.soft_dof_pos_limits[:, 1]).clip(min=0.)
+        return torch.sum(out_of_limits, dim=1)
+
+    def _reward_dof_vel_limits(self):
+        # Penalize dof velocities too close to the limit
+        # clip to max error = 1 rad/s per joint to avoid huge penalties
+        return (torch.abs(self.sim.dof_vel) - self.soft_dof_vel_limits).clip(min=0., max=1.).sum(dim=1)
+
+    def _reward_dof_torque_limits(self):
+        lim = self.soft_dof_torque_limits.clone()
+        # lim[[15, 16, 21, 22]] *= 0.5
+        return (torch.abs(self.torques) / lim - 1).clip(min=0.).sum(dim=1)
 
     def _reward_feet_edge(self):
         rew = torch.sum(self.feet_at_edge.float(), dim=-1)

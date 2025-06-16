@@ -21,17 +21,17 @@ class TaskRegistry:
         return self.task_cfgs[name]
 
     def make_alg_runner(self, task_cfg, args, log_root):
-        model_dir = os.path.join(args.proj_name, task_cfg.runner.algorithm_name, args.exptid)
+        model_dir = os.path.join(log_root, args.proj_name, task_cfg.runner.algorithm_name, args.exptid)
 
         try:
-            os.makedirs(os.path.join(log_root, model_dir))
+            os.makedirs(model_dir)
         except FileExistsError:
             pass
 
         # make runners
         if task_cfg.runner.runner_name in runner_list:
             runner = runner_list[task_cfg.runner.runner_name]
-            runner = runner(task_cfg, log_root=log_root, model_dir=model_dir, device=args.device)
+            runner = runner(task_cfg, model_dir, args.exptid, device=args.device)
         else:
             raise ValueError(f'Runner not recognized! With train_cfg.runner_name={task_cfg.runner.runner_name}')
 
@@ -41,7 +41,7 @@ class TaskRegistry:
             else:
                 resume_dir = os.path.join(log_root, args.proj_name, task_cfg.runner.resume_algorithm, args.resumeid)
         elif (args.resumeid is None) and task_cfg.runner.resume:
-            resume_dir = os.path.join(log_root, model_dir)
+            resume_dir = model_dir
         else:
             resume_dir = None
 

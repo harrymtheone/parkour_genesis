@@ -73,8 +73,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         sw_switch = True
 
         class flat_ranges:
-            lin_vel_x = [-0.6, 0.6]
-            lin_vel_y = [-0.4, 0.4]
+            lin_vel_x = [-1.0, 1.0]
+            lin_vel_y = [-0.6, 0.6]
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
@@ -85,7 +85,6 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
         class parkour_ranges:
             lin_vel_x = [0.3, 1.2]  # min value should be greater than lin_vel_clip
-            # lin_vel_x = [0.8, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
@@ -93,10 +92,10 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 2,
+            'smooth_slope': 3,
             'rough_slope': 1,
-            'stairs_up': 0,
-            'stairs_down': 0,
+            'stairs_up': 1,
+            'stairs_down': 1,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -105,8 +104,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 0,
-            'parkour_mini_stair': 0,
+            'parkour_stair': 1,
+            'parkour_mini_stair': 1,
             'parkour_flat': 0,
         }
 
@@ -129,8 +128,11 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         randomize_com = True
 
         push_robots = True
+        push_duration = [0.1]
         action_delay = True
-        add_dof_lag = False
+        action_delay_range = [(0, 4)]
+        add_dof_lag = True
+        dof_lag_range = (0, 6)
         add_imu_lag = False
 
         randomize_torque = True
@@ -140,7 +142,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = True
-        randomize_coulomb_friction = False
+        randomize_coulomb_friction = True
 
     class rewards:
         base_height_target = 0.64
@@ -150,7 +152,6 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
         only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
-        soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
 
         cycle_time = 0.7  # 0.64
@@ -166,7 +167,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             # gait
             joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 0.2
+            feet_clearance = 1.0
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
@@ -180,8 +181,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             # contact
             feet_slip = -1.
             feet_contact_forces = -0.001
-            feet_stumble = -1.0
-            # feet_edge = -0.5
+            feet_stumble = -1.
+            # feet_edge = -0.3
             foothold = -1.
 
             # base pos
@@ -197,6 +198,24 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             dof_vel = -5e-4
             dof_acc = -1e-7
             collision = -1.
+
+            dof_torque_limits = -0.01
+
+    class control(T1BaseCfg.control):
+        # PD Drive parameters:
+        stiffness = {
+            'Head': 30,
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+            'Waist': 100,
+            'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
+        }
+
+        damping = {
+            'Head': 1,
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+            'Waist': 3,
+            'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
+        }
 
     class policy:
         # actor parameters
@@ -225,7 +244,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 8
+        num_learning_epochs = 4
         num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
@@ -257,17 +276,20 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
 
         action_delay = True
         action_delay_range = [(0, 4), (0, 6)]
-        action_delay_update_steps = 10000 * 24
+        action_delay_update_steps = 5000 * 24
+
+        add_dof_lag = True
+        dof_lag_range = (0, 6)
 
     class terrain(T1_Multi_Critic_Cfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 2,
+            'smooth_slope': 3,
             'rough_slope': 1,
-            'stairs_up': 0,
-            'stairs_down': 0,
+            'stairs_up': 1,
+            'stairs_down': 1,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -277,15 +299,22 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             'parkour_box': 0,
             'parkour_step': 0,
             'parkour_stair': 1,
-            'parkour_mini_stair': 0,
+            'parkour_mini_stair': 1,
             'parkour_flat': 0,
         }
 
     class rewards(T1_Multi_Critic_Cfg.rewards):
+        only_positive_rewards = True
+        only_positive_rewards_until_epoch = 20000 + 200  # after the epoch, turn off only_positive_reward
+
         class scales(T1_Multi_Critic_Cfg.rewards.scales):
             dof_vel_smoothness = -1e-3
 
             head_acc = -0.1
+
+            dof_pos_limits = -10.
+            dof_vel_limits = -1.
+            dof_torque_limits = -0.1
 
     class control(T1BaseCfg.control):
         # PD Drive parameters:

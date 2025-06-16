@@ -2,7 +2,7 @@ import collections
 import os
 import statistics
 import time
-
+from pathlib import Path
 import torch
 import wandb
 
@@ -24,18 +24,20 @@ class RunnerLogger:
 
 
 class RLDreamRunner(RunnerLogger):
-    def __init__(self, task_cfg, log_root=None, model_dir=None, device=torch.device('cpu')):
+    def __init__(self, task_cfg, model_dir, exptid, device=torch.device('cpu')):
         self.task_cfg = task_cfg
         self.cfg = task_cfg.runner
+        self.exptid = exptid
 
-        self.log_root = log_root
         self.model_dir = model_dir
         if self.cfg.logger_backend == 'tensorboard':
             from torch.utils.tensorboard import SummaryWriter
-            tensorboard_dir = os.path.join(log_root, 'tensorboard', self.model_dir)  # NOQA
-            assert not os.path.exists(tensorboard_dir)
 
-            self.logger = SummaryWriter(log_dir=tensorboard_dir)  # NOQA
+            tensorboard_file = list(Path(self.model_dir).glob('events.*'))
+            if tensorboard_file:
+                raise FileExistsError("Logging directory not empty!")
+
+            self.logger = SummaryWriter(log_dir=model_dir)  # NOQA
 
         self.device = torch.device(device) if type(device) is str else device
 
@@ -135,8 +137,8 @@ class RLDreamRunner(RunnerLogger):
             self.log(update_info)
 
             if self.cur_it % self.save_interval == 0:
-                self.save(os.path.join(self.log_root, self.model_dir, f'model_{self.cur_it}.pt'))
-            self.save(os.path.join(self.log_root, self.model_dir, 'latest.pt'))
+                self.save(os.path.join(self.model_dir, f'model_{self.cur_it}.pt'))
+            self.save(os.path.join(self.model_dir, 'latest.pt'))
 
     def log(self, update_info, width=80, pad=35):
         self.tot_steps += self.num_steps_per_env * self.task_cfg.env.num_envs
@@ -187,6 +189,7 @@ class RLDreamRunner(RunnerLogger):
         log_string = (
             f"""{'*' * width}\n"""
             f"""{progress.center(width, ' ')}\n\n"""
+            f"""{'Experiment:':>{pad}} {self.exptid}\n"""
             f"""{'Computation:':>{pad}} {fps:.0f} steps/s\n"""
             f"""{'Total timesteps:':>{pad}} {self.tot_steps}\n"""
             f"""{'Iteration time:':>{pad}} {iteration_time:.2f}s {self.collection_time:.2f}s {self.learn_time:.2f}s\n"""

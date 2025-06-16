@@ -440,10 +440,9 @@ def parkour_stair_terrain(
         end_x = dis_x - round(1.0 / terrain.horizontal_scale)
         step_x = int((end_x - platform_len) / num_goals)
 
-        for i in range(1, num_goals - 1):
-            goals[i] = [platform_len + i * step_x, mid_y + rand_deviation()]
+        for i in range(num_goals - 1):
+            goals[i] = [platform_len + (i + 1) * step_x, mid_y + rand_deviation()]
 
-        goals[0] = [platform_len, mid_y]
         goals[-1] = [end_x, mid_y]
 
         terrain.goals = goals * terrain.horizontal_scale

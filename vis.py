@@ -1,5 +1,4 @@
 from collections import deque
-from typing import Dict, Tuple
 
 import numpy as np
 import torch
@@ -82,56 +81,124 @@ matplotlib.use('TkAgg')  # Use a faster interactive backend than default
 import matplotlib.pyplot as plt
 
 
+# class BaseVisualizer:
+#     figsize: Tuple[int, int]
+#     subplot_shape: Tuple[int, int]
+#     subplot_props: Dict[str, dict]
+#     his_length: int
+#
+#     def __init__(self):
+#         assert len(self.subplot_props) == self.subplot_shape[0] * self.subplot_shape[1], "Names must match subplot grid size"
+#
+#         self.his = {n: deque(maxlen=self.his_length) for n in self.subplot_props}
+#
+#         self.fig, self.axes = plt.subplots(*self.subplot_shape, figsize=self.figsize)
+#         self.axes_dict = {}
+#         self.lines = {}
+#
+#         # Flatten axes
+#         axes_flat = self.axes.flatten() if isinstance(self.axes, np.ndarray) else [self.axes]
+#
+#         for (name, props), ax in zip(self.subplot_props.items(), axes_flat):
+#             self.axes_dict[name] = ax
+#             ax.set_title(name)
+#             ax.set_xlim(0, self.his_length)
+#             ax.set_ylim(*props['lim'])  # You may want to adjust this
+#             line, = ax.plot([], [], lw=1)
+#             self.lines[name] = line
+#
+#         self.fig.tight_layout()
+#         self.fig.canvas.draw()
+#         plt.show(block=False)
+#
+#     def plot(self, data: Dict[str, float]):
+#         for name, y_val in data.items():
+#             if name in self.axes_dict:
+#                 his = self.his[name]
+#                 his.append(y_val)
+#
+#                 line = self.lines[name]
+#                 line.set_ydata(his)
+#                 line.set_xdata(range(len(his)))
+#
+#         self.fig.canvas.draw()
+#         self.fig.canvas.flush_events()
+
+
+
 class BaseVisualizer:
-    figsize: Tuple[int, int]
-    subplot_shape: Tuple[int, int]
-    subplot_props: Dict[str, dict]
+    figsize: tuple
+    subplot_shape: tuple
+    subplot_props: dict
     his_length: int
 
     def __init__(self):
-        assert len(self.subplot_props) == self.subplot_shape[0] * self.subplot_shape[1], "Names must match subplot grid size"
+        # History buffers
+        self.his = {name: deque(maxlen=self.his_length) for name in self.subplot_props}
 
-        self.his = {n: deque(maxlen=self.his_length) for n in self.subplot_props}
+        # Create figure and axes
+        self.fig, axes = plt.subplots(*self.subplot_shape, figsize=self.figsize)
+        axes_flat = axes.flatten() if hasattr(axes, 'flatten') else [axes]
 
-        self.fig, self.axes = plt.subplots(*self.subplot_shape, figsize=self.figsize)
-        self.axes_dict = {}
+        # Prepare animated lines, static limit lines, and cache backgrounds
         self.lines = {}
-
-        # Flatten axes
-        axes_flat = self.axes.flatten() if isinstance(self.axes, np.ndarray) else [self.axes]
-
+        self.backgrounds = {}
         for (name, props), ax in zip(self.subplot_props.items(), axes_flat):
-            self.axes_dict[name] = ax
             ax.set_title(name)
             ax.set_xlim(0, self.his_length)
-            ax.set_ylim(*props['lim'])  # You may want to adjust this
-            line, = ax.plot([], [], lw=1)
+            ax.set_ylim(*props['lim'])
+
+            # Draw static horizontal limit lines if provided
+            if 'upper' in props:
+                ax.axhline(props['upper'], linestyle='--')
+            if 'lower' in props:
+                ax.axhline(props['lower'], linestyle='--')
+
+            # Create animated line for data
+            line, = ax.plot([], [], lw=1, animated=True)
             self.lines[name] = line
 
-        self.fig.tight_layout()
+        # Disable any unused axes
+        for ax in axes_flat[len(self.subplot_props):]:
+            ax.axis('off')
+
+        # Draw once and cache a clean background for each subplot
         self.fig.canvas.draw()
+        for name, line in self.lines.items():
+            ax = line.axes
+            self.backgrounds[name] = self.fig.canvas.copy_from_bbox(ax.bbox)
+
         plt.show(block=False)
 
-    def plot(self, data: Dict[str, float]):
+    def plot(self, data: dict):
+        # data: mapping subplot name -> new y-value
         for name, y_val in data.items():
-            if name in self.axes_dict:
-                his = self.his[name]
-                his.append(y_val)
+            if name not in self.lines:
+                continue
 
-                line = self.lines[name]
-                line.set_ydata(his)
-                line.set_xdata(range(len(his)))
+            buf = self.his[name]
+            buf.append(y_val)
+            y = np.array(buf)
+            x = np.arange(len(y))
 
-                # ax = self.axes_dict[name]
-                # ax.set_xlim(0, self.his_length)
-                # y_min, y_max = min(his), max(his)
-                # if y_min == y_max:
-                #     y_min -= 0.1
-                #     y_max += 0.1
-                # ax.set_ylim(y_min, y_max)
+            line = self.lines[name]
+            ax = line.axes
 
-        self.fig.canvas.draw()
+            # Restore the clean background (with limit lines baked in)
+            self.fig.canvas.restore_region(self.backgrounds[name])
+
+            # Update line data
+            line.set_data(x, y)
+
+            # Redraw just this line
+            ax.draw_artist(line)
+
+            # Blit the updated region to the screen
+            self.fig.canvas.blit(ax.bbox)
+
+        # Flush GUI events
         self.fig.canvas.flush_events()
+
 
 
 class T1ActionsVisualizer(BaseVisualizer):
@@ -176,12 +243,22 @@ class T1DofVelVisualizer(BaseVisualizer):
     his_length = 50
 
 
-class T1GravityVisualizer(BaseVisualizer):
-    figsize = (6, 12)
-    subplot_shape = (3, 1)
+class T1TorqueVisualizer(BaseVisualizer):
+    figsize = (12, 12)
+    subplot_shape = (6, 2)
     subplot_props = {
-        'X': {'lim': (-0.1, 0.1)},
-        'Y': {'lim': (-0.1, 0.1)},
-        'Z': {'lim': (-1., 0.)},
+        # 'Waist': {'lim': (-3, 3)},
+        'Left_Hip_Pitch': {'lim': (-55, 55), 'upper': 45, 'lower': -45},
+        'Right_Hip_Pitch': {'lim': (-55, 55), 'upper': 45, 'lower': -45},
+        'Left_Hip_Roll': {'lim': (-40, 40), 'upper': 30, 'lower': -30},
+        'Right_Hip_Roll': {'lim': (-40, 40), 'upper': 30, 'lower': -30},
+        'Left_Hip_Yaw': {'lim': (-40, 40), 'upper': 30, 'lower': -30},
+        'Right_Hip_Yaw': {'lim': (-40, 40), 'upper': 30, 'lower': -30},
+        'Left_Knee_Pitch': {'lim': (-70, 70), 'upper': 60, 'lower': -60},
+        'Right_Knee_Pitch': {'lim': (-70, 70), 'upper': 60, 'lower': -60},
+        'Left_Ankle_Pitch': {'lim': (-30, 30), 'upper': 20, 'lower': -20},
+        'Right_Ankle_Pitch': {'lim': (-30, 30), 'upper': 20, 'lower': -20},
+        'Left_Ankle_Roll': {'lim': (-25, 25), 'upper': 15, 'lower': -15},
+        'Right_Ankle_Roll': {'lim': (-25, 25), 'upper': 15, 'lower': -15},
     }
     his_length = 50

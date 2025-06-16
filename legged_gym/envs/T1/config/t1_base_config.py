@@ -115,7 +115,7 @@ class T1BaseCfg(BaseConfig):
 
         class noise_scales:
             dof_pos = 0.01
-            dof_vel = 0.1
+            dof_vel = 0.5
             lin_vel = 0.1
             ang_vel = 0.1
             gravity = 0.1
@@ -154,11 +154,11 @@ class T1BaseCfg(BaseConfig):
 
         add_dof_lag = False
         randomize_dof_lag = True  # if False, max delay will be used
-        dof_lag_range = (0, 20)
+        dof_lag_range = (0, 6)
 
         add_imu_lag = False
         randomize_imu_lag = True  # if False, max delay will be used
-        imu_lag_range = (0, 10)
+        imu_lag_range = (0, 6)
 
         randomize_base_mass = False
         added_mass_range = [-2.5, 2.5]
@@ -194,8 +194,8 @@ class T1BaseCfg(BaseConfig):
         motor_offset_range = [-0.035, 0.035]  # Offset to add to the motor angles
 
         randomize_gains = False
-        kp_multiplier_range = [0.95, 1.05]
-        kd_multiplier_range = [0.95, 1.05]
+        kp_multiplier_range = [0.8, 1.2]
+        kd_multiplier_range = [0.8, 1.2]
 
         randomize_torque = False
         torque_multiplier_range = [0.8, 1.2]
@@ -296,6 +296,13 @@ class T1BaseCfg(BaseConfig):
         max_linear_velocity = 1000.
         armature = 0.
         thickness = 0.01
+
+        use_soft_limits = True
+        sim_dof_limit_mul = 10.  # if we are using soft limit, we can relax the simulation limit
+
+        soft_dof_pos_limit = 0.9
+        soft_dof_vel_limit = 0.9
+        soft_dof_torque_limit = 1.0
 
     class viewer:
         ref_env = 0

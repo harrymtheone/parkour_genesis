@@ -196,8 +196,12 @@ class BaseTask:
         self.soft_dof_pos_limits = self.sim.dof_pos_limits.clone()
         m = (self.soft_dof_pos_limits[:, 0] + self.soft_dof_pos_limits[:, 1]) / 2
         r = self.soft_dof_pos_limits[:, 1] - self.soft_dof_pos_limits[:, 0]
-        self.soft_dof_pos_limits[:, 0] = (m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit)
-        self.soft_dof_pos_limits[:, 1] = (m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit)
+        self.soft_dof_pos_limits[:, 0] = (m - 0.5 * r * self.cfg.asset.soft_dof_pos_limit)
+        self.soft_dof_pos_limits[:, 1] = (m + 0.5 * r * self.cfg.asset.soft_dof_pos_limit)
+
+        # compute soft dof velocity limits
+        self.soft_dof_vel_limits = self.sim.dof_vel_limits.clone() * self.cfg.asset.soft_dof_vel_limit
+        self.soft_dof_torque_limits = self.sim.dof_torque_limits.clone() * self.cfg.asset.soft_dof_torque_limit
 
         # initialize env reset origin and goals
         self._get_env_origins()
@@ -278,9 +282,17 @@ class BaseTask:
             torques[:] -= torch.sign(self.sim.dof_vel) * self.randomized_joint_coulomb
 
         if self.cfg.domain_rand.randomize_torque:
+            # self.torque_mul[:] = torch_rand_float(self.cfg.domain_rand.torque_multiplier_range[0],
+            #                                       self.cfg.domain_rand.torque_multiplier_range[1],
+            #                                       (self.num_envs, self.num_dof),
+            #                                       device=self.device)
             torques[:] *= self.torque_mul
 
-        return torch.clip(torques, -self.sim.torque_limits, self.sim.torque_limits)
+        return torch.clip(
+            torques,
+            -self.sim.dof_torque_limits * self.cfg.asset.sim_dof_limit_mul,
+            self.sim.dof_torque_limits * self.cfg.asset.sim_dof_limit_mul
+        )
 
     def _post_physics_step(self):
         self.global_counter += 1
@@ -387,8 +399,7 @@ class BaseTask:
         raise NotImplementedError
 
     def _compute_observations(self):
-        # raise NotImplementedError
-        pass
+        raise NotImplementedError
 
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. """
@@ -541,7 +552,7 @@ class BaseTask:
                 self.randomized_joint_coulomb = self._zero_tensor(self.num_envs, self.num_dof)
                 self.randomized_joint_viscous = self._zero_tensor(self.num_envs, self.num_dof)
 
-        if self.cfg.domain_rand.randomize_torque:
+        if self.cfg.domain_rand.randomize_torque:  # randomize each step, see compute_torques
             self.torque_mul[env_ids] = torch_rand_float(self.cfg.domain_rand.torque_multiplier_range[0],
                                                         self.cfg.domain_rand.torque_multiplier_range[1],
                                                         (len(env_ids), self.num_dof),

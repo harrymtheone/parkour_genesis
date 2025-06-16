@@ -226,16 +226,23 @@ class IsaacGymWrapper(BaseWrapper):
                 props[s].restitution = self.restitution_coeffs[env_id]
 
     def _process_dof_props(self, props, env_id: int):
-        if env_id == 0:
-            self.dof_pos_limits = self._zero_tensor(self.num_dof, 2)
-            self.torque_limits = self._zero_tensor(self.num_dof)
+        if env_id != 0:
+            return
 
-            for i in range(len(props)):
-                self.dof_pos_limits[i, 0] = props["lower"][i].item()
-                self.dof_pos_limits[i, 1] = props["upper"][i].item()
-                self.torque_limits[i] = props["effort"][i].item()
+        self.dof_pos_limits = self._zero_tensor(self.num_dof, 2)
+        self.dof_vel_limits = self._zero_tensor(self.num_dof)
+        self.dof_torque_limits = self._zero_tensor(self.num_dof)
 
         for i in range(len(props)):
+            self.dof_pos_limits[i, 0] = props["lower"][i].item()
+            self.dof_pos_limits[i, 1] = props["upper"][i].item()
+            self.dof_vel_limits[i] = props["velocity"][i].item()
+            self.dof_torque_limits[i] = props["effort"][i].item()
+
+            if self.cfg.asset.use_soft_limits:
+                props["velocity"][i] *= self.cfg.asset.sim_dof_limit_mul
+                props["effort"][i] *= self.cfg.asset.sim_dof_limit_mul
+
             # props["stiffness"][i] = self.cfg.asset.stiffness
             props["damping"][i] = self.cfg.asset.angular_damping
             # props["friction"][i] = self.cfg.asset.friction

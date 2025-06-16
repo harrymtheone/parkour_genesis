@@ -166,7 +166,7 @@ class Terrain:
         slope = difficulty * 0.4
         stair_up_height = 0.02 + 0.08 * difficulty
         stair_down_height = 0.02 + 0.08 * difficulty
-        stair_height_goal = 0.03 + 0.13 * difficulty  # 跑酷楼梯的高度
+        stair_height_goal = 0.07 + 0.09 * difficulty  # 跑酷楼梯的高度
         discrete_obstacles_height = 0.03 + difficulty * 0.15
         stepping_stones_size = 1.5 * (1.05 - difficulty)
         stone_distance = 0.05 if difficulty == 0 else 0.1

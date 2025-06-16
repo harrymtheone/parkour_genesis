@@ -31,7 +31,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         randomize_start_pos = switch
         randomize_start_z = False
         randomize_start_yaw = switch
-        randomize_start_vel = False
+        randomize_start_vel = switch
         randomize_start_pitch = switch
 
         randomize_start_dof_pos = False
@@ -44,7 +44,7 @@ class T1DreamWaqCfg(T1BaseCfg):
 
         push_robots = switch
         action_delay = switch
-        add_dof_lag = False
+        add_dof_lag = switch
         add_imu_lag = False
 
         randomize_torque = switch
@@ -54,7 +54,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = switch
-        randomize_coulomb_friction = False
+        randomize_coulomb_friction = switch
 
     class rewards:
         base_height_target = 0.64
@@ -80,7 +80,7 @@ class T1DreamWaqCfg(T1BaseCfg):
             # gait
             joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 0.2  # 0.2
+            feet_clearance = 1.0  # 0.2
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
@@ -174,8 +174,18 @@ class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):
         push_robots = True
         push_duration = [0.1, 0.2, 0.3]
 
-        action_delay_range = [(0, 4), (1, 4)]
+        action_delay = True
+        action_delay_range = [(0, 4), (0, 6)]
         action_delay_update_steps = 2000 * 24
+
+    class rewards(T1DreamWaqCfg.rewards):
+        only_positive_rewards = True
+        only_positive_rewards_until_epoch = 3000 + 100
+
+        class scales(T1DreamWaqCfg.rewards.scales):
+            dof_pos_limits = -10.
+            dof_vel_limits = -1.
+            dof_torque_limits = -0.1
 
     class control(T1DreamWaqCfg.control):
         # PD Drive parameters:

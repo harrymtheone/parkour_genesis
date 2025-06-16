@@ -29,6 +29,7 @@ def train(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     if args.debug:
+        task_cfg.runner.logger_backend = None
         # args.headless = False
         task_cfg.terrain.num_rows = 10
         task_cfg.terrain.num_cols = 5

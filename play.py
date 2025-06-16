@@ -39,17 +39,21 @@ def play(args):
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
+    task_cfg.domain_rand.push_robots = True
+    task_cfg.domain_rand.push_interval_s = 6
+    task_cfg.domain_rand.push_duration = [0.1]
     task_cfg.domain_rand.action_delay = True
     task_cfg.domain_rand.action_delay_range = [(2, 2)]
-    task_cfg.domain_rand.push_robots = False
-    task_cfg.domain_rand.push_duration = [0.3]
-    task_cfg.domain_rand.push_interval_s = 3
+    task_cfg.domain_rand.add_dof_lag = True
+    task_cfg.domain_rand.dof_lag_range = (6, 6)
+    task_cfg.domain_rand.randomize_torques = False
+    task_cfg.domain_rand.randomize_gains = False
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
         'rough_slope': 1,
-        'stairs_up': 0,
-        'stairs_down': 0,
+        'stairs_up': 1,
+        'stairs_down': 1,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
@@ -81,7 +85,7 @@ def play(args):
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, dones=dones)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True, dones=dones)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
 
             actions = rtn['actions']
@@ -101,9 +105,10 @@ def play(args):
                 args.est = est[env.lookat_id, :3] / 2
 
                 # env.draw_recon(recon_rough)
-                # env.draw_recon(recon_refine)
+                env.draw_recon(recon_refine)
                 # env.draw_est_hmap(est)
                 # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
+                env.draw_recon(obs_critic.scan)
             else:
                 env.draw_recon(obs_critic.scan)
 
@@ -159,12 +164,22 @@ def play(args):
             #     'Right_Ankle_Roll': dof_vel[env.lookat_id, 22],
             # })
 
-            # euler = env.projected_gravity.cpu().numpy()
-            # t1_vis.plot({
-            #     'X': euler[env.lookat_id, 0],
-            #     'Y': euler[env.lookat_id, 1],
-            #     'Z': euler[env.lookat_id, 2],
-            # })
+            torques = env.torques.cpu().numpy()
+            t1_vis.plot({
+                'Waist': torques[env.lookat_id, 10],
+                'Left_Hip_Pitch': torques[env.lookat_id, 11],
+                'Left_Hip_Roll': torques[env.lookat_id, 12],
+                'Left_Hip_Yaw': torques[env.lookat_id, 13],
+                'Left_Knee_Pitch': torques[env.lookat_id, 14],
+                'Left_Ankle_Pitch': torques[env.lookat_id, 15],
+                'Left_Ankle_Roll': torques[env.lookat_id, 16],
+                'Right_Hip_Pitch': torques[env.lookat_id, 17],
+                'Right_Hip_Roll': torques[env.lookat_id, 18],
+                'Right_Hip_Yaw': torques[env.lookat_id, 19],
+                'Right_Knee_Pitch': torques[env.lookat_id, 20],
+                'Right_Ankle_Pitch': torques[env.lookat_id, 21],
+                'Right_Ankle_Roll': torques[env.lookat_id, 22],
+            })
 
 
 if __name__ == '__main__':
@@ -176,8 +191,8 @@ if __name__ == '__main__':
     # line2, = axs[2].plot([], [])
 
     # t1_vis = vis.T1ActionsVisualizer()
-    t1_vis = vis.T1DofVelVisualizer()
-    # t1_vis = T1GravityVisualizer()
+    # t1_vis = vis.T1DofVelVisualizer()
+    t1_vis = vis.T1TorqueVisualizer()
 
     with torch.inference_mode():
         play(get_args())

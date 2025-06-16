@@ -240,7 +240,7 @@ class LocoTransformer(nn.Module):
 
 
 class Actor(nn.Module):
-    def __init__(self, env_cfg, train_cfg):
+    def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         len_latent = 16
         len_base_vel = 3
@@ -248,7 +248,7 @@ class Actor(nn.Module):
         len_latent_body = 16
 
         self.actor = make_linear_layers(env_cfg.n_proprio + len_latent + len_base_vel + len_latent_feet + len_latent_body,
-                                        *train_cfg.policy.actor_hidden_dims,
+                                        *policy_cfg.actor_hidden_dims,
                                         env_cfg.num_actions,
                                         activation_func=nn.ELU())
         self.actor.pop(-1)
@@ -264,18 +264,20 @@ class Actor(nn.Module):
 
 
 class Estimator(nn.Module):
-    from legged_gym.envs.pdd.pdd_scan_environment import ActorObs
+    is_recurrent = False
 
-    def __init__(self, env_cfg, train_cfg):
+    from legged_gym.envs.T1.t1_zju_environment import ActorObs
+
+    def __init__(self, env_cfg, policy_cfg):
         super().__init__()
 
         # self.obs_gru = ObsGRU()
         self.obs_enc = ObsEnc(env_cfg.len_prop_his * env_cfg.n_proprio)
         self.reconstructor = Recon()
         self.transformer = LocoTransformer()
-        self.actor = Actor(env_cfg, train_cfg)
+        self.actor = Actor(env_cfg, policy_cfg)
 
-        self.log_std = nn.Parameter(torch.log(train_cfg.policy.init_noise_std * torch.ones(env_cfg.num_actions)))
+        self.log_std = nn.Parameter(torch.ones(env_cfg.num_actions))
         self.distribution = None
 
     def act(self,
