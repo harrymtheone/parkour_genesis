@@ -44,23 +44,26 @@ class T1BaseEnv(HumanoidEnv):
         scale_1 = self.cfg.rewards.target_joint_pos_scale
         scale_2 = 2 * scale_1
 
-        # left swing
-        clock_l[clock_l > 0] = 0
+        # left swing (with double support phase)
+        clock_l[clock_l > -0.3] = 0
         ref_dof_pos[:, 1] = clock_l * scale_1
         ref_dof_pos[:, 4] = -clock_l * scale_2
         ref_dof_pos[:, 5] = clock_l * scale_1
 
-        # right swing
-        clock_r[clock_r > 0] = 0
+        # right swing (with double support phase)
+        clock_r[clock_r > -0.3] = 0
         ref_dof_pos[:, 7] = clock_r * scale_1
         ref_dof_pos[:, 10] = -clock_r * scale_2
         ref_dof_pos[:, 11] = clock_r * scale_1
 
-        # # Add double support phase
-        # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
-
         self.ref_dof_pos[:] = self.init_state_dof_pos
         self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
+
+    def _get_stance_mask(self):
+        # return float mask 1 is stance, 0 is swing
+        clock_input = torch.stack(self._get_clock_input(), dim=1)
+        stance_mask = (clock_input >= -0.3) | self.is_zero_command.unsqueeze(1)
+        return stance_mask
 
 
 @torch.jit.script

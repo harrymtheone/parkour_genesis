@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .model_zju_gru import ObsGRU, ReconGRU, Actor
+from .model_zju_gru import ObsGRU, ReconGRU, Actor, LocoTransformer
 from .utils import make_linear_layers, gru_wrapper
 
 
@@ -244,6 +244,7 @@ class EstimatorGRU(nn.Module):
         self.obs_gru = ObsGRU(env_cfg, policy_cfg)
         self.reconstructor = ReconGRU(env_cfg, policy_cfg)
         self.mixer = Mixer(env_cfg, policy_cfg)
+        # self.transformer = LocoTransformer(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions), requires_grad=True)
@@ -269,6 +270,7 @@ class EstimatorGRU(nn.Module):
         recon_output[use_estimated_values] = recon_refine
 
         est_latent, est = self.mixer.inference_forward(recon_output, latent_obs)
+        # est_latent, est, _, _ = self.transformer(recon_output, latent_obs)
 
         latent_input = torch.where(
             use_estimated_values.unsqueeze(1),
@@ -309,6 +311,7 @@ class EstimatorGRU(nn.Module):
         recon_output[use_estimated_values] = recon_refine
 
         est_latent, est = gru_wrapper(self.mixer.inference_forward, recon_output, latent_obs)
+        # est_latent, est, _, _ = gru_wrapper(self.transformer.forward, recon_output, latent_obs)
 
         latent_input = torch.where(
             use_estimated_values.unsqueeze(2),
@@ -329,6 +332,7 @@ class EstimatorGRU(nn.Module):
 
         if self.enable_VAE:
             est_latent, est, est_logvar, ot1 = gru_wrapper(self.mixer.forward, recon_refine.detach(), latent_obs)
+            # est_latent, est, est_logvar, ot1 = gru_wrapper(self.transformer.forward, recon_refine.detach(), latent_obs)
             return recon_rough.squeeze(2), recon_refine.squeeze(2), est_latent, est, est_logvar, ot1
         else:
             _, est = gru_wrapper(self.mixer.forward, recon_refine.detach(), latent_obs)

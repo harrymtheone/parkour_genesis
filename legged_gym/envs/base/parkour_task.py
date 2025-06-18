@@ -374,14 +374,13 @@ class ParkourTask(BaseTask):
             self.commands[env_ids_stair, 0] = sample_cmd(self.cmd_ranges_stair["lin_vel_x"],
                                                          self.cfg.commands.lin_vel_clip,
                                                          len(env_ids_stair))
-            # self.commands[env_ids_stair, 1] = sample_cmd(self.cmd_ranges_stair["lin_vel_y"],
-            #                                                     self.cfg.commands.lin_vel_clip,
-            #                                                     len(env_ids_stair))
-
+            self.commands[env_ids_stair, 1] = sample_cmd(self.cmd_ranges_stair["lin_vel_y"],
+                                                         self.cfg.commands.lin_vel_clip,
+                                                         len(env_ids_stair))
             self.commands[env_ids_stair, 3] = sample_cmd(self.cmd_ranges_stair["heading"],
                                                          self.cfg.commands.ang_vel_clip,
                                                          len(env_ids_stair))
-            motion_type[env_ids_stair] = sample_motion_type([2, 0, 0, 8], len(env_ids_stair))
+            motion_type[env_ids_stair] = sample_motion_type([2, 4, 0, 4], len(env_ids_stair))
 
         # sample command for parkour terrain (goal guided, no yaw command)
         env_ids_parkour = env_ids[self.env_class[env_ids] >= 4]
@@ -572,7 +571,10 @@ class ParkourTask(BaseTask):
         pts_non_edge = []
         for i in range(self.sim.edge_mask.shape[0]):
             for j in range(self.sim.edge_mask.shape[1]):
-                if j % 50 != 0:
+                if i % 2 != 0:
+                    continue
+
+                if j % 2 != 0:
                     continue
 
                 x = i * self.cfg.terrain.horizontal_scale - self.cfg.terrain.border_size

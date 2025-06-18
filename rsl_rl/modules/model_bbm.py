@@ -9,11 +9,12 @@ class WMEncoder(nn.Module):
     def __init__(self, env_cfg, wm_cfg):
         super().__init__()
 
+        n_command = 5
         self.n_stoch = wm_cfg.n_stoch
         self.n_discrete = wm_cfg.n_discrete
 
         self.mlp = nn.Sequential(
-            nn.Linear(env_cfg.n_proprio - env_cfg.num_actions, 64, bias=False),
+            nn.Linear(env_cfg.n_proprio - n_command - env_cfg.num_actions, 64, bias=False),
             nn.LayerNorm(64),
             nn.SiLU(),
             nn.Linear(64, 128, bias=False),
@@ -104,8 +105,9 @@ class WMDecoder(nn.Module):
     def __init__(self, env_cfg, train_cfg):
         super().__init__()
 
-        self.net = nn.ModuleDict({
+        num_command = 5
 
+        self.net = nn.ModuleDict({
             "prop": nn.Sequential(
                 nn.Linear(1536, 1024, bias=False),
                 nn.LayerNorm(1024),
@@ -116,13 +118,7 @@ class WMDecoder(nn.Module):
                 nn.Linear(1024, 1024, bias=False),
                 nn.LayerNorm(1024),
                 nn.SiLU(),
-                nn.Linear(1024, 1024, bias=False),
-                nn.LayerNorm(1024),
-                nn.SiLU(),
-                nn.Linear(1024, 1024, bias=False),
-                nn.LayerNorm(1024),
-                nn.SiLU(),
-                nn.Linear(1024, env_cfg.n_proprio - env_cfg.num_actions, bias=False),
+                nn.Linear(1024, env_cfg.n_proprio - num_command - env_cfg.num_actions, bias=False),
             ),
 
             "depth": nn.Sequential(
@@ -187,29 +183,22 @@ class RSSM(nn.Module):
         if self.initial == "learned":
             self.W = nn.Parameter(torch.zeros(1, self.cfg.n_deter))
 
-    def step(self, proprio, depth, is_first_step):
-        prop_rssm = proprio[:, :-self.num_actions].clone()
-        prop_rssm[:, 6: 6 + 5] = 0.
-        prev_actions = proprio[:, -self.num_actions:]
-
+    def step(self, obs, is_first_step):
         if torch.any(is_first_step):
             self.reset(is_first_step)
 
         self.state_deter[:] = self.sequence_model(
             self.state_deter.unsqueeze(0),
             self.state_stoch.unsqueeze(0),
-            prev_actions.unsqueeze(0),
+            obs.last_actions.unsqueeze(0),
         ).squeeze(0)
 
-        post_digits = self.encoder(self.state_deter, prop_rssm, depth)
+        post_digits = self.encoder(self.state_deter, obs.proprio, obs.depth)
         self.state_stoch[:] = self.get_dist(post_digits).sample()
 
-        return self.get_feature(proprio)
+        return self.get_feature(obs.get_full_prop())
 
-    def train_step(self, prop, depth, state_deter, state_stoch, is_first_step):
-        prop_rssm = prop[:, :, :-self.num_actions].clone()
-        prop_rssm[:, :, 6: 6 + 5] = 0.
-        prev_actions = prop[:, :, -self.num_actions:]
+    def train_step(self, obs, state_deter, state_stoch, is_first_step):
 
         if torch.any(is_first_step):
             state_deter = state_deter.clone()
@@ -217,17 +206,14 @@ class RSSM(nn.Module):
             self.reset(is_first_step, state_deter=state_deter, state_stoch=state_stoch)
 
         state_deter_new = self.sequence_model(
-            state_deter[0].contiguous().unsqueeze(0), state_stoch, prev_actions)
+            state_deter[0].contiguous().unsqueeze(0), state_stoch, obs.last_actions)
 
-        post_digits = gru_wrapper(self.encoder.forward, state_deter_new, prop_rssm, depth)
+        post_digits = gru_wrapper(self.encoder.forward, state_deter_new, obs.proprio, obs.depth)
         state_stoch_new = self.get_dist(post_digits).sample()
 
-        return gru_wrapper(self.get_feature, prop, state_deter_new, state_stoch_new)
+        return gru_wrapper(self.get_feature, obs.get_full_prop(), state_deter_new, state_stoch_new)
 
-    def predict(self, prop, depth, state_deter, state_stoch, is_first_step):
-        prop_rssm = prop[:, :, :-self.num_actions].clone()
-        prop_rssm[:, :, 6: 6 + 5] = 0.
-        prev_actions = prop[:, :, -self.num_actions:]
+    def predict(self, obs, state_deter, state_stoch, is_first_step):
 
         if torch.any(is_first_step):
             state_deter = state_deter.clone()
@@ -235,32 +221,28 @@ class RSSM(nn.Module):
             self.reset(is_first_step, state_deter=state_deter, state_stoch=state_stoch)
 
         state_deter_new = self.sequence_model(
-            state_deter[0].contiguous().unsqueeze(0), state_stoch, prev_actions
-        )
+            state_deter[0].contiguous().unsqueeze(0), state_stoch, obs.last_actions)
 
         # prior_digits = gru_wrapper(self.dynamics.forward, state_deter_new)
 
-        post_digits = gru_wrapper(self.encoder.forward, state_deter_new, prop_rssm, depth)
+        post_digits = gru_wrapper(self.encoder, state_deter_new, obs.proprio, obs.depth)
         state_stoch_new = self.get_dist(post_digits).sample()
 
         prop_pred, depth_pred, rew_pred = gru_wrapper(self.decoder, state_deter_new, state_stoch_new)
 
         return prop_pred, depth_pred, rew_pred
 
-    def play_step(self, proprio, depth, is_first_step, sample=True):
-        prop_rssm = proprio[:, :-self.num_actions]
-        prev_actions = proprio[:, -self.num_actions:]
-
+    def play_step(self, obs, is_first_step, sample=True):
         if torch.any(is_first_step):
             self.reset(is_first_step)
 
         self.state_deter[:] = self.sequence_model(
             self.state_deter.unsqueeze(0),
             self.state_stoch.unsqueeze(0),
-            prev_actions.unsqueeze(0),
+            obs.last_actions.unsqueeze(0),
         ).squeeze(0)
 
-        post_digits = self.encoder(self.state_deter, prop_rssm, depth)
+        post_digits = self.encoder(self.state_deter, obs.proprio, obs.depth)
 
         if sample:
             self.state_stoch[:] = self.get_dist(post_digits).sample()
@@ -269,7 +251,7 @@ class RSSM(nn.Module):
 
         prop, depth, rew = self.decoder(self.state_deter, self.state_stoch)
 
-        return self.get_feature(proprio), {'wm_prop': prop, 'wm_depth': depth, 'wm_rew': rew}
+        return self.get_feature(obs.get_full_prop()), {'wm_prop': prop, 'wm_depth': depth, 'wm_rew': rew}
 
     def reset(self, dones, state_deter=None, state_stoch=None):
         if state_deter is None:

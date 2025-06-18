@@ -302,7 +302,7 @@ class T1BaseCfg(BaseConfig):
 
         soft_dof_pos_limit = 0.9
         soft_dof_vel_limit = 0.9
-        soft_dof_torque_limit = 1.0
+        soft_dof_torque_limit = 0.9
 
     class viewer:
         ref_env = 0

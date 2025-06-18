@@ -78,8 +78,8 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [0.6, 1.2]
-            lin_vel_y = [-0.5, 0.2]
+            lin_vel_x = [-0.3, 0.8]
+            lin_vel_y = [-0.3, 0.3]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
@@ -262,7 +262,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
         runner_name = 'rl_dream'  # rl, distil, mixed
         algorithm_name = 'ppo_zju_mc'
 
-        max_iterations = 6000  # number of policy updates
+        max_iterations = 20000  # number of policy updates
 
 
 # -----------------------------------------------------------------------------------------------
@@ -309,6 +309,8 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
 
         class scales(T1_Multi_Critic_Cfg.rewards.scales):
             dof_vel_smoothness = -1e-3
+
+            feet_stumble = -3.
 
             head_acc = -0.1
 

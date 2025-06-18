@@ -39,13 +39,13 @@ def play(args):
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
-    task_cfg.domain_rand.push_robots = True
+    task_cfg.domain_rand.push_robots = False
     task_cfg.domain_rand.push_interval_s = 6
     task_cfg.domain_rand.push_duration = [0.1]
     task_cfg.domain_rand.action_delay = True
     task_cfg.domain_rand.action_delay_range = [(2, 2)]
     task_cfg.domain_rand.add_dof_lag = True
-    task_cfg.domain_rand.dof_lag_range = (6, 6)
+    task_cfg.domain_rand.dof_lag_range = (3, 3)
     task_cfg.domain_rand.randomize_torques = False
     task_cfg.domain_rand.randomize_gains = False
 
@@ -63,7 +63,7 @@ def play(args):
         'parkour_box': 0,
         'parkour_step': 0,
         'parkour_stair': 1,
-        'parkour_mini_stair': 0,
+        'parkour_mini_stair': 1,
         'parkour_flat': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
@@ -108,7 +108,7 @@ def play(args):
                 env.draw_recon(recon_refine)
                 # env.draw_est_hmap(est)
                 # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
-                env.draw_recon(obs_critic.scan)
+                # env.draw_recon(obs.scan)
             else:
                 env.draw_recon(obs_critic.scan)
 

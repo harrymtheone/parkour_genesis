@@ -60,7 +60,7 @@ class T1_BBM_Cfg(T1BaseCfg):
         sw_switch = True
 
         class flat_ranges:
-            lin_vel_x = [-0.6, 0.6]
+            lin_vel_x = [-1.0, 1.0]
             lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]
 
@@ -117,7 +117,7 @@ class T1_BBM_Cfg(T1BaseCfg):
 
         push_robots = True
         action_delay = True
-        action_delay_range = [(0, 5)]
+        action_delay_range = [(0, 4)]
         add_dof_lag = True
         add_imu_lag = False
 
@@ -154,22 +154,22 @@ class T1_BBM_Cfg(T1BaseCfg):
             # gait
             joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 0.2
+            feet_clearance = 1.0
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
 
             # vel tracking
-            tracking_lin_vel = 2.0
+            tracking_lin_vel = 2.5
             tracking_goal_vel = 3.0
             tracking_ang_vel = 2.5
             vel_mismatch_exp = 0.5
 
             # contact
             feet_slip = -1.
-            feet_contact_forces = -0.001
-            feet_stumble = -1.0
-            # feet_edge = -0.5
+            feet_contact_forces = -0.003
+            feet_stumble = -1.
+            # feet_edge = -0.3
             foothold = -1.
 
             # base pos
@@ -180,11 +180,13 @@ class T1_BBM_Cfg(T1BaseCfg):
 
             # energy
             action_smoothness = -3e-3
+            # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
-            dof_vel_smoothness = -1e-3
             dof_acc = -1e-7
             collision = -1.
+
+            dof_torque_limits = -0.01
 
     class policy:
         # actor parameters

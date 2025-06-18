@@ -132,13 +132,12 @@ class HumanoidEnv(ParkourTask):
     def _get_clock_input(self):
         clock_l = torch.sin(2 * torch.pi * self.phase)
         clock_r = -torch.sin(2 * torch.pi * self.phase)
-        # clock_r = torch.sin(2 * torch.pi * (self.phase - 0.5))
         return clock_l, clock_r
 
     def _get_stance_mask(self):
         # return float mask 1 is stance, 0 is swing
         clock_input = torch.stack(self._get_clock_input(), dim=1)
-        stance_mask = (clock_input >= 0) | (torch.abs(clock_input) < 0.1) | self.is_zero_command.unsqueeze(1)
+        stance_mask = (clock_input >= 0) | self.is_zero_command.unsqueeze(1)
         return stance_mask
 
     def _get_foothold_points(self):
@@ -525,8 +524,9 @@ class HumanoidEnv(ParkourTask):
 
     def _reward_dof_torque_limits(self):
         lim = self.soft_dof_torque_limits.clone()
-        # lim[[15, 16, 21, 22]] *= 0.5
-        return (torch.abs(self.torques) / lim - 1).clip(min=0.).sum(dim=1)
+        rew = (torch.abs(self.torques) / lim - 1).clip(min=0.).sum(dim=1)
+        rew += torch.sum(self.torques > lim, dim=1, dtype=torch.float)
+        return rew
 
     def _reward_feet_edge(self):
         rew = torch.sum(self.feet_at_edge.float(), dim=-1)

@@ -73,9 +73,9 @@ class PPO_BBM(BaseAlgorithm):
             self.transition.critic_observations = obs_critic
             self.transition.state_deter = self.rssm.get_deter()
             self.transition.state_stoch = self.rssm.get_stoch()
-            self.transition.is_first_step = self.is_first_step
+            self.transition.is_first_step = self.is_first_step.clone()
 
-            wm_feature = self.rssm.step(obs.proprio, obs.depth, self.is_first_step)  # prev_actions is contained in obs.proprio
+            wm_feature = self.rssm.step(obs, self.is_first_step)  # prev_actions is contained in obs.proprio
             self.transition.wm_feature = wm_feature
 
             actions = self.actor.act(wm_feature)
@@ -183,11 +183,8 @@ class PPO_BBM(BaseAlgorithm):
             state_stoch_batch = batch['state_stoch']
             is_first_step_batch = batch['is_first_step']
 
-            prop = obs_batch.proprio
-            depth = obs_batch.depth
-
             with torch.no_grad():
-                wm_feature = self.rssm.train_step(prop, depth, state_deter_batch, state_stoch_batch, is_first_step_batch)
+                wm_feature = self.rssm.train_step(obs_batch, state_deter_batch, state_stoch_batch, is_first_step_batch)
 
             # ############################ PPO ############################
             critic_obs_batch = batch['critic_observations']
@@ -250,29 +247,24 @@ class PPO_BBM(BaseAlgorithm):
 
         return value_loss.item(), surrogate_loss.item(), entropy_loss.item(), kl_mean
 
-    def _update_rssm(self, batch: dict, batch_size=32):
+    def _update_rssm(self, batch: dict, batch_size=16):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            obs_batch = batch['observations'][:, :batch_size]
-            state_deter_batch = batch['state_deter'][:, :batch_size]
-            state_stoch_batch = batch['state_stoch'][:, :batch_size]
-            is_first_step_batch = batch['is_first_step'][:, :batch_size]
-            rewards_batch = batch['rewards'][:, :batch_size]
-
-            prop = obs_batch.proprio
-            depth = obs_batch.depth
+            batch_idx = torch.randperm(batch['masks'].shape[1])[:batch_size]
+            obs_batch = batch['observations'][:, batch_idx]
+            state_deter_batch = batch['state_deter'][:, batch_idx]
+            state_stoch_batch = batch['state_stoch'][:, batch_idx]
+            is_first_step_batch = batch['is_first_step'][:, batch_idx]
+            rewards_batch = batch['rewards'][:, batch_idx]
 
             prop_pred, depth_pred, rew_pred = self.rssm.predict(
-                prop, depth, state_deter_batch, state_stoch_batch, is_first_step_batch)
+                obs_batch, state_deter_batch, state_stoch_batch, is_first_step_batch)
 
             # KL Divergence
             # loss, dyn_loss, rep_loss = self.compute_dyn_rep_loss(prior_digits, post_digits)
 
             # maximum likelihood
-            prop_no_cmd = prop[:, :, :-self.rssm.num_actions].clone()
-            prop_no_cmd[:, :, 6: 6 + 5] = 0.
-
-            loss_prop = self.symlog_mse(prop_pred, prop_no_cmd)
-            loss_depth = self.mse_loss(depth_pred, depth)
+            loss_prop = self.symlog_mse(prop_pred, obs_batch.proprio)
+            loss_depth = self.mse_loss(depth_pred, obs_batch.depth)
             loss_rew = self.symexp_two_hot_loss(rew_pred, rewards_batch)
 
             loss = 1.0 * loss_prop + 1.0 * loss_depth + 0.01 * loss_rew
@@ -307,7 +299,7 @@ class PPO_BBM(BaseAlgorithm):
             assert 'dones' in kwargs
             dones = kwargs['dones']
 
-            feature, predictions = self.rssm.play_step(obs.proprio, obs.depth, dones, sample=False)
+            feature, predictions = self.rssm.play_step(obs, dones, sample=False)
             actions = self.actor.act(feature, **kwargs)
 
             predictions['actions'] = actions
