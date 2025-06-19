@@ -68,8 +68,8 @@ class T1PIEEnvironment(T1BaseEnv):
     def _post_physics_mid_step(self):
         super()._post_physics_mid_step()
 
-        self.goal_task_timer[self.reached_goal_ids] = 0
-        timer_increase = ~self.reached_goal_ids & ~self.is_zero_command
+        self.goal_task_timer[self.reached_goal_env] = 0
+        timer_increase = ~self.reached_goal_env & ~self.is_zero_command
         self.goal_task_timer[timer_increase] += 1 * self.commands[timer_increase, 0] / self.cfg.commands.parkour_ranges.lin_vel_x[1]
 
     def _compute_observations(self):

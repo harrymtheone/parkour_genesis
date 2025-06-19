@@ -85,10 +85,17 @@ class BaseTask:
 
         self.obs_scales = self.cfg.normalization.obs_scales
         self.only_positive_rewards = self.cfg.rewards.only_positive_rewards
-        self.reward_scales = class_to_dict(self.cfg.rewards.scales)
+        self.reward_scales = {}
+        self.reward_scales_variable = {}
 
-        for rew in self.reward_scales:
-            self.reward_scales[rew] = self.reward_scales[rew] * self.cfg.rewards.rew_norm_factor
+        for rew_name, scale in class_to_dict(self.cfg.rewards.scales).items():
+            if isinstance(scale, float):
+                self.reward_scales[rew_name] = scale * self.cfg.rewards.rew_norm_factor
+            elif isinstance(scale, tuple):
+                self.reward_scales_variable[rew_name] = scale
+                self.reward_scales[rew_name] = self.linear_change(*scale, cur_it=0) * self.cfg.rewards.rew_norm_factor
+            else:
+                raise ValueError(f'Unsupported scale type: {type(scale)}')
 
     def _init_buffers(self):
         self.base_euler = self._zero_tensor(self.num_envs, 3)  # in base frame
@@ -632,6 +639,9 @@ class BaseTask:
     def update_reward_curriculum(self, epoch):
         if self.cfg.rewards.only_positive_rewards:
             self.only_positive_rewards = epoch < self.cfg.rewards.only_positive_rewards_until_epoch
+
+        for rew_name, prop in self.reward_scales_variable.items():
+            self.reward_scales[rew_name] = self.linear_change(*prop, epoch)
 
     def _prepare_reward_function(self):
         # prepare list of functions

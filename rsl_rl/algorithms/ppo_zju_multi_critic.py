@@ -210,7 +210,25 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             mean_entropy_loss += entropy_loss
             mean_symmetry_loss += symmetry_loss
 
-            # ########################## estimation loss ##########################
+            # Use KL to adaptively update learning rate
+            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
+                if kl_mean > self.cfg.desired_kl * 2.0:
+                    self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+                elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
+                    self.learning_rate = min(1e-3, self.learning_rate * 1.5)
+
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = self.learning_rate
+
+            # Gradient step
+            self.optimizer.zero_grad()
+            self.scaler.scale(loss).backward()
+            # self.scaler.unscale_(self.optimizer)
+            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+
+            # # ########################## estimation loss ##########################
             loss_est = 0
             if update_est:
                 if self.enable_VAE:
@@ -228,19 +246,9 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
                 mean_recon_rough_loss += recon_rough_loss.item()
                 mean_recon_refine_loss += recon_refine_loss.item()
 
-            # Use KL to adaptively update learning rate
-            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-                if kl_mean > self.cfg.desired_kl * 2.0:
-                    self.learning_rate = max(1e-5, self.learning_rate / 1.5)
-                elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
-                    self.learning_rate = min(1e-3, self.learning_rate * 1.5)
-
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = self.learning_rate
-
             # Gradient step
             self.optimizer.zero_grad()
-            self.scaler.scale(loss + loss_est).backward()
+            self.scaler.scale(loss_est).backward()
             # self.scaler.unscale_(self.optimizer)
             # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
             self.scaler.step(self.optimizer)
@@ -367,15 +375,15 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
 
     # @torch.compile
-    def _compute_estimation_loss(self, batch: dict):
+    def _compute_estimation_loss(self, batch: dict, batch_size=128):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            batch_size = 128
+            batch_idx = torch.randperm(batch['masks'].size(1))[:batch_size]
 
-            obs_batch = batch['observations'][:, :batch_size]
-            obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'][:, :batch_size].contiguous()
-            recon_hidden_states_batch = batch['recon_hidden_states'][:, :batch_size].contiguous()
-            obs_next_batch = batch['observations_next'][:, :batch_size]
-            mask_batch = batch['masks'][:, :batch_size]
+            obs_batch = batch['observations'][:, batch_idx]
+            obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'][:, batch_idx].contiguous()
+            recon_hidden_states_batch = batch['recon_hidden_states'][:, batch_idx].contiguous()
+            obs_next_batch = batch['observations_next'][:, batch_idx]
+            mask_batch = batch['masks'][:, batch_idx]
 
             if self.enable_VAE:
                 recon_rough, recon_refine, est_latent, est, est_logvar, ot1 = self.actor.reconstruct(

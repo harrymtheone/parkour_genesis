@@ -26,7 +26,6 @@ def gen_info_panel(args, env):
     phase_bias = env.phase_bias[env.lookat_id].cpu().numpy() if hasattr(env, 'phase_bias') else ['None', 'None']
 
     friction_ratio = env.sim.friction_coeffs[env.lookat_id].item()
-    cmd_vx_correction = env.vel_correction[env.lookat_id, 0].cpu().numpy() if hasattr(env, 'vel_correction') else -100
 
     if args.headless:
         perc_contact_forces = torch.mean(env.contact_forces_avg, dim=0).cpu().numpy()
@@ -66,7 +65,9 @@ def gen_info_panel(args, env):
     table22.add_column(f"phase: {phase: .2f}")
     table22.add_column(f"phase ratio: {phase_increment_ratio}")
     table22.add_row(f"bias: {phase_bias[0]}", f"{phase_bias[1]}")
-    table22.add_row(f"friction: {friction_ratio: .2f}", f"{cmd_vx_correction: .2f}")
+    table22.add_row(f"friction: {friction_ratio: .2f}", f"timeout: {env.tracking_goal_timer[env.lookat_id]: .2f}")
+
+    table22.add_row(f"recon_loss: {getattr(args, 'recon_loss', 0.): .2f}", f"")
 
     grid = Table.grid()
     grid.add_row(table11, table12)
@@ -245,7 +246,7 @@ class T1DofVelVisualizer(BaseVisualizer):
 
 class T1TorqueVisualizer(BaseVisualizer):
     figsize = (12, 12)
-    subplot_shape = (6, 2)
+    subplot_shape = (7, 2)
     subplot_props = {
         # 'Waist': {'lim': (-3, 3)},
         'Left_Hip_Pitch': {'lim': (-55, 55), 'upper': 45, 'lower': -45},
@@ -260,5 +261,7 @@ class T1TorqueVisualizer(BaseVisualizer):
         'Right_Ankle_Pitch': {'lim': (-30, 30), 'upper': 20, 'lower': -20},
         'Left_Ankle_Roll': {'lim': (-25, 25), 'upper': 15, 'lower': -15},
         'Right_Ankle_Roll': {'lim': (-25, 25), 'upper': 15, 'lower': -15},
+        'Left_Contact_Forces': {'lim': (0, 700), 'upper': 300, 'lower': 0},
+        'Right_Contact_Forces': {'lim': (0, 700), 'upper': 300, 'lower': 0},
     }
     his_length = 50

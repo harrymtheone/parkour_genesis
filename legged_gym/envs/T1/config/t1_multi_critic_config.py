@@ -163,7 +163,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
 
         rew_norm_factor = 1.0
 
-        class scales:
+        class scales:  # float or (start, end, span, start_it)
             # gait
             joint_pos = 2.
             feet_contact_number = 1.2
@@ -175,8 +175,9 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             # vel tracking
             tracking_lin_vel = 2.5
             tracking_goal_vel = 3.0
+            # tracking_goal = 1.0
             tracking_ang_vel = 2.5
-            vel_mismatch_exp = 0.5
+            # timeout = (0., -10, 2000, 1000)
 
             # contact
             feet_slip = -1.
@@ -190,6 +191,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
+            vel_mismatch_exp = 0.5
 
             # energy
             action_smoothness = -3e-3
@@ -311,6 +313,7 @@ class T1_Multi_Critic_Stair_Cfg(T1_Multi_Critic_Cfg):
             dof_vel_smoothness = -1e-3
 
             feet_stumble = -3.
+            feet_contact_forces = -3e-3
 
             head_acc = -0.1
 

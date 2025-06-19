@@ -52,8 +52,8 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
         'rough_slope': 1,
-        'stairs_up': 1,
-        'stairs_down': 1,
+        'stairs_up': 0,
+        'stairs_down': 0,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
@@ -103,6 +103,7 @@ def play(args):
                 est = rtn['estimation']
 
                 args.est = est[env.lookat_id, :3] / 2
+                args.recon_loss = torch.nn.functional.l1_loss(obs.scan[env.lookat_id], recon_refine[env.lookat_id])
 
                 # env.draw_recon(recon_rough)
                 env.draw_recon(recon_refine)
@@ -165,6 +166,7 @@ def play(args):
             # })
 
             torques = env.torques.cpu().numpy()
+            feet_contact_forces = torch.norm(env.sim.contact_forces[:, env.feet_indices], dim=-1).cpu().numpy()
             t1_vis.plot({
                 'Waist': torques[env.lookat_id, 10],
                 'Left_Hip_Pitch': torques[env.lookat_id, 11],
@@ -179,6 +181,8 @@ def play(args):
                 'Right_Knee_Pitch': torques[env.lookat_id, 20],
                 'Right_Ankle_Pitch': torques[env.lookat_id, 21],
                 'Right_Ankle_Roll': torques[env.lookat_id, 22],
+                'Left_Contact_Forces': feet_contact_forces[env.lookat_id, 0],
+                'Right_Contact_Forces': feet_contact_forces[env.lookat_id, 1],
             })
 
 

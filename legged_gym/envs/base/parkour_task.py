@@ -45,7 +45,7 @@ class ParkourTask(BaseTask):
         self.target_yaw = self._zero_tensor(self.num_envs)  # used by info panel in play.py
         if self.sim.terrain is not None:
             self.reach_goal_timer = self._zero_tensor(self.num_envs)
-            self.reached_goal_ids = self._zero_tensor(self.num_envs, dtype=torch.bool)
+            self.reached_goal_env = self._zero_tensor(self.num_envs, dtype=torch.bool)
             self.reach_goal_cutoff = self._zero_tensor(self.num_envs, dtype=torch.bool)
             self.cur_goal_idx = self._zero_tensor(self.num_envs, dtype=torch.long)
             self.cur_goals = self._zero_tensor(self.num_envs, 3)
@@ -253,11 +253,11 @@ class ParkourTask(BaseTask):
 
             # update goals
             dist = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1)
-            self.reached_goal_ids[:] = (dist < self.cfg.env.next_goal_threshold) & (self.env_class >= 4)
+            self.reached_goal_env[:] = (dist < self.cfg.env.next_goal_threshold) & (self.env_class >= 4)
 
             # update goals
-            self.reach_goal_timer[self.reached_goal_ids] += 1
-            self.reach_goal_timer[~self.reached_goal_ids] = 0
+            self.reach_goal_timer[self.reached_goal_env] += 1
+            self.reach_goal_timer[~self.reached_goal_env] = 0
             next_flag = self.reach_goal_timer > self.cfg.env.reach_goal_delay / self.dt
             self.cur_goal_idx[next_flag] += 1
 
@@ -516,7 +516,7 @@ class ParkourTask(BaseTask):
         cur_goal_idx = min(self.cur_goal_idx[self.lookat_id].item(), len(goals) - 1)
         cur_goal = goals[cur_goal_idx]
 
-        if self.reached_goal_ids[self.lookat_id]:
+        if self.reached_goal_env[self.lookat_id]:
             self.sim.draw_points([cur_goal], self.cfg.env.next_goal_threshold, (0, 1, 0), sphere_lines=16)
         else:
             self.sim.draw_points([cur_goal], self.cfg.env.next_goal_threshold, (0, 0, 1), sphere_lines=16)

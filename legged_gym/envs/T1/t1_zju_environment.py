@@ -4,7 +4,9 @@ import torch
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_trans_quat, transform_by_yaw
+from ...utils.math import transform_by_trans_quat, transform_by_yaw, torch_rand_float
+
+TIMEOUT_TIME = 10.
 
 
 class ActorObs(ObsBase):
@@ -89,6 +91,8 @@ class T1ZJUEnvironment(T1BaseEnv):
         self.depth_scan_points = self._init_height_points(np.linspace(*bounding_box[:2], hmap_shape[0]),
                                                           np.linspace(*bounding_box[2:], hmap_shape[1]))
 
+        self.tracking_goal_timer = self._zero_tensor(self.num_envs)
+
     def _init_robot_props(self):
         super()._init_robot_props()
 
@@ -97,6 +101,30 @@ class T1ZJUEnvironment(T1BaseEnv):
 
         self.head_link_indices = self.sim.create_indices(
             self.sim.get_full_names(['H2'], True), True)
+
+    # def _post_physics_mid_step(self):
+    #     super()._post_physics_mid_step()
+    #
+    #     self.tracking_goal_timer[:] = torch.where(
+    #         self.reached_goal_env | self.is_zero_command | (self.env_class < 2),
+    #         0.,
+    #         self.tracking_goal_timer + self.dt
+    #     )
+    #
+    # def _reset_idx(self, env_ids: torch.Tensor):
+    #     super()._reset_idx(env_ids)
+    #     self.tracking_goal_timer[env_ids] = 0.
+    #
+    # def _update_command(self):
+    #     super()._update_command()
+    #
+    #     if self.sim.terrain is None:
+    #         return
+    #
+    #     env_is_parkour = self.env_class >= 4
+    #     time_left = torch.clip(TIMEOUT_TIME - self.tracking_goal_timer, min=1.0)
+    #     cmd_vel_xy = torch.norm(self.target_pos_rel, dim=1) / time_left
+    #     self.commands[env_is_parkour, 0] = cmd_vel_xy[env_is_parkour]
 
     def _compute_observations(self):
         """
@@ -150,7 +178,11 @@ class T1ZJUEnvironment(T1BaseEnv):
             (self.sim.dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 12D
             self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.ext_force[:, :2],  # 2
+
             self.ext_torque,  # 3
+            # torch.clip(self.target_pos_rel / 5., min=-1.0, max=1.0),
+            # torch.clip(self.tracking_goal_timer / TIMEOUT_TIME - 1.0, max=1.0).unsqueeze(1),
+
             self.sim.friction_coeffs,  # 1
             self.sim.payload_masses / 10.,  # 1
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
@@ -194,6 +226,71 @@ class T1ZJUEnvironment(T1BaseEnv):
         self.critic_his_buf.append(priv_obs, reset_flag)
         self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
+
+    # def step(self, actions):
+    #     """ Apply actions, simulate, call self.post_physics_step()
+    #
+    #     Args:
+    #         actions (torch.Tensor): Tensor of shape (num_envs, num_actions_per_env)
+    #     """
+    #     actions = actions.to(torch.float)
+    #
+    #     self.last_action_output[:] = actions
+    #
+    #     # clip action range
+    #     clip_actions = self.cfg.normalization.clip_actions / self.cfg.control.action_scale
+    #     self.actions[:, self.dof_activated] = torch.clip(actions, -clip_actions, clip_actions)
+    #
+    #     self.actions[:, [0, 1]] = torch_rand_float(-0.5, 0.5, (self.num_envs, 2), self.device)
+    #
+    #     # step the simulator
+    #     self._step_environment()
+    #     self._post_physics_step()
+    #
+    #     return self.actor_obs, self.critic_obs, self.rew_buf.clone(), self.reset_buf.clone(), self.extras
+
+    # def _reward_tracking_goal(self):
+    #     if self.sim.terrain is None:
+    #         return self._zero_tensor(self.num_envs)
+    #
+    #     root_lin_vel_xy = self.sim.root_lin_vel[:, :2]
+    #     root_lin_vel_xy_norm = torch.norm(root_lin_vel_xy, dim=1, keepdim=True)
+    #     root_lin_vel_unit_vec = torch.where(
+    #         root_lin_vel_xy_norm > self.cfg.commands.lin_vel_clip,
+    #         root_lin_vel_xy / (root_lin_vel_xy_norm + 1e-5),
+    #         0.
+    #     )
+    #
+    #     target_unit_vec = self.target_pos_rel / (torch.norm(self.target_pos_rel, dim=1, keepdim=True) + 1e-5)
+    #
+    #     rew = torch.sum(root_lin_vel_unit_vec * target_unit_vec, dim=1)
+    #     return rew
+    #
+    # def _reward_goal_distance(self):
+    #     pass
+    #
+    # def _reward_tracking_ang_vel(self):
+    #     """
+    #     Tracks angular velocity commands for yaw rotation.
+    #     Computes a reward based on how closely the robot's angular velocity matches the commanded yaw values.
+    #     """
+    #     ang_vel_error_abs = torch.abs(self.commands[:, 2] - self.base_ang_vel[:, 2])
+    #     ang_vel_error_square = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
+    #
+    #     rew = torch.where(
+    #         self.is_zero_command,
+    #         torch.exp(-ang_vel_error_abs * self.cfg.rewards.tracking_sigma * 2),
+    #         torch.exp(-ang_vel_error_square * self.cfg.rewards.tracking_sigma)
+    #     )
+    #     # rew[self.env_class >= 2] *= 0.5
+    #     return rew
+    #
+    # def _reward_timeout(self):
+    #     time_out = torch.clamp(self.tracking_goal_timer - TIMEOUT_TIME, min=0)
+    #     rew = time_out * self.target_pos_rel.norm(dim=1).clip(max=3.) / 3.
+    #
+    #     rew[self.env_class < 2] = 0.
+    #     return rew
 
     def render(self):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:

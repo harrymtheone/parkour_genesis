@@ -208,7 +208,8 @@ class T1BaseCfg(BaseConfig):
 
         default_joint_angles = {
             'AAHead_yaw': 0.,
-            'Head_pitch': 0.5236,
+            # 'Head_pitch': 0.5236,
+            'Head_pitch': 0.785,
 
             'Left_Shoulder_Pitch': 0.,
             'Left_Shoulder_Roll': -1.3,

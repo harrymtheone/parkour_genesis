@@ -167,13 +167,13 @@ class T1_BBM_Cfg(T1BaseCfg):
 
             # contact
             feet_slip = -1.
-            feet_contact_forces = -0.003
+            feet_contact_forces = -0.001
             feet_stumble = -1.
             # feet_edge = -0.3
             foothold = -1.
 
             # base pos
-            default_joint_pos = 2.0
+            default_joint_pos = 1.0
             orientation = 1.
             base_height = 0.2
             base_acc = 0.2
@@ -186,7 +186,7 @@ class T1_BBM_Cfg(T1BaseCfg):
             dof_acc = -1e-7
             collision = -1.
 
-            dof_torque_limits = -0.01
+            # dof_torque_limits = -0.01
 
     class policy:
         # actor parameters
