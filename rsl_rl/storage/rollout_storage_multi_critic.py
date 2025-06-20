@@ -104,7 +104,9 @@ class RolloutStorageMultiCritic:
 
     def _init_storage(self, transition):
         for n, v in transition.get_items():
-            if type(v) is bool:
+            if v is None:
+                continue
+            elif type(v) is bool:
                 # bool data
                 self.storage[n] = DataBuf(self.num_envs, self.num_transitions_per_env, (1,), torch.bool, self.device)
             elif isinstance(v, self.obs_base_cls):

@@ -37,6 +37,8 @@ def gen_info_panel(args, env):
     perc_feet_air_time = perc_feet_air_time / np.sum(perc_feet_air_time + 1e-5)
     # print(f'env level: {env.env_levels[env.lookat_id].cpu().numpy()}')
 
+    goal_timer = env.tracking_goal_timer[env.lookat_id] if hasattr(env, 'tracking_goal_timer') else 0.
+
     table11 = Table()
     table11.add_column(f'time: {env.episode_length_buf[env.lookat_id].item() * env.dt:.2f}')
     table11.add_column("vx")
@@ -65,7 +67,7 @@ def gen_info_panel(args, env):
     table22.add_column(f"phase: {phase: .2f}")
     table22.add_column(f"phase ratio: {phase_increment_ratio}")
     table22.add_row(f"bias: {phase_bias[0]}", f"{phase_bias[1]}")
-    table22.add_row(f"friction: {friction_ratio: .2f}", f"timeout: {env.tracking_goal_timer[env.lookat_id]: .2f}")
+    table22.add_row(f"friction: {friction_ratio: .2f}", f"timeout: {goal_timer: .2f}")
 
     table22.add_row(f"recon_loss: {getattr(args, 'recon_loss', 0.): .2f}", f"")
 

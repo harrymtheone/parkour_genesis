@@ -85,7 +85,7 @@ def play(args):
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True, dones=dones)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, dones=dones)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
 
             actions = rtn['actions']

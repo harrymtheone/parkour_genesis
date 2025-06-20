@@ -94,7 +94,7 @@ class SensorBuffer:
             self.buf[:, -1] = data
             return
 
-        delay = round(random.gauss(*self.delay_prop))
+        delay = max(round(random.gauss(*self.delay_prop)), 0)
 
         while (len(self.delay_buf) > 0) and (delay <= self.delay_buf[-1]):
             self.delay_data_buf.pop(-1)

@@ -22,6 +22,8 @@ from .pdd.config.pdd_zju_config import PddZJUCfg, PddZJUCfgPPO
 from .pdd.pdd_dreamwaq_environment import PddDreamWaqEnvironment
 from .pdd.pdd_scan_environment import PddScanEnvironment
 from .pdd.pdd_zju_environment import PddZJUEnvironment
+from .T1.config.t1_odom_config import T1_Odom_Cfg
+from .T1.t1_odom_environment import T1OdomEnvironment
 
 task_list = [
     # ['pdd_scan', PddScanEnvironment, PddScanCfg(), PddScanCfgPPO()],  # TODO: not finished yet
@@ -49,6 +51,8 @@ task_list = [
     ['t1_mc_stair', T1ZJUEnvironment, T1_Multi_Critic_Stair_Cfg()],
 
     ['t1_bbm', T1_BBM_Environment, T1_BBM_Cfg()],
+
+    ['t1_odom', T1OdomEnvironment, T1_Odom_Cfg()],
 
     ['t1_phase', T1_Phase_Environment, T1_Phase_Cfg()],
     ['t1_phase_stair', T1_Phase_Environment, T1_Phase_Stair_Cfg()],

@@ -50,7 +50,7 @@ class EstimatorGRU(nn.Module):
 
 
 def trace():
-    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r23', 47400
+    proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_045r26', 45800
     # proj, cfg, exptid, checkpoint = 't1', 't1_mc', 't1_mc_056', 39000
 
     trace_path = os.path.join('./traced')

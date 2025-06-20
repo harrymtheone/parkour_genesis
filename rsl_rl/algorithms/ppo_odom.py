@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.distributions import Normal, kl_divergence
 
-from rsl_rl.modules.model_zju_exp import EstimatorNoRecon, EstimatorGRU
+from rsl_rl.modules.model_odom import OdomTransformer, Actor
 from rsl_rl.modules.utils import UniversalCritic
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from .alg_base import BaseAlgorithm
@@ -26,13 +26,12 @@ def masked_mean(input_, mask):
 
 
 class Transition:
-    def __init__(self, enable_reconstructor):
+    def __init__(self):
         self.observations = None
         self.critic_observations = None
-        self.obs_enc_hidden_states = None
-        if enable_reconstructor:
-            self.recon_hidden_states = None
-            self.observations_next = None
+        self.actor_hidden_states = None
+        self.recon = None
+        self.priv = None
         self.actions = None
         self.rewards = None
         self.rewards_contact = None
@@ -52,7 +51,7 @@ class Transition:
             setattr(self, key, None)
 
 
-class PPO_ZJU_Multi_Critic(BaseAlgorithm):
+class PPO_Odom(BaseAlgorithm):
     def __init__(self, task_cfg, device=torch.device('cpu'), env=None, **kwargs):
         self.env = env
 
@@ -61,15 +60,11 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         self.cfg = task_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate
         self.device = device
-        self.enable_reconstructor = task_cfg.policy.enable_reconstructor
-        self.enable_VAE = task_cfg.policy.enable_VAE
 
         # PPO component
-        if self.enable_reconstructor:
-            self.actor = EstimatorGRU(task_cfg.env, task_cfg.policy).to(self.device)
-        else:
-            self.actor = EstimatorNoRecon(task_cfg.env, task_cfg.policy).to(self.device)
-        self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
+        self.odom = OdomTransformer(task_cfg.env, task_cfg.policy).to(self.device)
+        self.actor = Actor(task_cfg.env, task_cfg.policy).to(self.device)
+        self.actor.reset_std(self.cfg.init_noise_std)
 
         self.critic = nn.ModuleDict({
             'default': UniversalCritic(task_cfg.env, task_cfg.policy),
@@ -78,47 +73,29 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         self.optimizer = torch.optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
-        # reconstructor
-        self.mse_loss = nn.MSELoss()
-        self.l1_loss = nn.L1Loss()
-
         # Rollout Storage
-        self.transition = Transition(self.enable_reconstructor)
+        self.transition = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
-
-        # self.storage = RolloutStorage(task_cfg, self.device)
-
-        # self.storage.register_storage('rewards_contact', 0, (1,))
-        # self.storage.register_storage('values_contact', 0, (1,))
-        # self.storage.register_storage('returns_contact', 0, (1,))
-        #
-        # self.storage.register_storage('obs_enc_hidden_states', 1, (1, task_cfg.policy.obs_gru_hidden_size))
-        # if self.enable_reconstructor:
-        #     self.storage.register_storage('recon_hidden_states', 1, (2, task_cfg.policy.recon_gru_hidden_size))
-        #     self.storage.register_storage('observations_next', 2, cfg=task_cfg.env.obs_next)
-        #
-        # self.storage.compose_storage()
 
     def act(self, obs, obs_critic, use_estimated_values: torch.Tensor = None, **kwargs):
         # act function should run within torch.inference_mode context
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             # store observations
-            self.transition.observations = obs
+            self.transition.observations = obs.no_depth()
             self.transition.critic_observations = obs_critic
-            if self.actor.is_recurrent:
-                hidden = self.actor.get_hidden_state()
-                self.transition.obs_enc_hidden_states = hidden[0]
-                if self.enable_reconstructor:
-                    self.transition.recon_hidden_states = hidden[1]
+            self.transition.actor_hidden_states = self.actor.get_hidden_states()
 
-            actions = self.actor.act(obs, use_estimated_values=use_estimated_values)
+            if torch.any(use_estimated_values):
+                recon, priv = self.odom(obs.proprio, obs.depth)
+                self.transition.recon = recon
+                self.transition.priv = priv
+                actions = self.actor.act(obs, recon, priv, use_estimated_values=use_estimated_values)
+            else:
+                actions = self.actor.act(obs, None, None, use_estimated_values=use_estimated_values)
 
-            if self.actor.is_recurrent and self.transition.obs_enc_hidden_states is None:
+            if self.transition.actor_hidden_states is None:
                 # only for the first step where hidden_state is None
-                hidden = self.actor.get_hidden_state()
-                self.transition.obs_enc_hidden_states = 0 * hidden[0]
-                if self.enable_reconstructor:
-                    self.transition.recon_hidden_states = 0 * hidden[1]
+                self.transition.actor_hidden_states = 0 * self.actor.get_hidden_states()
 
             # store
             self.transition.actions = actions
@@ -131,8 +108,6 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
-        if self.enable_reconstructor:
-            self.transition.observations_next = args[0].as_obs_next()
         self.transition.dones = dones.unsqueeze(1)
 
         # from Logan
@@ -156,8 +131,7 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         # Record the transition
         self.storage.add_transitions(self.transition)
         self.transition.clear()
-        if self.actor.is_recurrent:
-            self.actor.reset(dones)
+        self.actor.reset(dones)
 
     def compute_returns(self, last_critic_obs):
         last_values_default = self.critic['default'].evaluate(last_critic_obs).detach()
@@ -165,36 +139,18 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         self.storage.compute_returns(last_values_default, last_values_contact, self.cfg.gamma, self.cfg.lam)
 
     def update(self, cur_it=0, **kwargs):
-        if cur_it < 5000:
-            update_est = True
-        elif cur_it < 20000:
-            update_est = cur_it % 5 == 0
-        else:
-            update_est = cur_it % 10 == 0
-
-        update_est &= self.enable_reconstructor
         mean_value_loss = 0
         mean_default_value_loss = 0
         mean_contact_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
-        mean_recon_rough_loss = 0
-        mean_recon_refine_loss = 0
-        mean_estimation_loss = 0
-        mean_prediction_loss = 0
-        mean_vae_loss = 0
         mean_symmetry_loss = 0
 
         kl_change = []
         num_updates = 0
 
-        if self.actor.is_recurrent:
-            generator = self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
-        else:
-            generator = self.storage.mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
-
-        for batch in generator:
+        for batch in self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs):
             # ########################## policy loss ##########################
             kl_mean, value_loss_default, value_loss_contact, surrogate_loss, entropy_loss, symmetry_loss = self._compute_policy_loss(batch)
             loss = surrogate_loss + self.cfg.value_loss_coef * (value_loss_default + value_loss_contact) - entropy_loss + symmetry_loss
@@ -203,12 +159,12 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             # policy statistics
             kl_change.append(kl_mean.item())
             mean_kl += kl_mean.item()
-            mean_default_value_loss += value_loss_default
-            mean_contact_value_loss += value_loss_contact
+            mean_default_value_loss += value_loss_default.item()
+            mean_contact_value_loss += value_loss_contact.item()
             mean_value_loss = mean_default_value_loss + mean_contact_value_loss
-            mean_surrogate_loss += surrogate_loss
-            mean_entropy_loss += entropy_loss
-            mean_symmetry_loss += symmetry_loss
+            mean_surrogate_loss += surrogate_loss.item()
+            mean_entropy_loss += entropy_loss.item()
+            # mean_symmetry_loss += symmetry_loss.item()
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -228,31 +184,6 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             self.scaler.step(self.optimizer)
             self.scaler.update()
 
-            # # ########################## estimation loss ##########################
-            if update_est:
-                if self.enable_VAE:
-                    estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss = self._compute_estimation_loss(batch)
-                    loss_est = estimation_loss + prediction_loss + vae_loss + recon_rough_loss + recon_refine_loss
-                else:
-                    estimation_loss, recon_rough_loss, recon_refine_loss = self._compute_estimation_loss(batch)
-                    loss_est = estimation_loss + recon_rough_loss + recon_refine_loss
-
-                # estimation statistics
-                mean_estimation_loss += estimation_loss.item()
-                if self.enable_VAE:
-                    mean_prediction_loss += prediction_loss.item()
-                    mean_vae_loss += vae_loss.item()
-                mean_recon_rough_loss += recon_rough_loss.item()
-                mean_recon_refine_loss += recon_refine_loss.item()
-
-                # Gradient step
-                self.optimizer.zero_grad()
-                self.scaler.scale(loss_est).backward()
-                # self.scaler.unscale_(self.optimizer)
-                # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-
         mean_kl /= num_updates
         mean_value_loss /= num_updates
         mean_default_value_loss /= num_updates
@@ -260,12 +191,6 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
         mean_symmetry_loss /= num_updates
-        if update_est:
-            mean_estimation_loss /= num_updates
-            mean_prediction_loss /= num_updates
-            mean_vae_loss /= num_updates
-            mean_recon_rough_loss /= num_updates
-            mean_recon_refine_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -286,15 +211,6 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         }
 
-        if update_est:
-            return_dict.update({
-                'Loss/estimation_loss': mean_estimation_loss,
-                'Loss/Ot+1 prediction_loss': mean_prediction_loss,
-                'Loss/VAE_loss': mean_vae_loss,
-                'Loss/recon_rough_loss': mean_recon_rough_loss,
-                'Loss/recon_refine_loss': mean_recon_refine_loss,
-            })
-
         return return_dict
 
     # @torch.compile
@@ -302,8 +218,9 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
             critic_obs_batch = batch['critic_observations']
-            obs_enc_hidden_states_batch = batch['obs_enc_hidden_states']
-            recon_hidden_states_batch = batch['recon_hidden_states'] if self.enable_reconstructor else None
+            actor_hidden_states_batch = batch['actor_hidden_states']
+            recon_batch = batch['recon'] if 'recon' in batch else None
+            priv_batch = batch['priv'] if 'priv' in batch else None
             mask_batch = batch['masks']
             actions_batch = batch['actions']
             default_values_batch = batch['values']
@@ -316,7 +233,9 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
             self.actor.train_act(
                 obs_batch,
-                hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
+                recon_batch,
+                priv_batch,
+                hidden_states=actor_hidden_states_batch,
                 use_estimated_values=use_estimated_values_batch
             )
 
@@ -357,21 +276,23 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
             # Entropy loss
             entropy_loss = self.cfg.entropy_coef * masked_mean(self.actor.entropy, mask_batch)
 
-            # Symmetry loss
-            batch_size = 4
-            action_mean_original = self.actor.action_mean[:batch_size].detach()
+            # # Symmetry loss
+            # batch_size = 4
+            # action_mean_original = self.actor.action_mean[:batch_size].detach()
+            #
+            # obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
+            # self.actor.train_act(
+            #     obs_mirrored_batch,
+            #     recon_batch,
+            #     priv_batch,
+            #     hidden_states=actor_hidden_states_batch,
+            #     use_estimated_values=use_estimated_values_batch
+            # )
+            #
+            # mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
+            # symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
 
-            obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
-            self.actor.train_act(
-                obs_mirrored_batch,
-                hidden_states=(obs_enc_hidden_states_batch, recon_hidden_states_batch),
-                use_estimated_values=use_estimated_values_batch[:batch_size]
-            )
-
-            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
-
-            return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
+            return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, 0.
 
     # @torch.compile
     def _compute_estimation_loss(self, batch: dict, batch_size=128):
@@ -416,8 +337,8 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
                 kwargs['use_estimated_values'] = use_estimated_values_bool & torch.ones(
                     self.task_cfg.env.num_envs, 1, dtype=torch.bool, device=self.device)
 
-            mean, recon_rough, recon_refine, est = self.actor.act(obs, **kwargs)
-            return {'actions': mean, 'recon_rough': recon_rough, 'recon_refine': recon_refine, 'estimation': est}
+            mean = self.actor.act(obs, None, None, **kwargs)
+            return {'actions': mean}
 
     def train(self):
         self.actor.train()
@@ -433,16 +354,6 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
-
-        # except RuntimeError:
-        #     from rsl_rl.modules.model_zju_gru import EstimatorNoRecon, EstimatorGRU
-        #
-        #     if self.enable_reconstructor:
-        #         self.actor = EstimatorGRU(self.task_cfg.env, self.task_cfg.policy).to(self.device)
-        #     else:
-        #         self.actor = EstimatorNoRecon(self.task_cfg.env, self.task_cfg.policy).to(self.device)
-        #
-        #     self.actor.load_state_dict(loaded_dict['actor_state_dict'])
 
     def save(self):
         return {
