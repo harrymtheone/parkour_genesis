@@ -610,10 +610,17 @@ class BaseTask:
             self.sim.set_dof_friction(friction_all, env_ids)
 
         if self.cfg.domain_rand.randomize_joint_armature:
-            self.joint_armatures[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_armature_range[0],
-                                                             self.cfg.domain_rand.joint_armature_range[1],
-                                                             (len(env_ids), 1),
-                                                             device=self.device).squeeze(1)
+            if self.cfg.domain_rand.joint_armature_sample_log_space:
+                self.joint_armatures[env_ids] = torch.exp(torch_rand_float(math.log(self.cfg.domain_rand.joint_armature_range[0]),
+                                                                           math.log(self.cfg.domain_rand.joint_armature_range[1]),
+                                                                           (len(env_ids), 1),
+                                                                           device=self.device).squeeze(1))
+            else:
+                self.joint_armatures[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_armature_range[0],
+                                                                 self.cfg.domain_rand.joint_armature_range[1],
+                                                                 (len(env_ids), 1),
+                                                                 device=self.device).squeeze(1)
+
             armatures = self.joint_armatures[env_ids, None].repeat(1, self.num_dof)
             self.sim.set_dof_armature(armatures, env_ids)
 

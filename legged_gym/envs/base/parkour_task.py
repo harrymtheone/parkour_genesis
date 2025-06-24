@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from legged_gym.utils.helpers import class_to_dict
-from legged_gym.utils.math import torch_rand_float, transform_by_yaw, wrap_to_pi
+from legged_gym.utils.math import torch_rand_float, transform_by_yaw, wrap_to_pi, transform_quat_by_quat, xyz_to_quat
 from legged_gym.utils.terrain import Terrain
 from .base_task import BaseTask
 
@@ -88,10 +88,6 @@ class ParkourTask(BaseTask):
             self.env_goals = self.terrain_goals[self.env_levels, self.env_cols]  # (num_envs, num_goals, 3))
             self.env_goal_num = self.terrain_goal_num[self.env_levels, self.env_cols]  # (num_envs, num_goals))
 
-            self.target_pos_rel = self._zero_tensor(self.num_envs, 2)
-            self.target_yaw = self._zero_tensor(self.num_envs)
-            self.num_trials = self._zero_tensor(self.num_envs, dtype=torch.long)
-
         else:
             super()._get_env_origins()
 
@@ -140,6 +136,59 @@ class ParkourTask(BaseTask):
 
             if self.sim.terrain is not None:
                 self.extras['reach_goals'] = self.reach_goal_cutoff.clone()
+
+    def _reset_root_state(self, env_ids):
+        env_rand = self.env_class[env_ids] < 2
+        num_env_rand = torch.sum(env_rand, dtype=torch.int).item()
+
+        # base position
+        root_pos = self.env_origins[env_ids] + self.init_state_pos
+
+        # randomize base position
+        if self.cfg.domain_rand.randomize_start_pos:
+            root_pos[env_rand, :2] += torch_rand_float(-self.cfg.domain_rand.randomize_start_pos_range,
+                                                       self.cfg.domain_rand.randomize_start_pos_range,
+                                                       (num_env_rand, 2),
+                                                       device=self.device)
+
+        if self.cfg.domain_rand.randomize_start_z:
+            root_pos[env_rand, 2] += torch.abs(torch_rand_float(-self.cfg.domain_rand.randomize_start_z_range,
+                                                                self.cfg.domain_rand.randomize_start_z_range,
+                                                                (num_env_rand, 1),
+                                                                device=self.device).squeeze(1))
+
+        # base velocity
+        root_lin_vel = self._zero_tensor(len(env_ids), 3)
+        root_ang_vel = self._zero_tensor(len(env_ids), 3)
+        if self.cfg.domain_rand.randomize_start_vel:
+            root_lin_vel[env_rand, :2] += torch_rand_float(-self.cfg.domain_rand.randomize_start_vel_range,
+                                                           self.cfg.domain_rand.randomize_start_vel_range,
+                                                           (num_env_rand, 2),
+                                                           device=self.device)
+
+        # randomize base orientation
+        rand_root_euler = self._zero_tensor(len(env_ids), 3)
+        if self.cfg.domain_rand.randomize_start_pitch:
+            rand_root_euler[env_rand, 1:2] = torch_rand_float(-self.cfg.domain_rand.randomize_start_pitch_range,
+                                                              self.cfg.domain_rand.randomize_start_pitch_range,
+                                                              (num_env_rand, 1),
+                                                              device=self.device)
+
+        if self.cfg.domain_rand.randomize_start_yaw:
+            rand_root_euler[env_rand, 2:3] = torch_rand_float(-self.cfg.domain_rand.randomize_start_yaw_range,
+                                                              self.cfg.domain_rand.randomize_start_yaw_range,
+                                                              (num_env_rand, 1),
+                                                              device=self.device)
+        root_quat = transform_quat_by_quat(
+            xyz_to_quat(rand_root_euler),
+            self.init_state_quat.repeat(len(env_ids), 1)
+        )
+
+        self.sim.set_root_state(env_ids,
+                                root_pos,
+                                root_quat,
+                                root_lin_vel,
+                                root_ang_vel)
 
     # ----------------------------------------- Height Measurement -------------------------------------------
 
@@ -417,7 +466,7 @@ class ParkourTask(BaseTask):
         target_vec_norm = self.target_pos_rel / (norm + 1e-5)
         self.target_yaw[:] = torch.atan2(target_vec_norm[:, 1], target_vec_norm[:, 0])
 
-        if self.global_counter % 5 == 0:
+        if self.global_counter > 5 and self.global_counter % 5 == 0:
             self.delta_yaw[:] = wrap_to_pi(self.target_yaw - self.base_euler[:, 2]) * (self.command_x_parkour > self.cfg.commands.lin_vel_clip)
         delta_yaw_error = 1.0 * self.delta_yaw
 

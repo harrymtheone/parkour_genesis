@@ -47,7 +47,7 @@ class T1_Multi_Critic_Cfg(T1BaseCfg):
             pitch_range = [-3, 3]
 
             data_format = 'depth'  # depth, cloud, hmap
-            update_interval = 5
+            update_interval = 1
             delay_prop = (5, 1)  # Gaussian (mean, std)
 
             resolution = (106, 60)  # width, height

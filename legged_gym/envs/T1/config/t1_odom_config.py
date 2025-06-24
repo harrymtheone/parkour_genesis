@@ -55,8 +55,8 @@ class T1_Odom_Cfg(T1BaseCfg):
         sw_switch = True
 
         class flat_ranges:
-            lin_vel_x = [-1.0, 1.0]
-            lin_vel_y = [-0.6, 0.6]
+            lin_vel_x = [-0.5, 1.0]
+            lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
@@ -66,7 +66,7 @@ class T1_Odom_Cfg(T1BaseCfg):
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.3, 1.2]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.6, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
@@ -76,8 +76,8 @@ class T1_Odom_Cfg(T1BaseCfg):
         terrain_dict = {
             'smooth_slope': 3,
             'rough_slope': 1,
-            'stairs_up': 1,
-            'stairs_down': 1,
+            'stairs_up': 0,
+            'stairs_down': 0,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -86,8 +86,8 @@ class T1_Odom_Cfg(T1BaseCfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,
-            'parkour_mini_stair': 1,
+            'parkour_stair': 0,
+            'parkour_mini_stair': 0,
             'parkour_flat': 0,
         }
 
@@ -124,6 +124,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         randomize_joint_damping = False
         randomize_joint_friction = False
         randomize_joint_armature = True
+        joint_armature_sample_log_space = False
         randomize_coulomb_friction = True
 
     class rewards:
@@ -137,7 +138,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         EMA_update_alpha = 0.99
 
         cycle_time = 0.7  # 0.64
-        target_joint_pos_scale = 0.3  # 0.19
+        target_joint_pos_scale = 0.2  # 0.19
 
         min_dist = 0.25
         max_dist = 0.50
@@ -147,19 +148,17 @@ class T1_Odom_Cfg(T1BaseCfg):
 
         class scales:  # float or (start, end, span, start_it)
             # gait
-            joint_pos = 2.
-            feet_contact_number = 1.2
-            feet_clearance = 1.0
-            feet_distance = 0.2
-            knee_distance = 0.2
-            feet_rotation = 0.5
+            joint_pos = 1.0
+            feet_contact_number = 0.6
+            feet_clearance = 1.
+            feet_distance = -1.
+            knee_distance = -1.
+            feet_rotation = -0.3
 
             # vel tracking
             tracking_lin_vel = 2.5
             tracking_goal_vel = 3.0
-            # tracking_goal = 1.0
             tracking_ang_vel = 2.5
-            # timeout = (0., -10, 2000, 1000)
 
             # contact
             feet_slip = -1.
@@ -169,11 +168,13 @@ class T1_Odom_Cfg(T1BaseCfg):
             foothold = -1.
 
             # base pos
-            default_joint_pos = 2.0
-            orientation = 1.
-            base_height = 0.2
-            base_acc = 0.2
-            vel_mismatch_exp = 0.5
+            default_dof_pos = -0.04
+            default_dof_pos_yr = -1.
+            orientation = -1.
+            base_height = -10.
+            base_acc = -1.
+            lin_vel_z = -2.0
+            ang_vel_xy = -0.05
 
             # energy
             action_smoothness = -3e-3
@@ -209,8 +210,9 @@ class T1_Odom_Cfg(T1BaseCfg):
         # critic parameters
         critic_hidden_dims = [512, 256, 128]
 
+        odom_transformer_embed_dim = 64
+        odom_gru_hidden_size = 128
         estimator_output_dim = 3
-        transformer_embed_dim = 64
 
     class algorithm:
         # training params
@@ -236,7 +238,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         runner_name = 'rl_dream'  # rl, distil, mixed
         algorithm_name = 'ppo_odom'
 
-        max_iterations = 20000  # number of policy updates
+        max_iterations = 2000  # number of policy updates
 
 
 # -----------------------------------------------------------------------------------------------
@@ -277,21 +279,24 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
             'parkour_flat': 0,
         }
 
-    class rewards(T1_Odom_Cfg.rewards):
-        only_positive_rewards = True
-        only_positive_rewards_until_epoch = 20000 + 200  # after the epoch, turn off only_positive_reward
-
-        class scales(T1_Odom_Cfg.rewards.scales):
-            dof_vel_smoothness = -1e-3
-
-            feet_stumble = -3.
-            feet_contact_forces = -3e-3
-
-            head_acc = -0.1
-
-            dof_pos_limits = -10.
-            dof_vel_limits = -1.
-            dof_torque_limits = -0.1
+    # class rewards(T1_Odom_Cfg.rewards):
+    #     # only_positive_rewards = True
+    #     # only_positive_rewards_until_epoch = 20000 + 200  # after the epoch, turn off only_positive_reward
+    #
+    #     class scales(T1_Odom_Cfg.rewards.scales):
+    #         feet_stumble = -3.
+    #         feet_contact_forces = -3e-3
+    #
+    #         # tracking_goal = 1.0
+    #         # timeout = (0., -10, 2000, 1000)
+    #         # stall = -5.0
+    #
+    #         dof_vel_smoothness = -1e-3
+    #         # head_acc = -0.1
+    #
+    #         dof_pos_limits = -10.
+    #         dof_vel_limits = -1.
+    #         dof_torque_limits = -0.1
 
     class control(T1BaseCfg.control):
         # PD Drive parameters:

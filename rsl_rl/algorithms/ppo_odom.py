@@ -1,3 +1,6 @@
+import datetime
+import os
+
 import torch
 import torch.nn as nn
 from torch.distributions import Normal, kl_divergence
@@ -77,7 +80,41 @@ class PPO_Odom(BaseAlgorithm):
         self.transition = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
+        # dataset for odometry estimation
+        self.save_odom_data = False
+
+        if self.save_odom_data:
+            self.dataset_capacity = 10000
+            self.data_length = 50
+
+            self.buffer = {
+                'prop': torch.zeros(task_cfg.env.num_envs, self.data_length, task_cfg.env.n_proprio, dtype=torch.half, device=self.device),
+                'depth': torch.zeros(task_cfg.env.num_envs, self.data_length, 1, 64, 64, dtype=torch.half, device=self.device),
+                'recon': torch.zeros(task_cfg.env.num_envs, self.data_length, 2, *task_cfg.env.scan_shape, dtype=torch.half, device=self.device),
+                'priv': torch.zeros(task_cfg.env.num_envs, self.data_length, task_cfg.policy.estimator_output_dim, dtype=torch.half, device=self.device),
+                'masks': torch.zeros(task_cfg.env.num_envs, self.data_length, dtype=torch.bool, device=self.device),
+            }
+            self.buffer_ptr = torch.zeros(task_cfg.env.num_envs, dtype=torch.long, device=self.device)
+
+            self.dataset = {
+                'prop': torch.empty(self.dataset_capacity, self.data_length, task_cfg.env.n_proprio, dtype=torch.half, device='cpu'),
+                'depth': torch.empty(self.dataset_capacity, self.data_length, 1, 64, 64, dtype=torch.half, device='cpu'),
+                'recon': torch.empty(self.dataset_capacity, self.data_length, 2, *task_cfg.env.scan_shape, dtype=torch.half, device='cpu'),
+                'priv': torch.empty(self.dataset_capacity, self.data_length, task_cfg.policy.estimator_output_dim, dtype=torch.half, device='cpu'),
+                'masks': torch.empty(self.dataset_capacity, self.data_length, dtype=torch.bool, device='cpu'),
+            }
+            self.dataset_idx = 0
+
     def act(self, obs, obs_critic, use_estimated_values: torch.Tensor = None, **kwargs):
+        if self.save_odom_data:
+            # Store data in buffer at current pointer
+            self.buffer['prop'][:, self.buffer_ptr] = obs.proprio.half()
+            self.buffer['depth'][:, self.buffer_ptr] = obs.depth.half()
+            self.buffer['recon'][:, self.buffer_ptr] = obs.scan.half()
+            self.buffer['priv'][:, self.buffer_ptr] = obs.priv_actor.half()
+            self.buffer['masks'][:, self.buffer_ptr] = True
+            self.buffer_ptr[:] += 1
+
         # act function should run within torch.inference_mode context
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             # store observations
@@ -132,6 +169,38 @@ class PPO_Odom(BaseAlgorithm):
         self.storage.add_transitions(self.transition)
         self.transition.clear()
         self.actor.reset(dones)
+
+        if self.save_odom_data:
+            # Buffer logic: if any env is done, transfer it's buffer to dataset
+            finished = dones | (self.buffer_ptr >= self.data_length)
+            if torch.any(finished):
+                num_finished = torch.sum(finished).item()
+
+                if self.dataset_idx + num_finished > self.dataset_capacity:
+                    # Save dataset to disk
+                    save_dir = os.path.join('/home/harry/projects/parkour_genesis/logs/dataset')
+                    os.makedirs(save_dir, exist_ok=True)
+                    now = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                    torch.save(self.dataset, os.path.join(save_dir, f'{now}.pt'))
+
+                    # clear the dataset
+                    for key in self.dataset:
+                        self.dataset[key].zero_()
+                    self.dataset_idx = 0
+                else:
+                    self.dataset['prop'][self.dataset_idx: self.dataset_idx + num_finished] = self.buffer['prop'][finished].cpu()
+                    self.dataset['depth'][self.dataset_idx: self.dataset_idx + num_finished] = self.buffer['depth'][finished].cpu()
+                    self.dataset['recon'][self.dataset_idx: self.dataset_idx + num_finished] = self.buffer['recon'][finished].cpu()
+                    self.dataset['priv'][self.dataset_idx: self.dataset_idx + num_finished] = self.buffer['priv'][finished].cpu()
+                    self.dataset['masks'][self.dataset_idx: self.dataset_idx + num_finished] = self.buffer['masks'][finished].cpu()
+                    self.dataset_idx += num_finished
+
+                self.buffer_ptr[finished] = 0
+                self.buffer['prop'][finished] = 0
+                self.buffer['depth'][finished] = 0
+                self.buffer['recon'][finished] = 0
+                self.buffer['priv'][finished] = 0
+                self.buffer['masks'][finished] = False
 
     def compute_returns(self, last_critic_obs):
         last_values_default = self.critic['default'].evaluate(last_critic_obs).detach()
@@ -208,7 +277,6 @@ class PPO_Odom(BaseAlgorithm):
             'Loss/entropy_loss': mean_entropy_loss,
             'Loss/symmetry_loss': mean_symmetry_loss,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
-
         }
 
         return return_dict
@@ -353,7 +421,7 @@ class PPO_Odom(BaseAlgorithm):
             self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
-            self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
+            self.actor.reset_std(self.cfg.init_noise_std)
 
     def save(self):
         return {

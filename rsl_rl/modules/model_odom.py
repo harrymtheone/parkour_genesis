@@ -12,7 +12,7 @@ class OdomTransformer(nn.Module):
         num_layers = 2  # 2
         activation = nn.ReLU(inplace=True)
 
-        transformer_embed_dim = policy_cfg.transformer_embed_dim
+        transformer_embed_dim = policy_cfg.odom_transformer_embed_dim
 
         # patch embedding
         self.cnn_depth = nn.Conv2d(in_channels=1, out_channels=transformer_embed_dim, kernel_size=8, stride=8, bias=False)
@@ -33,6 +33,9 @@ class OdomTransformer(nn.Module):
             nn.TransformerEncoderLayer(d_model=transformer_embed_dim, nhead=num_heads, dim_feedforward=128, batch_first=True, dropout=0.),
             num_layers=num_layers
         )
+
+        self.gru = nn.GRU(input_size=transformer_embed_dim * 2, hidden_size=policy_cfg.odom_gru_hidden_size)
+        self.hidden_states = None
 
         # privileged information estimator
         self.estimator = nn.Sequential(
@@ -73,11 +76,13 @@ class OdomTransformer(nn.Module):
         token_terrain = torch.mean(out[:, 1:], dim=1)
         out = torch.cat([token_prop, token_terrain], dim=1)
 
+        out, self.hidden_states = self.gru(out.unsqueeze(1), self.hidden_states)
+
         # reconstructor
-        recon = self.reconstructor(out)
+        recon = self.reconstructor(out.squeeze(1))
 
         # estimator
-        priv = self.estimator(out)
+        priv = self.estimator(out.squeeze(1))
 
         return recon, priv
 
