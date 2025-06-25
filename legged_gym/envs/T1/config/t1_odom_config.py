@@ -1,3 +1,5 @@
+import numpy as np
+
 from .t1_base_config import T1BaseCfg
 
 
@@ -12,7 +14,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 86
+        num_critic_obs = 70
         len_critic_his = 50
 
         num_actions = 13
@@ -55,26 +57,29 @@ class T1_Odom_Cfg(T1BaseCfg):
         sw_switch = True
 
         class flat_ranges:
-            lin_vel_x = [-0.5, 1.0]
+            lin_vel_x = [-0.5, 0.8]
             lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [-0.3, 0.8]
-            lin_vel_y = [-0.3, 0.3]
+            lin_vel_x = [-0.5, 0.8]
+            lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.6, 1.2]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.3, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
+        body_pts_x = np.linspace(-0.8, 1.2, 32)
+        body_pts_y = np.linspace(-0.8, 0.8, 16)
+
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 3,
+            'smooth_slope': 2,
             'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
@@ -147,18 +152,59 @@ class T1_Odom_Cfg(T1BaseCfg):
         rew_norm_factor = 1.0
 
         class scales:  # float or (start, end, span, start_it)
+            # # gait
+            # joint_pos = 1.0
+            # feet_contact_number = 0.6
+            # feet_clearance = 1.
+            # feet_distance = -1.
+            # knee_distance = -1.
+            # feet_rotation = -0.3
+            #
+            # # vel tracking
+            # tracking_lin_vel = 2.5
+            # tracking_goal_vel = 3.0
+            # tracking_ang_vel = 2.5
+            #
+            # # contact
+            # feet_slip = -1.
+            # feet_contact_forces = -0.001
+            # feet_stumble = -1.
+            # # feet_edge = -0.3
+            # foothold = -1.
+            #
+            # # base pos
+            # default_dof_pos = -0.04
+            # default_dof_pos_yr = -1.
+            # orientation = -1.
+            # base_height = -10.
+            # base_acc = -1.
+            # lin_vel_z = -2.0
+            # ang_vel_xy = -0.05
+            #
+            # # energy
+            # action_smoothness = -3e-3
+            # # dof_vel_smoothness = -1e-3
+            # torques = -1e-5
+            # dof_vel = -5e-4
+            # dof_acc = -1e-7
+            # collision = -1.
+            #
+            # dof_torque_limits = -0.01
+
             # gait
-            joint_pos = 1.0
-            feet_contact_number = 0.6
-            feet_clearance = 1.
-            feet_distance = -1.
-            knee_distance = -1.
-            feet_rotation = -0.3
+            joint_pos = 2.
+            feet_contact_number = 1.2
+            feet_clearance = 1.0
+            feet_distance = 0.2
+            knee_distance = 0.2
+            feet_rotation = 0.5
 
             # vel tracking
             tracking_lin_vel = 2.5
             tracking_goal_vel = 3.0
+            # tracking_goal = 1.0
             tracking_ang_vel = 2.5
+            # timeout = (0., -10, 2000, 1000)
 
             # contact
             feet_slip = -1.
@@ -168,13 +214,11 @@ class T1_Odom_Cfg(T1BaseCfg):
             foothold = -1.
 
             # base pos
-            default_dof_pos = -0.04
-            default_dof_pos_yr = -1.
-            orientation = -1.
-            base_height = -10.
-            base_acc = -1.
-            lin_vel_z = -2.0
-            ang_vel_xy = -0.05
+            default_joint_pos = 2.0
+            orientation = 1.
+            base_height = 0.2
+            base_acc = 0.2
+            vel_mismatch_exp = 0.5
 
             # energy
             action_smoothness = -3e-3
@@ -186,21 +230,21 @@ class T1_Odom_Cfg(T1BaseCfg):
 
             dof_torque_limits = -0.01
 
-    class control(T1BaseCfg.control):
-        # PD Drive parameters:
-        stiffness = {
-            'Head': 30,
-            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
-            'Waist': 100,
-            'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
-        }
-
-        damping = {
-            'Head': 1,
-            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
-            'Waist': 3,
-            'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
-        }
+    # class control(T1BaseCfg.control):
+    #     # PD Drive parameters:
+    #     stiffness = {
+    #         'Head': 30,
+    #         'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+    #         'Waist': 100,
+    #         'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
+    #     }
+    #
+    #     damping = {
+    #         'Head': 1,
+    #         'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+    #         'Waist': 3,
+    #         'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
+    #     }
 
     class policy:
         # actor parameters

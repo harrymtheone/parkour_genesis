@@ -62,8 +62,8 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 0,
-        'parkour_mini_stair': 0,
+        'parkour_stair': 1,
+        'parkour_mini_stair': 1,
         'parkour_flat': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
@@ -80,6 +80,8 @@ def play(args):
     task_cfg.runner.resume = True
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
+
+    runner.alg.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-06-25_13-18-35/latest.pth', weights_only=True))
 
     with Live(vis.gen_info_panel(args, env)) as live:
         for step_i in range(10 * int(env.max_episode_length)):
@@ -189,7 +191,7 @@ def play(args):
 if __name__ == '__main__':
     # t1_vis = vis.T1ActionsVisualizer()
     # t1_vis = vis.T1DofVelVisualizer()
-    t1_vis = vis.T1TorqueVisualizer()
+    # t1_vis = vis.T1TorqueVisualizer()
 
     with torch.inference_mode():
         play(get_args())

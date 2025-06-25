@@ -1,6 +1,3 @@
-import datetime
-import os
-
 import torch
 import torch.nn as nn
 from torch.distributions import Normal, kl_divergence
@@ -65,7 +62,12 @@ class PPO_Odom(BaseAlgorithm):
         self.device = device
 
         # PPO component
-        self.odom = OdomTransformer(task_cfg.env, task_cfg.policy).to(self.device)
+        self.odom = OdomTransformer(
+            task_cfg.env.n_proprio,
+            task_cfg.policy.odom_transformer_embed_dim,
+            task_cfg.policy.odom_gru_hidden_size,
+            task_cfg.policy.estimator_output_dim
+        ).to(self.device)
         self.actor = Actor(task_cfg.env, task_cfg.policy).to(self.device)
         self.actor.reset_std(self.cfg.init_noise_std)
 
@@ -80,41 +82,7 @@ class PPO_Odom(BaseAlgorithm):
         self.transition = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
-        # dataset for odometry estimation
-        self.save_odom_data = False
-
-        if self.save_odom_data:
-            self.dataset_capacity = 10000
-            self.data_length = 50
-
-            self.buffer = {
-                'prop': torch.zeros(task_cfg.env.num_envs, self.data_length, task_cfg.env.n_proprio, dtype=torch.half, device=self.device),
-                'depth': torch.zeros(task_cfg.env.num_envs, self.data_length, 1, 64, 64, dtype=torch.half, device=self.device),
-                'recon': torch.zeros(task_cfg.env.num_envs, self.data_length, 2, *task_cfg.env.scan_shape, dtype=torch.half, device=self.device),
-                'priv': torch.zeros(task_cfg.env.num_envs, self.data_length, task_cfg.policy.estimator_output_dim, dtype=torch.half, device=self.device),
-                'masks': torch.zeros(task_cfg.env.num_envs, self.data_length, dtype=torch.bool, device=self.device),
-            }
-            self.buffer_ptr = torch.zeros(task_cfg.env.num_envs, dtype=torch.long, device=self.device)
-
-            self.dataset = {
-                'prop': torch.empty(self.dataset_capacity, self.data_length, task_cfg.env.n_proprio, dtype=torch.half, device='cpu'),
-                'depth': torch.empty(self.dataset_capacity, self.data_length, 1, 64, 64, dtype=torch.half, device='cpu'),
-                'recon': torch.empty(self.dataset_capacity, self.data_length, 2, *task_cfg.env.scan_shape, dtype=torch.half, device='cpu'),
-                'priv': torch.empty(self.dataset_capacity, self.data_length, task_cfg.policy.estimator_output_dim, dtype=torch.half, device='cpu'),
-                'masks': torch.empty(self.dataset_capacity, self.data_length, dtype=torch.bool, device='cpu'),
-            }
-            self.dataset_idx = 0
-
     def act(self, obs, obs_critic, use_estimated_values: torch.Tensor = None, **kwargs):
-        if self.save_odom_data:
-            # Store data in buffer at current pointer
-            self.buffer['prop'][:, self.buffer_ptr] = obs.proprio.half()
-            self.buffer['depth'][:, self.buffer_ptr] = obs.depth.half()
-            self.buffer['recon'][:, self.buffer_ptr] = obs.scan.half()
-            self.buffer['priv'][:, self.buffer_ptr] = obs.priv_actor.half()
-            self.buffer['masks'][:, self.buffer_ptr] = True
-            self.buffer_ptr[:] += 1
-
         # act function should run within torch.inference_mode context
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             # store observations
@@ -169,38 +137,6 @@ class PPO_Odom(BaseAlgorithm):
         self.storage.add_transitions(self.transition)
         self.transition.clear()
         self.actor.reset(dones)
-
-        if self.save_odom_data:
-            # Buffer logic: if any env is done, transfer it's buffer to dataset
-            finished = dones | (self.buffer_ptr >= self.data_length)
-            if torch.any(finished):
-                num_finished = torch.sum(finished).item()
-
-                if self.dataset_idx + num_finished > self.dataset_capacity:
-                    # Save dataset to disk
-                    save_dir = os.path.join('/home/harry/projects/parkour_genesis/logs/dataset')
-                    os.makedirs(save_dir, exist_ok=True)
-                    now = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                    torch.save(self.dataset, os.path.join(save_dir, f'{now}.pt'))
-
-                    # clear the dataset
-                    for key in self.dataset:
-                        self.dataset[key].zero_()
-                    self.dataset_idx = 0
-                else:
-                    self.dataset['prop'][self.dataset_idx: self.dataset_idx + num_finished] = self.buffer['prop'][finished].cpu()
-                    self.dataset['depth'][self.dataset_idx: self.dataset_idx + num_finished] = self.buffer['depth'][finished].cpu()
-                    self.dataset['recon'][self.dataset_idx: self.dataset_idx + num_finished] = self.buffer['recon'][finished].cpu()
-                    self.dataset['priv'][self.dataset_idx: self.dataset_idx + num_finished] = self.buffer['priv'][finished].cpu()
-                    self.dataset['masks'][self.dataset_idx: self.dataset_idx + num_finished] = self.buffer['masks'][finished].cpu()
-                    self.dataset_idx += num_finished
-
-                self.buffer_ptr[finished] = 0
-                self.buffer['prop'][finished] = 0
-                self.buffer['depth'][finished] = 0
-                self.buffer['recon'][finished] = 0
-                self.buffer['priv'][finished] = 0
-                self.buffer['masks'][finished] = False
 
     def compute_returns(self, last_critic_obs):
         last_values_default = self.critic['default'].evaluate(last_critic_obs).detach()
@@ -281,7 +217,6 @@ class PPO_Odom(BaseAlgorithm):
 
         return return_dict
 
-    # @torch.compile
     def _compute_policy_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
@@ -362,42 +297,6 @@ class PPO_Odom(BaseAlgorithm):
 
             return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, 0.
 
-    # @torch.compile
-    def _compute_estimation_loss(self, batch: dict, batch_size=128):
-        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            batch_idx = torch.randperm(batch['masks'].size(1))[:batch_size]
-
-            obs_batch = batch['observations'][:, batch_idx]
-            obs_enc_hidden_states_batch = batch['obs_enc_hidden_states'][:, batch_idx].contiguous()
-            recon_hidden_states_batch = batch['recon_hidden_states'][:, batch_idx].contiguous()
-            obs_next_batch = batch['observations_next'][:, batch_idx]
-            mask_batch = batch['masks'][:, batch_idx]
-
-            if self.enable_VAE:
-                recon_rough, recon_refine, est_latent, est, est_logvar, ot1 = self.actor.reconstruct(
-                    obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch)
-
-                # Ot+1 prediction and VAE loss
-                prediction_loss = masked_MSE(ot1, obs_next_batch.proprio, mask_batch)
-                vae_loss = (1 + est_logvar - est_latent.pow(2) - est_logvar.exp()).sum(dim=2, keepdims=True)
-                vae_loss = -0.5 * masked_mean(vae_loss, mask_batch)
-
-            else:
-                recon_rough, recon_refine, est = self.actor.reconstruct(
-                    obs_batch, obs_enc_hidden_states_batch, recon_hidden_states_batch)
-
-            # privileged information estimation loss
-            estimation_loss = masked_MSE(est, obs_batch.priv_actor, mask_batch)
-
-            # reconstructor loss
-            recon_rough_loss = masked_MSE(recon_rough, obs_batch.scan, mask_batch[:, :, :, None, None])
-            recon_refine_loss = masked_L1(recon_refine, obs_batch.scan, mask_batch[:, :, :, None, None])
-
-        if self.enable_VAE:
-            return estimation_loss, prediction_loss, vae_loss, recon_rough_loss, recon_refine_loss
-        else:
-            return estimation_loss, recon_rough_loss, recon_refine_loss
-
     def play_act(self, obs, **kwargs):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             if 'use_estimated_values' in kwargs:
@@ -405,8 +304,19 @@ class PPO_Odom(BaseAlgorithm):
                 kwargs['use_estimated_values'] = use_estimated_values_bool & torch.ones(
                     self.task_cfg.env.num_envs, 1, dtype=torch.bool, device=self.device)
 
-            mean = self.actor.act(obs, None, None, **kwargs)
-            return {'actions': mean}
+                if use_estimated_values_bool:
+                    recon_rough, recon_refine, est = self.odom.inference_forward(obs.proprio, obs.depth)
+                else:
+                    recon_rough = recon_refine = est = None
+
+            rtn = {'actions': self.actor.act(obs, recon_refine, est, **kwargs)}
+
+            if use_estimated_values_bool:
+                rtn['recon_rough'] = recon_rough
+                rtn['recon_refine'] = recon_refine
+                rtn['estimation'] = est
+
+            return rtn
 
     def train(self):
         self.actor.train()

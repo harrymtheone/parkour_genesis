@@ -166,7 +166,7 @@ class HumanoidEnv(ParkourTask):
         # diff[self.is_zero_command] = 0.
 
         rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
-        rew[self.env_class >= 2] *= 0.1
+        rew[self.env_class >= 2] *= 0.5
         return rew
 
     def _reward_feet_contact_number(self):
@@ -175,7 +175,7 @@ class HumanoidEnv(ParkourTask):
         Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
         """
         rew = torch.where(self.contact_filt == self._get_stance_mask(), 1, -0.3)
-        rew[self.env_class >= 2] *= 0.1
+        rew[self.env_class >= 2] *= 0.5
         return torch.mean(rew, dim=1)
 
     def _reward_feet_clearance(self):
