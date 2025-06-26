@@ -494,7 +494,7 @@ class HumanoidEnv(ParkourTask):
 
     def _reward_termination(self):
         # Terminal reward / penalty
-        rew = self.reset_buf & ~(self.episode_length_buf > self.max_episode_length)
+        rew = self.reset_buf & ~self.timeout_cutoff & ~self.reach_goal_cutoff
         return rew.float()
 
     def _reward_feet_rotation(self):

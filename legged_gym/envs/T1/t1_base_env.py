@@ -73,12 +73,12 @@ class T1BaseEnv(HumanoidEnv):
         if estimation is None:
             hmap = self.get_body_hmap()[self.lookat_id]
         else:
-            hmap = estimation + self.cfg.normalization.scan_norm_bias
+            hmap = estimation.flatten() + self.cfg.normalization.scan_norm_bias
 
         height_points[:, 2] -= hmap
 
         height_points = height_points.cpu().numpy()
-        self.pending_vis_task.append(dict(points=height_points))
+        self.pending_vis_task.append(dict(points=height_points, color=(1, 1, 0)))
 
     def _compute_ref_state(self):
         clock_l, clock_r = self._get_clock_input()

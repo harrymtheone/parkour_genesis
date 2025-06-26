@@ -132,7 +132,7 @@ class ParkourTask(BaseTask):
 
         # send timeout info to the algorithm
         if self.cfg.env.send_timeouts:
-            self.extras['time_outs'] = self.time_out_cutoff.clone()
+            self.extras['time_outs'] = self.timeout_cutoff.clone()
 
             if self.sim.terrain is not None:
                 self.extras['reach_goals'] = self.reach_goal_cutoff.clone()
@@ -482,7 +482,7 @@ class ParkourTask(BaseTask):
         self.commands[env_is_parkour, 2] = delta_yaw_error[env_is_parkour]
         # self.commands[env_is_parkour, 2] = torch.clip(self.commands[env_is_parkour, 2], *self.cmd_ranges_parkour['ang_vel_yaw'])
 
-        cmd_ratio = torch.clip(1 - torch.abs(delta_yaw_error / torch.pi), min=0)
+        cmd_ratio = torch.clip(1 - torch.abs(3. * delta_yaw_error / torch.pi), min=0)
         self.commands[env_is_parkour, 0] = (cmd_ratio * self.command_x_parkour)[env_is_parkour]
 
         # constraint command ranges
@@ -501,7 +501,7 @@ class ParkourTask(BaseTask):
 
     # ----------------------------------------- Graphics -------------------------------------------
     def draw_hmap(self, hmap, color=(0, 1, 0)):
-        hmap = hmap[self.lookat_id].flatten().cpu().numpy()
+        hmap = hmap.flatten().cpu().numpy()
         base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
         yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
         height_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
@@ -511,20 +511,20 @@ class ParkourTask(BaseTask):
         self.pending_vis_task.append(dict(points=height_points, color=color))
 
     def draw_recon(self, recon, edge_thresh=0.999):
-        if recon.size(1) == 2:
-            hmap, edge_mask = recon[:, 0], recon[:, 1]
+        if recon.size(0) == 2:
+            hmap, edge_mask = recon[0], recon[1]
         else:
             self.draw_hmap(recon)
             return
 
-        hmap = hmap[self.lookat_id].flatten().cpu().numpy()
+        hmap = hmap.flatten().cpu().numpy()
         base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
         yaw = self.base_euler[self.lookat_id, 2].repeat(self.scan_points.size(1))
         height_points = transform_by_yaw(self.scan_points[self.lookat_id], yaw).cpu().numpy()
         height_points[:, :2] += base_pos[None, :2]
         height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
 
-        edge_mask = edge_mask[self.lookat_id].flatten().cpu().numpy()
+        edge_mask = edge_mask.flatten().cpu().numpy()
         edge_pts = height_points[edge_mask >= 0.5]
         non_edge_pts = height_points[edge_mask < 0.5]
 

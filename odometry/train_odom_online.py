@@ -25,7 +25,7 @@ def play(args):
 
     # override some parameters for testing
     task_cfg.play.control = False
-    task_cfg.env.num_envs = 256
+    task_cfg.env.num_envs = 16 if args.debug else 256
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
     task_cfg.terrain.curriculum = False
@@ -80,8 +80,9 @@ def play(args):
     transformer = OdomTransformer(50, 64, 128, 3).to(args.device)
     optim = torch.optim.Adam(transformer.parameters(), lr=1e-4)
     scaler = torch.amp.GradScaler(enabled=use_amp)
-    l1 = torch.nn.L1Loss()
     mse = torch.nn.MSELoss()
+    l1 = torch.nn.L1Loss()
+    bce = torch.nn.BCEWithLogitsLoss()
 
     if not args.debug:
         log_dir = os.path.join(log_root, 'odom_online', datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
@@ -93,26 +94,28 @@ def play(args):
         with torch.amp.autocast(enabled=use_amp, device_type=args.device):
             optim.zero_grad()
 
-            recon_rough, recon_refine, priv = transformer.inference_forward(obs.proprio, obs.depth)
+            recon_rough, recon_refine, priv = transformer(obs.proprio, obs.depth)
 
-            loss_recon_rough = mse(recon_rough, obs.scan)
-            loss_recon_refine = l1(recon_refine, obs.scan)
+            loss_recon_rough = mse(recon_rough, obs.rough_scan.unsqueeze(1))
+            loss_recon_refine = l1(recon_refine[:, 0], obs.scan[:, 0])
+            loss_edge = bce(recon_refine[:, 1], obs.scan[:, 1])
             loss_priv = mse(priv, obs.priv_actor)
-            scaler.scale(loss_recon_rough + loss_recon_refine + loss_priv).backward()
+            scaler.scale(10. * loss_recon_rough + loss_recon_refine + 0.1 * loss_edge + loss_priv).backward()
             scaler.step(optim)
             scaler.update()
 
         if not args.headless:
-            env.draw_recon(recon_refine.detach())
+            env.draw_recon(recon_refine[env.lookat_id].detach())
 
         if not args.debug:
             writer.add_scalar('Loss/recon_rough', loss_recon_rough.item(), global_step)
             writer.add_scalar('Loss/recon_refine', loss_recon_refine.item(), global_step)
+            writer.add_scalar('Loss/edge', loss_edge.item(), global_step)
             writer.add_scalar('Loss/priv', loss_priv.item(), global_step)
         global_step += 1
 
         with torch.inference_mode():
-            rtn = runner.play_act(obs, use_estimated_values=False, eval_=True, dones=dones)
+            rtn = runner.play_act(obs, use_estimated_values=False, eval_=False, dones=dones, recon=False)
         obs, obs_critic, rewards, dones, _ = env.step(rtn['actions'])
 
         transformer.detach_hidden_states()

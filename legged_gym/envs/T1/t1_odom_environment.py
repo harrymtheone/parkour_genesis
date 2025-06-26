@@ -5,15 +5,18 @@ import torch
 from .t1_base_env import T1BaseEnv
 from ..base.utils import ObsBase
 
+TIMEOUT_TIME = 10.
+
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, depth, priv_actor, rough_scan, scan):
+    def __init__(self, proprio, depth, priv_actor, rough_scan, scan, env_class):
         super().__init__()
         self.proprio = proprio.clone()
         self.depth = depth.clone()
         self.priv_actor = priv_actor.clone()
         self.rough_scan = rough_scan.clone()
         self.scan = scan.clone()
+        self.env_class = env_class
 
     def no_depth(self):
         return ObsNoDepth(self.proprio, self.priv_actor, self.scan)
@@ -45,6 +48,23 @@ class T1OdomEnvironment(T1BaseEnv):
 
         self.head_link_indices = self.sim.create_indices(
             self.sim.get_full_names(['H2'], True), True)
+
+    def _init_buffers(self):
+        super()._init_buffers()
+        self.tracking_goal_timer = self._zero_tensor(self.num_envs)
+
+    def _post_physics_mid_step(self):
+        super()._post_physics_mid_step()
+
+        self.tracking_goal_timer[:] = torch.where(
+            self.reached_goal_env | self.is_zero_command | (self.env_class < 2),
+            0.,
+            self.tracking_goal_timer + self.dt
+        )
+
+    def _reset_idx(self, env_ids: torch.Tensor):
+        super()._reset_idx(env_ids)
+        self.tracking_goal_timer[env_ids] = 0.
 
     def _compute_observations(self):
         """
@@ -108,13 +128,17 @@ class T1OdomEnvironment(T1BaseEnv):
         priv_actor_obs = base_lin_vel * self.obs_scales.lin_vel  # 3
 
         # compute height map
-        rough_scan = self.get_body_hmap().view(self.num_envs, *self.cfg.env.scan_shape)
+        rough_scan = torch.clip(self.get_body_hmap() - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        rough_scan = rough_scan.view(self.num_envs, *self.cfg.env.scan_shape)
+
         scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
+
         base_edge_mask = self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
         scan_edge = torch.stack([scan, base_edge_mask], dim=1)
+
         depth = self.sensors.get('depth_0').squeeze(2)
-        self.actor_obs = ActorObs(proprio, depth, priv_actor_obs, rough_scan, scan_edge)
+        self.actor_obs = ActorObs(proprio, depth, priv_actor_obs, rough_scan, scan_edge, self.env_class)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation
@@ -146,7 +170,7 @@ class T1OdomEnvironment(T1BaseEnv):
             cv2.waitKey(1)
 
         super().render()
-
+    #
     # def _reward_default_dof_pos(self):
     #     return (self.sim.dof_pos - self.init_state_dof_pos).abs().sum(dim=1)
     #
@@ -220,9 +244,9 @@ class T1OdomEnvironment(T1BaseEnv):
     #
     #     return (lin_vel_stall | ang_vel_stall).float()
     #
-    # def _reward_timeout(self):
+    # def _reward_timeout(self, dist_clip=3.):
     #     time_out = torch.clamp(self.tracking_goal_timer - TIMEOUT_TIME, min=0)
-    #     rew = time_out * self.target_pos_rel.norm(dim=1).clip(max=3.) / 3.
+    #     rew = time_out * self.target_pos_rel.norm(dim=1).clip(max=dist_clip) / dist_clip
     #
-    #     rew[self.env_class < 2] = 0.
+    #     rew[self.env_class < 4] = 0.
     #     return rew

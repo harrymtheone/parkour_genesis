@@ -52,8 +52,8 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
         'rough_slope': 1,
-        'stairs_up': 0,
-        'stairs_down': 0,
+        'stairs_up': 1,
+        'stairs_down': 1,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
@@ -81,7 +81,7 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    runner.alg.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-06-25_13-18-35/latest.pth', weights_only=True))
+    # runner.alg.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-06-26_20-27-38/latest.pth', weights_only=True))
 
     with Live(vis.gen_info_panel(args, env)) as live:
         for step_i in range(10 * int(env.max_episode_length)):
@@ -107,8 +107,8 @@ def play(args):
                 args.est = est[env.lookat_id, :3] / 2
                 args.recon_loss = torch.nn.functional.l1_loss(obs.scan[env.lookat_id], recon_refine[env.lookat_id])
 
-                # env.draw_recon(recon_rough)
-                env.draw_recon(recon_refine)
+                # env._draw_body_hmap(recon_rough[env.lookat_id])
+                env.draw_recon(recon_refine[env.lookat_id])
                 # env.draw_est_hmap(est)
                 # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
                 # env.draw_recon(obs.scan)

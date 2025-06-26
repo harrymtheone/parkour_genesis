@@ -4,9 +4,7 @@ import torch
 
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_trans_quat, transform_by_yaw, torch_rand_float
-
-TIMEOUT_TIME = 10.
+from ...utils.math import transform_by_trans_quat
 
 
 class ActorObs(ObsBase):
@@ -91,8 +89,6 @@ class T1ZJUEnvironment(T1BaseEnv):
         self.depth_scan_points = self._init_height_points(np.linspace(*bounding_box[:2], hmap_shape[0]),
                                                           np.linspace(*bounding_box[2:], hmap_shape[1]))
 
-        self.tracking_goal_timer = self._zero_tensor(self.num_envs)
-
     def _init_robot_props(self):
         super()._init_robot_props()
 
@@ -101,30 +97,6 @@ class T1ZJUEnvironment(T1BaseEnv):
 
         self.head_link_indices = self.sim.create_indices(
             self.sim.get_full_names(['H2'], True), True)
-
-    # def _post_physics_mid_step(self):
-    #     super()._post_physics_mid_step()
-    #
-    #     self.tracking_goal_timer[:] = torch.where(
-    #         self.reached_goal_env | self.is_zero_command | (self.env_class < 2),
-    #         0.,
-    #         self.tracking_goal_timer + self.dt
-    #     )
-    #
-    # def _reset_idx(self, env_ids: torch.Tensor):
-    #     super()._reset_idx(env_ids)
-    #     self.tracking_goal_timer[env_ids] = 0.
-    #
-    # def _update_command(self):
-    #     super()._update_command()
-    #
-    #     if self.sim.terrain is None:
-    #         return
-    #
-    #     env_is_parkour = self.env_class >= 4
-    #     time_left = torch.clip(TIMEOUT_TIME - self.tracking_goal_timer, min=1.0)
-    #     cmd_vel_xy = torch.norm(self.target_pos_rel, dim=1) / time_left
-    #     self.commands[env_is_parkour, 0] = cmd_vel_xy[env_is_parkour]
 
     def _compute_observations(self):
         """

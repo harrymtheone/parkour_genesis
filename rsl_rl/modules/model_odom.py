@@ -87,7 +87,7 @@ class OdomTransformer(nn.Module):
         super().__init__()
         num_heads = 4
         num_layers = 2  # 2
-        activation = nn.ReLU(inplace=True)
+        activation = nn.LeakyReLU(inplace=True)
 
         # patch embedding
         self.cnn_depth = nn.Conv2d(in_channels=1, out_channels=embed_dim, kernel_size=8, stride=8, bias=False)
@@ -109,58 +109,51 @@ class OdomTransformer(nn.Module):
             num_layers=num_layers
         )
 
-        self.gru = nn.GRU(input_size=embed_dim * 2, hidden_size=hidden_size)
+        self.gru = nn.GRU(input_size=embed_dim * 2, hidden_size=hidden_size, num_layers=2)
         self.hidden_states = None
+        self.hidden_states_train = None
 
         # privileged information estimator
         self.estimator = nn.Sequential(
-            nn.Linear(embed_dim * 2, embed_dim),
+            nn.Linear(embed_dim * 2 + hidden_size, embed_dim),
             activation,
             nn.Linear(embed_dim, estimator_out_dim),
         )
 
         self.recon_rough = nn.Sequential(
-            nn.Linear(embed_dim * 2, 8 * 8 * 4),
+            nn.Linear(embed_dim * 2 + hidden_size, 16 * 8 * 4, bias=False),
+            nn.LayerNorm(16 * 8 * 4),
             activation,
-            nn.Unflatten(1, (8, 8, 4)),
-            nn.Conv2d(8, 8, kernel_size=3, padding=1),
+            nn.Unflatten(1, (16, 8, 4)),
+            nn.Conv2d(16, 8, kernel_size=3, padding=1),
             activation,
             nn.Upsample(scale_factor=2),
             nn.Conv2d(8, 4, kernel_size=3, padding=1),
             activation,
             nn.Upsample(scale_factor=2),
-            nn.Conv2d(4, 2, kernel_size=3, padding=1),
+            nn.Conv2d(4, 1, kernel_size=3, padding=1),
         )
 
-        self.recon_refine = UNet(in_channel=2, out_channel=2)
+        self.recon_refine = UNet(in_channel=1, out_channel=2)
 
-    def inference_forward(self, prop, depth):
-        out = self.transformer_forward(prop, depth)
+    def forward(self, prop, depth, eval_=False):
+        enc = self.transformer_forward(prop, depth)
 
-        out, self.hidden_states = self.gru(out.unsqueeze(0), self.hidden_states)
-        out = out.squeeze(0)
+        if eval_:
+            out, self.hidden_states = self.gru(enc.unsqueeze(0), self.hidden_states)
+        else:
+            out, self.hidden_states_train = self.gru(enc.unsqueeze(0), self.hidden_states_train)
+
+        out = torch.cat([enc, out.squeeze(0)], dim=1)
 
         # reconstructor
         recon_rough = self.recon_rough(out)
-        recon_refine, _ = self.recon_refine(recon_rough)
+        recon_refine, _ = self.recon_refine(recon_rough.detach())
 
         # estimator
         est = self.estimator(out)
 
         return recon_rough, recon_refine, est
-
-    def forward(self, prop, depth):
-        out = gru_wrapper(self.transformer_forward, prop, depth)
-
-        out, _ = self.gru(out, None)
-
-        # reconstructor
-        recon = gru_wrapper(self.recon_rough, out)
-
-        # estimator
-        priv = gru_wrapper(self.estimator, out)
-
-        return recon, priv
 
     def transformer_forward(self, prop, depth):
         x = self.cnn_depth(depth)  # (1, 1, 64, 64) -> (1, embed_dim, 8, 8)
@@ -182,12 +175,16 @@ class OdomTransformer(nn.Module):
         return torch.cat([token_prop, token_terrain], dim=1)
 
     def detach_hidden_states(self):
-        if self.hidden_states is not None:
-            self.hidden_states = self.hidden_states.detach()
+        if self.hidden_states_train is not None:
+            self.hidden_states_train = self.hidden_states_train.detach()
 
-    def reset(self, dones):
-        if self.hidden_states is not None:
-            self.hidden_states[:, dones] = 0.
+    def reset(self, dones, eval_=False):
+        if eval_:
+            if self.hidden_states is not None:
+                self.hidden_states[:, dones] = 0.
+        else:
+            if self.hidden_states_train is not None:
+                self.hidden_states_train[:, dones] = 0.
 
 
 class Actor(nn.Module):
@@ -246,7 +243,7 @@ class Actor(nn.Module):
         self.distribution = Normal(mean, torch.exp(self.log_std))
         return self.distribution.sample()
 
-    def train_act(self, obs, scan, priv, hidden_states, use_estimated_values):
+    def train_act(self, obs, scan, est, hidden_states, use_estimated_values):
         if torch.any(use_estimated_values):
             scan_enc = torch.where(
                 use_estimated_values,
@@ -256,7 +253,7 @@ class Actor(nn.Module):
 
             x = torch.where(
                 use_estimated_values,
-                torch.cat([obs.proprio, scan_enc, priv], dim=2),
+                torch.cat([obs.proprio, scan_enc, est], dim=2),
                 torch.cat([obs.proprio, scan_enc, obs.priv_actor], dim=2),
             )
 

@@ -114,7 +114,7 @@ class BaseTask:
         self.rew_buf = self._zero_tensor(self.num_envs)
         self.reset_buf = self._zero_tensor(self.num_envs, dtype=torch.bool)
         self.episode_length_buf = self._zero_tensor(self.num_envs, dtype=torch.long)
-        self.time_out_cutoff = self._zero_tensor(self.num_envs, dtype=torch.bool)
+        self.timeout_cutoff = self._zero_tensor(self.num_envs, dtype=torch.bool)
         self.commands = self._zero_tensor(self.num_envs, self.cfg.commands.num_commands)  # x vel, y vel, yaw vel, heading
         self.command_x_parkour = self._zero_tensor(self.num_envs)  # x vel
         self.is_zero_command = self._zero_tensor(self.num_envs, dtype=torch.bool)
@@ -318,7 +318,8 @@ class BaseTask:
 
         self._post_physics_mid_step()
         if self.cfg.sensors.activated:
-            self.sensors.update(self.global_counter, self.sim.link_pos, self.sim.link_quat, self.episode_length_buf <= 1)
+            # self.sensors.update(self.global_counter, self.sim.link_pos, self.sim.link_quat, self.episode_length_buf <= 1)
+            self.sensors.update(self.global_counter, self.sim.link_pos, self.sim.link_quat, self.reset_buf)
         self._compute_observations()
         self._post_physics_post_step()
 
@@ -396,10 +397,10 @@ class BaseTask:
         else:
             self.reset_buf[:] = False
 
-        self.time_out_cutoff[:] = self.episode_length_buf > self.max_episode_length  # no terminal reward for time-outs
+        self.timeout_cutoff[:] = self.episode_length_buf > self.max_episode_length  # no terminal reward for time-outs
         height_cutoff = self.sim.root_pos[:, 2] < -10
 
-        self.reset_buf[:] |= self.time_out_cutoff
+        self.reset_buf[:] |= self.timeout_cutoff
         self.reset_buf[:] |= height_cutoff
 
     def _resample_commands(self, env_ids: torch.Tensor):
