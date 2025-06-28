@@ -8,7 +8,7 @@ from .ppo_dreamer import PPO_Dreamer
 from .ppo_zju import PPO_ZJU
 from .ppo_zju_multi_critic import PPO_ZJU_Multi_Critic
 from .ppo_bbm import PPO_BBM
-from .ppo_odom import PPO_Odom
+from rsl_rl.algorithms.odometry import PPO_Odom
 
 from .distiller import Distiller
 

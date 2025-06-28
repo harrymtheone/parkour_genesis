@@ -25,7 +25,7 @@ def play(args):
 
     # override some parameters for testing
     task_cfg.play.control = False
-    task_cfg.env.num_envs = 16 if args.debug else 256
+    task_cfg.env.num_envs = 512
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
     task_cfg.terrain.curriculum = False
@@ -45,8 +45,8 @@ def play(args):
     task_cfg.domain_rand.randomize_gains = False
 
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 1,
-        'rough_slope': 1,
+        'smooth_slope': 0,
+        'rough_slope': 0,
         'stairs_up': 1,
         'stairs_down': 1,
         'discrete': 0,
@@ -61,7 +61,8 @@ def play(args):
         'parkour_mini_stair': 1,
         'parkour_flat': 0,
     }
-    task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values()) * 5
+    task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
+    task_cfg.terrain.num_cols *= 1 if args.debug else 5
 
     # prepare environment
     args.n_rendered_envs = task_cfg.env.num_envs
@@ -76,7 +77,7 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    use_amp = False
+    use_amp = True
     transformer = OdomTransformer(50, 64, 128, 3).to(args.device)
     optim = torch.optim.Adam(transformer.parameters(), lr=1e-4)
     scaler = torch.amp.GradScaler(enabled=use_amp)
@@ -88,44 +89,71 @@ def play(args):
         log_dir = os.path.join(log_root, 'odom_online', datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
         writer = SummaryWriter(log_dir)
         print(f"Logging to {log_dir}")
-    global_step = 0
 
-    while True:
+    loss_recon_rough = 0.
+    loss_recon_refine = 0.
+    loss_edge = 0.
+    loss_priv = 0.
+    accumulation_steps = 4
+    num_epoch = 0
+
+    for step_i in range(int(1e10)):
+
         with torch.amp.autocast(enabled=use_amp, device_type=args.device):
-            optim.zero_grad()
+            # rollout - use the training hidden state
+            recon_rough, recon_refine, priv_est = transformer.inference_forward(obs.proprio, obs.depth, eval_=False)
 
-            recon_rough, recon_refine, priv = transformer(obs.proprio, obs.depth)
+            # Accumulate losses
+            loss_recon_rough += mse(recon_rough, obs.rough_scan.unsqueeze(1))
+            loss_recon_refine += l1(recon_refine[:, 0], obs.scan[:, 0])
+            loss_edge += bce(recon_refine[:, 1], obs.scan[:, 1])
+            loss_priv += mse(priv_est, obs.priv_actor)
 
-            loss_recon_rough = mse(recon_rough, obs.rough_scan.unsqueeze(1))
-            loss_recon_refine = l1(recon_refine[:, 0], obs.scan[:, 0])
-            loss_edge = bce(recon_refine[:, 1], obs.scan[:, 1])
-            loss_priv = mse(priv, obs.priv_actor)
-            scaler.scale(10. * loss_recon_rough + loss_recon_refine + 0.1 * loss_edge + loss_priv).backward()
-            scaler.step(optim)
-            scaler.update()
+            # Perform an update every `accumulation_steps`
+            if (step_i + 1) % accumulation_steps == 0:
+                num_epoch += 1
+                loss_recon_rough /= accumulation_steps
+                loss_recon_refine /= accumulation_steps
+                loss_edge /= accumulation_steps
+                loss_priv /= accumulation_steps
+
+                total_loss = loss_recon_rough + loss_recon_refine + loss_edge + loss_priv
+
+                optim.zero_grad()
+                scaler.scale(total_loss).backward()
+                scaler.step(optim)
+                scaler.update()
+
+                if not args.debug:
+                    # Log the averaged losses
+                    writer.add_scalar('Loss/recon_rough', loss_recon_rough.item(), num_epoch)
+                    writer.add_scalar('Loss/recon_refine', loss_recon_refine.item(), num_epoch)
+                    writer.add_scalar('Loss/edge', loss_edge.item(), num_epoch)
+                    writer.add_scalar('Loss/priv', loss_priv.item(), num_epoch)
+                    writer.add_scalar('Loss/total', total_loss.item(), num_epoch)
+
+                # Detach the training hidden state to start a new BPTT trajectory
+                transformer.detach_hidden_states()
+                loss_recon_rough = 0.
+                loss_recon_refine = 0.
+                loss_edge = 0.
+                loss_priv = 0.
 
         if not args.headless:
             env.draw_recon(recon_refine[env.lookat_id].detach())
 
-        if not args.debug:
-            writer.add_scalar('Loss/recon_rough', loss_recon_rough.item(), global_step)
-            writer.add_scalar('Loss/recon_refine', loss_recon_refine.item(), global_step)
-            writer.add_scalar('Loss/edge', loss_edge.item(), global_step)
-            writer.add_scalar('Loss/priv', loss_priv.item(), global_step)
-        global_step += 1
-
         with torch.inference_mode():
-            rtn = runner.play_act(obs, use_estimated_values=False, eval_=False, dones=dones, recon=False)
+            rtn = runner.play_act(obs, use_estimated_values=False, eval_=False)
         obs, obs_critic, rewards, dones, _ = env.step(rtn['actions'])
 
-        transformer.detach_hidden_states()
         if torch.any(dones):
-            transformer.reset(dones)
+            # Reset both hidden states when an episode ends
+            transformer.reset(dones, eval_=False)
 
         if not args.headless:
             env.refresh_graphics(clear_lines=True)
 
-        if not args.debug and global_step % 1000 == 0:
+        if not args.debug and num_epoch % 1000 == 0:
             torch.save(transformer.state_dict(), os.path.join(log_dir, 'latest.pth'))
 
 

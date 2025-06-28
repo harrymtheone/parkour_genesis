@@ -171,8 +171,7 @@ class CircularBuffer:
             batch_ids = slice(None)
 
         self._num_pushes[batch_ids] = 0
-        if self._buffer is not None:
-            self._buffer[:, batch_ids, :] = 0.0
+        self._buffer[:, batch_ids, :].zero_()
 
     def append(self, data: torch.Tensor):
         assert data.size(0) == self._batch_size

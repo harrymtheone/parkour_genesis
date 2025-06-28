@@ -137,7 +137,7 @@ class T1OdomEnvironment(T1BaseEnv):
         base_edge_mask = self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
         scan_edge = torch.stack([scan, base_edge_mask], dim=1)
 
-        depth = self.sensors.get('depth_0').squeeze(2)
+        depth = self.sensors.get('depth_0').squeeze(2).half()
         self.actor_obs = ActorObs(proprio, depth, priv_actor_obs, rough_scan, scan_edge, self.env_class)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 

@@ -28,7 +28,7 @@ def play(args):
 
     # override some parameters for testing
     task_cfg.play.control = False
-    task_cfg.env.num_envs = 16
+    task_cfg.env.num_envs = 32
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
@@ -81,14 +81,14 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    # runner.alg.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-06-26_20-27-38/latest.pth', weights_only=True))
+    runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-06-28_01-56-42/latest.pth', weights_only=True))
 
     with Live(vis.gen_info_panel(args, env)) as live:
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, dones=dones)
-            # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.5, eval_=True)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True, dones=dones)
+            # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.9, eval_=True, dones=dones)
 
             actions = rtn['actions']
 
@@ -105,15 +105,15 @@ def play(args):
                 est = rtn['estimation']
 
                 args.est = est[env.lookat_id, :3] / 2
-                args.recon_loss = torch.nn.functional.l1_loss(obs.scan[env.lookat_id], recon_refine[env.lookat_id])
+                args.recon_loss = torch.nn.functional.l1_loss(obs.scan[env.lookat_id, 1], recon_refine[env.lookat_id, 1])
 
                 # env._draw_body_hmap(recon_rough[env.lookat_id])
                 env.draw_recon(recon_refine[env.lookat_id])
                 # env.draw_est_hmap(est)
                 # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
-                # env.draw_recon(obs.scan)
+                # env.draw_recon(obs.scan[env.lookat_id])
             else:
-                env.draw_recon(obs_critic.scan)
+                env.draw_recon(obs.scan[env.lookat_id])
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.

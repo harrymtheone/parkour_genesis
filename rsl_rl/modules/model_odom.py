@@ -136,7 +136,7 @@ class OdomTransformer(nn.Module):
 
         self.recon_refine = UNet(in_channel=1, out_channel=2)
 
-    def forward(self, prop, depth, eval_=False):
+    def inference_forward(self, prop, depth, eval_=True):
         enc = self.transformer_forward(prop, depth)
 
         if eval_:
@@ -148,10 +148,26 @@ class OdomTransformer(nn.Module):
 
         # reconstructor
         recon_rough = self.recon_rough(out)
-        recon_refine, _ = self.recon_refine(recon_rough.detach())
+        recon_refine, _ = self.recon_refine(recon_rough)
 
         # estimator
         est = self.estimator(out)
+
+        return recon_rough, recon_refine, est
+
+    def forward(self, prop, depth, hidden_states):
+        enc = gru_wrapper(self.transformer_forward, prop, depth)
+
+        out, _ = self.gru(enc, hidden_states)
+
+        out = torch.cat([enc, out], dim=2)
+
+        # reconstructor
+        recon_rough = gru_wrapper(self.recon_rough, out)
+        recon_refine, _ = gru_wrapper(self.recon_refine, recon_rough.detach())
+
+        # estimator
+        est = gru_wrapper(self.estimator, out)
 
         return recon_rough, recon_refine, est
 
@@ -178,7 +194,7 @@ class OdomTransformer(nn.Module):
         if self.hidden_states_train is not None:
             self.hidden_states_train = self.hidden_states_train.detach()
 
-    def reset(self, dones, eval_=False):
+    def reset(self, dones, eval_=True):
         if eval_:
             if self.hidden_states is not None:
                 self.hidden_states[:, dones] = 0.
@@ -196,13 +212,8 @@ class Actor(nn.Module):
         # belief encoder
         self.gru = nn.GRU(env_cfg.n_proprio + 128 + policy_cfg.estimator_output_dim, policy_cfg.actor_gru_hidden_size, num_layers=1)
         self.hidden_states = None
-        self.gate_prop = nn.Linear(policy_cfg.actor_gru_hidden_size, 128)
-        self.gate_scan = nn.Sequential(
-            nn.Linear(policy_cfg.actor_gru_hidden_size, 1),
-            nn.Sigmoid()
-        )
 
-        self.actor = make_linear_layers(128,
+        self.actor = make_linear_layers(policy_cfg.actor_gru_hidden_size,
                                         *policy_cfg.actor_hidden_dims,
                                         env_cfg.num_actions,
                                         activation_func=nn.ELU(),
@@ -233,8 +244,6 @@ class Actor(nn.Module):
         x, self.hidden_states = self.gru(x.unsqueeze(0), self.hidden_states)
         x = x.squeeze(0)
 
-        x = self.gate_prop(x) + scan_enc * self.gate_scan(x)
-
         mean = self.actor(x)
 
         if eval_:
@@ -262,8 +271,6 @@ class Actor(nn.Module):
             x = torch.cat([obs.proprio, scan_enc, obs.priv_actor], dim=2)
 
         x, _ = self.gru(x, hidden_states)
-
-        x = gru_wrapper(self.gate_prop, x) + scan_enc * gru_wrapper(self.gate_scan, x)
 
         mean = gru_wrapper(self.actor, x)
 

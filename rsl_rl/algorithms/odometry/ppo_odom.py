@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 from torch.distributions import Normal, kl_divergence
 
-from rsl_rl.modules.model_odom import OdomTransformer, Actor
+from rsl_rl.algorithms.alg_base import BaseAlgorithm
+from rsl_rl.modules.model_odom import Actor
 from rsl_rl.modules.utils import UniversalCritic
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
-from .alg_base import BaseAlgorithm
 
 try:
     from torch.amp import GradScaler
@@ -63,22 +63,6 @@ class PPO_Odom(BaseAlgorithm):
 
         self.cur_it = 0
 
-        # Odometer components
-        self.odom = OdomTransformer(
-            task_cfg.env.n_proprio,
-            task_cfg.policy.odom_transformer_embed_dim,
-            task_cfg.policy.odom_gru_hidden_size,
-            task_cfg.policy.estimator_output_dim
-        ).to(self.device)
-        self.optimizer_odom = torch.optim.Adam(self.odom.parameters(), lr=task_cfg.policy.learning_rate)
-        self.scaler_odom = GradScaler(enabled=self.cfg.use_amp)
-        self.loss_mse = torch.nn.MSELoss()
-        self.loss_l1 = torch.nn.L1Loss()
-        self.loss_bce = torch.nn.BCEWithLogitsLoss()
-
-        self.selected_indices = None
-        self.odom_update_infos = {}
-
         # PPO components
         self.actor = Actor(task_cfg.env, task_cfg.policy).to(self.device)
         self.actor.reset_std(self.cfg.init_noise_std)
@@ -94,10 +78,13 @@ class PPO_Odom(BaseAlgorithm):
         self.transition = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
-    def act(self, obs, obs_critic, use_estimated_values: torch.Tensor = None, **kwargs):
-        with torch.inference_mode(mode=False):
-            self._update_obom(obs)
-
+    def act(self,
+            obs,
+            obs_critic,
+            use_estimated_values: torch.Tensor = None,
+            recon: torch.Tensor = None,
+            priv_est: torch.Tensor = None,
+            **kwargs):
         # act function should run within torch.inference_mode context
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             # store observations
@@ -105,11 +92,9 @@ class PPO_Odom(BaseAlgorithm):
             self.transition.critic_observations = obs_critic
             self.transition.actor_hidden_states = self.actor.get_hidden_states()
 
-            _, recon_refine, priv = self.odom(obs.proprio, obs.depth, eval_=True)
-            self.transition.recon = recon_refine
-            self.transition.priv = priv
-            actions = self.actor.act(obs, recon_refine, priv, use_estimated_values=use_estimated_values)
-            # actions = self.actor.act(obs, None, None, use_estimated_values=use_estimated_values)
+            self.transition.recon = recon
+            self.transition.priv = priv_est
+            actions = self.actor.act(obs, recon, priv_est, use_estimated_values=use_estimated_values)
 
             if self.transition.actor_hidden_states is None:
                 # only for the first step where hidden_state is None
@@ -150,10 +135,6 @@ class PPO_Odom(BaseAlgorithm):
         self.storage.add_transitions(self.transition)
         self.transition.clear()
         self.actor.reset(dones)
-
-        self.odom.detach_hidden_states()
-        self.odom.reset(dones, eval_=True)
-        self.odom.reset(dones[self.selected_indices], eval_=False)
 
     def compute_returns(self, last_critic_obs):
         last_values_default = self.critic['default'].evaluate(last_critic_obs).detach()
@@ -221,7 +202,8 @@ class PPO_Odom(BaseAlgorithm):
         print(kl_str)
 
         self.storage.clear()
-        return_dict = {
+
+        return {
             'Loss/learning_rate': self.learning_rate,
             'Loss/kl_div': mean_kl,
             'Loss/value_loss': mean_value_loss,
@@ -232,9 +214,6 @@ class PPO_Odom(BaseAlgorithm):
             'Loss/symmetry_loss': mean_symmetry_loss,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
         }
-
-        return_dict.update(self.odom_update_infos)
-        return return_dict
 
     def _compute_policy_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
@@ -316,69 +295,10 @@ class PPO_Odom(BaseAlgorithm):
 
             return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, 0.
 
-    def _update_obom(self, obs):
-        if self.cur_it < self.task_cfg.policy.update_since:
-            return
-
-        # data selection
-        if self.selected_indices is None:
-            unique_env_classes = torch.unique(obs.env_class)
-            num_per_class = self.task_cfg.policy.batch_size // len(unique_env_classes)
-            selected_indices = []
-
-            for env_class in unique_env_classes:
-                class_indices = torch.where(obs.env_class == env_class)[0]
-
-                if len(class_indices) >= num_per_class:
-                    selected = torch.randperm(len(class_indices), device=self.device)[:num_per_class]
-                    selected_indices.append(class_indices[selected])
-                else:
-                    selected_indices.append(class_indices)
-
-            self.selected_indices = torch.cat(selected_indices)
-
-        # odometer update
-        with torch.amp.autocast(device_type=self.device.type, dtype=torch.float16, enabled=self.cfg.use_amp):
-            prop = obs.proprio[self.selected_indices]
-            depth = obs.depth[self.selected_indices]
-            rough_scan = obs.rough_scan[self.selected_indices]
-            scan = obs.scan[self.selected_indices]
-            priv_actor = obs.priv_actor[self.selected_indices]
-
-            recon_rough, recon_refine, est = self.odom(prop, depth, eval_=False)
-
-            loss_recon_rough = self.loss_mse(recon_rough, rough_scan.unsqueeze(1))
-            loss_recon_refine = self.loss_l1(recon_refine[:, 0], scan[:, 0])
-            loss_edge = self.loss_bce(recon_refine[:, 1], scan[:, 1])
-            loss_priv = self.loss_mse(est, priv_actor)
-            self.scaler_odom.scale(loss_recon_rough + loss_recon_refine + loss_edge + loss_priv).backward()
-            self.scaler_odom.step(self.optimizer_odom)
-            self.scaler_odom.update()
-
-            self.optimizer_odom.zero_grad()
-
-            self.odom_update_infos['Loss/loss_recon_rough'] = loss_recon_rough.item()
-            self.odom_update_infos['Loss/loss_recon_refine'] = loss_recon_refine.item()
-            self.odom_update_infos['Loss/loss_edge'] = loss_edge.item()
-            self.odom_update_infos['Loss/loss_priv'] = loss_priv.item()
-
-    def play_act(self, obs, use_estimated_values=True, recon=True, **kwargs):
+    def play_act(self, obs, use_estimated_values=True, recon=None, est=None, **kwargs):
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):
-            rtn = {}
-
-            if use_estimated_values or recon:
-                recon_rough, recon_refine, est = self.odom(obs.proprio, obs.depth, eval_=True)
-                rtn['recon_rough'] = recon_rough
-                rtn['recon_refine'] = recon_refine
-                rtn['estimation'] = est
-
             kwargs['use_estimated_values'] = use_estimated_values & torch.ones(self.task_cfg.env.num_envs, 1, dtype=torch.bool, device=self.device)
-            if use_estimated_values:
-                rtn['actions'] = self.actor.act(obs, recon_refine, est, **kwargs)
-            else:
-                rtn['actions'] = self.actor.act(obs, None, None, **kwargs)
-
-            return rtn
+            return {'actions': self.actor.act(obs, recon, est, **kwargs)}
 
     def train(self):
         self.actor.train()
@@ -394,12 +314,9 @@ class PPO_Odom(BaseAlgorithm):
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std)
 
-        self.odom.load_state_dict(loaded_dict['odometer_state_dict'])
-
     def save(self):
         return {
             'actor_state_dict': self.actor.state_dict(),
             'critic_state_dict': self.critic.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'odometer_state_dict': self.odom.state_dict()
         }

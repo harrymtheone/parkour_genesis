@@ -204,7 +204,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         odom_gru_hidden_size = 128
         estimator_output_dim = 3
         update_since = 6000
-        batch_size = 512
+        batch_size = 258
         learning_rate = 1e-3
 
     class algorithm:
@@ -228,7 +228,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         use_amp = True
 
     class runner(T1BaseCfg.runner):
-        runner_name = 'rl_dream'
+        runner_name = 'rl_odom'
         algorithm_name = 'ppo_odom'
 
         lock_smpl_until = 10000
