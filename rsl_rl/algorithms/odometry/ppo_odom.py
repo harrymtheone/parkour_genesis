@@ -64,7 +64,7 @@ class PPO_Odom(BaseAlgorithm):
         self.cur_it = 0
 
         # PPO components
-        self.actor = Actor(task_cfg.env, task_cfg.policy).to(self.device)
+        self.actor = Actor(task_cfg).to(self.device)
         self.actor.reset_std(self.cfg.init_noise_std)
 
         self.critic = nn.ModuleDict({

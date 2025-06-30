@@ -1,16 +1,13 @@
-# from rsl_rl.modules.model_zju_gru import ObsGRU, ReconGRU, LocoTransformer, Actor
-from rsl_rl.modules.model_zju_exp import ObsGRU, ReconGRU, Mixer, Actor
-
 try:
     import isaacgym, torch
 except ImportError:
     import torch
-
 import os
 
-from torch import nn
-
 from legged_gym.utils.task_registry import TaskRegistry
+# from rsl_rl.modules.model_zju_gru import ObsGRU, ReconGRU, LocoTransformer, Actor
+from rsl_rl.modules.model_zju_exp import ObsGRU, ReconGRU, Mixer, Actor
+from torch import nn
 
 
 class EstimatorGRU(nn.Module):

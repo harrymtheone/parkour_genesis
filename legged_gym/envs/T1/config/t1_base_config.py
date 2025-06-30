@@ -184,9 +184,10 @@ class T1BaseCfg(BaseConfig):
         joint_friction_range = [0.0, 2.]
 
         randomize_joint_armature = False
-
-        joint_armature_range = [0.0001, 0.05]
-        joint_armature_sample_log_space = False
+        joint_armature_range = {
+            'default': dict(range=(0.01, 0.05), log_space=False),
+            'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.0001, 0.05), log_space=True)
+        }
 
         randomize_coulomb_friction = False
         joint_coulomb_range = [0.1, 1.0]

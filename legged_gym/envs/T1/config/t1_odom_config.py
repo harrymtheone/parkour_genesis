@@ -21,7 +21,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         episode_length_s = 40  # episode length in seconds
 
     class sensors:
-        activated = True
+        activated = False
 
         class depth_0:
             link_attached_to = 'H2'
@@ -35,16 +35,23 @@ class T1_Odom_Cfg(T1BaseCfg):
             delay_prop = (5, 1)  # Gaussian (mean, std)
 
             resolution = (114, 64)  # width, height
-            resized = (64, 64)
-            horizontal_fov = 87
+            crop = (0, 2, 4, 4)  # top, bottom, left, right
 
-            bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
-            hmap_shape = (16, 16)  # x dim, y dim
+            edge_process = True
+            edge_noise = dict(blank_ratio=0.2, repeat_ratio=0.2)
+            blank_ratio = 0.002
 
             near_clip = 0
             far_clip = 2
             dis_noise_global = 0.01  # in meters
             dis_noise_gaussian = 0.01  # in meters
+            noise_scale_perlin = 1  # 0-1
+
+            resized = (64, 64)
+            horizontal_fov = 87
+
+            bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
+            hmap_shape = (16, 16)  # x dim, y dim
 
     class commands:
         num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
@@ -79,10 +86,10 @@ class T1_Odom_Cfg(T1BaseCfg):
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 3,
+            'smooth_slope': 2,
             'rough_slope': 1,
-            'stairs_up': 1,
-            'stairs_down': 1,
+            'stairs_up': 0,
+            'stairs_down': 0,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -128,8 +135,13 @@ class T1_Odom_Cfg(T1BaseCfg):
         randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
         randomize_joint_friction = False
+
         randomize_joint_armature = True
-        joint_armature_sample_log_space = False
+        joint_armature_range = {
+            'default': dict(range=(0.01, 0.05), log_space=False),
+            'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.01, 0.05), log_space=False)
+        }
+
         randomize_coulomb_friction = True
 
     class rewards:
@@ -163,16 +175,13 @@ class T1_Odom_Cfg(T1BaseCfg):
             # vel tracking
             tracking_lin_vel = 2.5
             tracking_goal_vel = 3.0
-            # tracking_goal = 1.0
             tracking_ang_vel = 2.5
-            # timeout = (0., -10, 2000, 1000)
 
             # contact
             feet_slip = -1.
-            feet_contact_forces = -0.001
+            feet_contact_forces = -1e-3
             feet_stumble = -1.
-            # feet_edge = -0.3
-            foothold = 0.
+            foothold = -1.
 
             # base pos
             default_joint_pos = 2.0
@@ -190,6 +199,7 @@ class T1_Odom_Cfg(T1BaseCfg):
             collision = -1.
 
             dof_torque_limits = -0.01
+            dof_pos_limits = -10.
 
     class policy:
         # actor parameters
@@ -199,11 +209,12 @@ class T1_Odom_Cfg(T1BaseCfg):
         # critic parameters
         critic_hidden_dims = [512, 256, 128]
 
+    class odometer:
         # odometer parameters
         odom_transformer_embed_dim = 64
         odom_gru_hidden_size = 128
         estimator_output_dim = 3
-        update_since = 6000
+        update_since = 100000000
         batch_size = 258
         learning_rate = 1e-3
 
@@ -231,7 +242,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         runner_name = 'rl_odom'
         algorithm_name = 'ppo_odom'
 
-        lock_smpl_until = 10000
+        lock_smpl_to = 1.0
 
         max_iterations = 2000  # number of policy updates
 
@@ -251,6 +262,12 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
 
         add_dof_lag = True
         dof_lag_range = (0, 6)
+
+        randomize_joint_armature = True
+        joint_armature_range = {
+            'default': dict(range=(0.01, 0.05), log_space=False),
+            'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.0001, 0.05), log_space=True)
+        }
 
     class terrain(T1_Odom_Cfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
@@ -275,53 +292,7 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
         }
 
     class rewards(T1_Odom_Cfg.rewards):
-        class scales(T1_Odom_Cfg.rewards.scales):
-            # # gait
-            # joint_pos = 1.0
-            # feet_contact_number = 0.6
-            # feet_clearance = 1.
-            # feet_distance = -1.
-            # knee_distance = -1.
-            # feet_rotation = -0.3
-            #
-            # # vel tracking
-            # tracking_lin_vel = 2.5
-            # tracking_goal_vel = 3.0
-            # tracking_ang_vel = 2.5
-            #
-            # # contact
-            # feet_slip = -1.
-            # feet_contact_forces = -1e-3
-            # feet_stumble = -1.
-            # # feet_edge = -0.3
-            # foothold = -1.
-            #
-            # # base pos
-            # default_dof_pos = -0.04
-            # default_dof_pos_yr = -1.
-            # orientation = -1.
-            # base_height = -10.
-            # base_acc = -1.
-            # lin_vel_z = -2.0
-            # ang_vel_xy = -0.05
-            #
-            # # energy
-            # action_smoothness = -3e-3
-            # # dof_vel_smoothness = -1e-3
-            # torques = -1e-5
-            # dof_vel = -5e-4
-            # dof_acc = -1e-7
-            # collision = -1.
-            #
-            # dof_vel_smoothness = -1e-3
-            # # head_acc = -0.1
-            #
-            # dof_pos_limits = -10.
-            # dof_vel_limits = -1.
-            # dof_torque_limits = -0.1
-            #
-            # termination = -10.
-
+        class scales(T1_Odom_Cfg.rewards.scales):  # start, end, span, start_it
             joint_pos = 2.
             feet_contact_number = 1.2
             feet_clearance = 1.0
@@ -333,13 +304,13 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
             tracking_lin_vel = 2.5
             tracking_goal_vel = 3.0
             tracking_ang_vel = 2.5
+            # goal_dist_penalty = -1.0
 
             # contact
-            feet_slip = -1.
-            feet_contact_forces = -0.001
-            feet_stumble = -1.
-            # feet_edge = -0.3
-            foothold = (0., -1., 1000, 3000)
+            feet_slip = (0, -1., 100, 3000)
+            feet_contact_forces = (0, -3e-3, 100, 5000)
+            feet_stumble = (0, -1., 100, 5000)
+            foothold = (0., -1., 100, 4000)
 
             # base pos
             default_joint_pos = 2.0
@@ -350,13 +321,15 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
 
             # energy
             action_smoothness = -3e-3
-            # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
             collision = -1.
 
-            dof_torque_limits = -0.01
+            dof_vel_smoothness = (0., -1e-3, 100, 5000)
+            dof_pos_limits = (0., -10., 100, 5000)
+            dof_vel_limits = (0., -1., 100, 5000)
+            dof_torque_limits = (0., -0.1, 100, 5000)
 
     class control(T1BaseCfg.control):
         # PD Drive parameters:
@@ -375,7 +348,26 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
         }
 
     class algorithm(T1_Odom_Cfg.algorithm):
-        entropy_coef = 0.01
+        continue_from_last_std = False
+        init_noise_std = 0.6
 
     class runner(T1_Odom_Cfg.runner):
         max_iterations = 100000  # number of policy updates
+
+
+# -----------------------------------------------------------------------------------------------
+# ------------------------------------------- Finetune -------------------------------------------
+# -----------------------------------------------------------------------------------------------
+
+
+class T1_Odom_Finetune_Cfg(T1_Odom_Stair_Cfg):
+    class sensors(T1_Odom_Stair_Cfg.sensors):
+        activated = True
+
+    class domain_rand(T1_Odom_Stair_Cfg.domain_rand):
+        action_delay = True
+        action_delay_range = [(0, 6)]
+
+    class algorithm(T1_Odom_Cfg.algorithm):
+        continue_from_last_std = False
+        init_noise_std = 0.4

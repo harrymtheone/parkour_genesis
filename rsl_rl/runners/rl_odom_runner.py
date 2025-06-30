@@ -78,6 +78,7 @@ class RLOdomRunner(RunnerLogger):
         terrain_coefficient_variation = {}
 
         # adaptive sampling probability (prob to use ground truth)
+        self.p_smpl = self.cfg.lock_smpl_to
         use_estimated_values = torch.zeros(n_envs, dtype=torch.bool, device=self.device)
 
         for self.cur_it in range(self.start_it, self.start_it + self.cfg.max_iterations):
@@ -90,7 +91,11 @@ class RLOdomRunner(RunnerLogger):
             for _ in range(self.num_steps_per_env):
 
                 with torch.inference_mode(mode=self.cfg.inference_enabled):
-                    recon, priv_est = self.odom.reconstruct(obs)
+                    if obs.depth is None:
+                        recon = priv_est = None
+                    else:
+                        recon, priv_est = self.odom.reconstruct(obs)
+                        recon[:, 1] = torch.where(recon[:, 1] < 0., 0., 1.)
 
                     actions = self.alg.act(
                         obs,
@@ -102,12 +107,12 @@ class RLOdomRunner(RunnerLogger):
                     obs, critic_obs, rewards, dones, infos = env.step(actions)  # obs has changed to next_obs !! if done obs has been reset
                     self.alg.process_env_step(rewards, dones, infos, obs)
 
-                    if self.cur_it % 50 < 10:
-                        self.odom.process_env_step(dones)
-                        with torch.inference_mode(mode=False):
-                            odom_update_info = self.odom.update()
-                    else:
-                        self.odom.storage.clear()
+                    # if self.cur_it % 50 < 10:
+                    #     self.odom.process_env_step(dones)
+                    #     with torch.inference_mode(mode=False):
+                    #         odom_update_info = self.odom.update(self.cur_it)
+                    # else:
+                    #     self.odom.storage.clear()
 
                 if 'episode_rew' in infos:
                     self.episode_rew.append(infos['episode_rew'])
@@ -138,9 +143,9 @@ class RLOdomRunner(RunnerLogger):
                         terrain_coefficient_variation[f'Coefficient Variation/{n}'] = coefficient_variation[i].item()
 
                     # probability to use ground truth value
-                    if self.cur_it > self.cfg.lock_smpl_until:
-                        self.p_smpl = 0.999 * self.p_smpl + 0.001 * torch.tanh(
-                            (coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
+                    # if self.cur_it > self.cfg.lock_smpl_until:
+                    #     self.p_smpl = 0.999 * self.p_smpl + 0.001 * torch.tanh(
+                    #         (coefficient_variation * terrain_env_counts).sum() / terrain_env_counts.sum()).item()
 
                 # Learning step
                 with torch.inference_mode(mode=self.cfg.inference_enabled):
@@ -224,11 +229,17 @@ class RLOdomRunner(RunnerLogger):
         print(log_string)
 
     def play_act(self, obs, **kwargs):
-        rtn = self.odom.play_reconstruct(obs)
-
         self.alg.actor.eval()
 
-        rtn.update(self.alg.play_act(obs, recon=rtn['recon_refine'], est=rtn['estimation'], **kwargs))
+        rtn = self.odom.play_reconstruct(obs)
+
+        if 'recon_refine' in rtn:
+            recon_refine = rtn['recon_refine']
+            recon_refine[:, 1] = torch.where(recon_refine[:, 1] < 0., 0., 1.)
+            rtn.update(self.alg.play_act(obs, recon=rtn['recon_refine'], est=rtn['estimation'], **kwargs))
+        else:
+            rtn.update(self.alg.play_act(obs, recon=None, est=None, **kwargs))
+
         return rtn
 
     def save(self, path, infos=None):

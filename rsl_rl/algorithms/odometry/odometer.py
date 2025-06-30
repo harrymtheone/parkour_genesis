@@ -1,3 +1,5 @@
+import math
+
 import torch
 
 from rsl_rl.modules.model_odom import OdomTransformer
@@ -10,15 +12,19 @@ except ImportError:
 
 
 def masked_MSE(input_, target, mask):
-    return ((input_ - target) * mask).square().sum() / (input_.numel() / mask.numel() * mask.sum())
+    squared_error = torch.square(input_ - target).flatten(2) * mask
+    return squared_error.sum() / (mask.sum() * math.prod(input_.shape[2:]))
 
 
 def masked_L1(input_, target, mask):
-    return ((input_ - target) * mask).abs().sum() / (input_.numel() / mask.numel() * mask.sum())
+    diff = torch.abs(input_ - target).flatten(2) * mask
+    return diff.sum() / (mask.sum() * math.prod(input_.shape[2:]))
 
 
-def masked_mean(input_, mask):
-    return (input_ * mask).sum() / (input_.numel() / mask.numel() * mask.sum())
+def masked_bce_with_logits(input_, target, mask):
+    loss = torch.nn.functional.binary_cross_entropy_with_logits(input_, target, reduction='none')
+    loss = loss.flatten(2) * mask
+    return loss.sum() / (mask.sum() * math.prod(input_.shape[2:]))
 
 
 class Transition:
@@ -39,22 +45,23 @@ class Odometer:
     def __init__(self, task_cfg, device=torch.device('cpu')):
         # PPO parameters
         self.task_cfg = task_cfg
-        self.cfg = task_cfg.algorithm
+        self.cfg = task_cfg.odometer
         self.learning_rate = self.cfg.learning_rate
         self.device = device
+        self.use_amp = task_cfg.algorithm.use_amp
 
         self.cur_it = 0
 
         # Odometer components
         self.odom = OdomTransformer(
             task_cfg.env.n_proprio,
-            task_cfg.policy.odom_transformer_embed_dim,
-            task_cfg.policy.odom_gru_hidden_size,
-            task_cfg.policy.estimator_output_dim
+            task_cfg.odometer.odom_transformer_embed_dim,
+            task_cfg.odometer.odom_gru_hidden_size,
+            task_cfg.odometer.estimator_output_dim
         ).to(self.device)
 
-        self.optimizer = torch.optim.Adam(self.odom.parameters(), lr=task_cfg.policy.learning_rate)
-        self.scaler = GradScaler(enabled=self.cfg.use_amp)
+        self.optimizer = torch.optim.Adam(self.odom.parameters(), lr=task_cfg.odometer.learning_rate)
+        self.scaler = GradScaler(enabled=self.use_amp)
         self.loss_mse = torch.nn.MSELoss()
         self.loss_l1 = torch.nn.L1Loss()
         self.loss_bce = torch.nn.BCEWithLogitsLoss()
@@ -64,11 +71,11 @@ class Odometer:
 
         # Rollout Storage
         self.transition = Transition()
-        self.storage = OdometerStorage(self.task_cfg.policy.batch_size, 24, device=self.device)
+        self.storage = OdometerStorage(self.task_cfg.odometer.batch_size, 4, device=self.device)
 
     def reconstruct(self, obs):
         # act function should run within torch.inference_mode context
-        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+        with torch.autocast(str(self.device), torch.float16, enabled=self.use_amp):
             # store observations
             self.transition.observations = obs
             self.transition.hidden_states = self.odom.hidden_states
@@ -81,6 +88,9 @@ class Odometer:
             return recon_refine, priv_est
 
     def process_env_step(self, dones):
+        if self.cur_it < self.cfg.update_since:
+            return
+
         self.transition.dones = dones.unsqueeze(1)
 
         # data selection
@@ -88,7 +98,7 @@ class Odometer:
             obs = self.transition.observations
 
             unique_env_classes = torch.unique(obs.env_class)
-            num_per_class = self.task_cfg.policy.batch_size // len(unique_env_classes)
+            num_per_class = self.task_cfg.odometer.batch_size // len(unique_env_classes)
             selected_indices = []
 
             for env_class in unique_env_classes:
@@ -112,7 +122,12 @@ class Odometer:
 
         self.odom.reset(dones)
 
-    def update(self):
+    def update(self, cur_it):
+        self.cur_it = cur_it
+
+        if self.cur_it < self.cfg.update_since:
+            return {}
+
         if not self.storage.is_full():
             return {}
 
@@ -123,26 +138,21 @@ class Odometer:
         mean_priv_loss = 0
 
         for batch in self.storage.recurrent_mini_batch_generator(num_epochs=4):
-            with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-                obervations = batch['observations']
-
-                proprio = obervations['proprio'].half()
-                depth = obervations['depth'].half()
-                hidden_states = batch['hidden_states'].half()
-                rough_scan = obervations['rough_scan'].half()
-                scan = obervations['scan'].half()
-                priv = obervations['priv_actor'].half()
+            with torch.autocast(str(self.device), torch.float16, enabled=self.use_amp):
+                proprio, depth, priv, rough_scan, scan, _ = batch['observations'].values()
+                hidden_states = batch['hidden_states']
+                masks = batch['masks']
 
                 recon_rough, recon_refine, priv_est = self.odom(proprio, depth, hidden_states)
 
-            loss_recon_rough = self.loss_mse(recon_rough, rough_scan.unsqueeze(2))
-            loss_recon_refine = self.loss_l1(recon_refine[:, 0], scan[:, 0])
-            loss_edge = self.loss_bce(recon_refine[:, 1], scan[:, 1])
-            loss_priv = self.loss_mse(priv_est, priv)
+            loss_recon_rough = masked_MSE(recon_rough.squeeze(2), rough_scan, masks)
+            loss_recon_refine = masked_L1(recon_refine[:, :, 0], scan[:, :, 0], masks)
+            loss_edge = masked_bce_with_logits(recon_refine[:, :, 1], scan[:, :, 1], masks)
+            loss_priv = masked_MSE(priv_est, priv, masks)
 
             # Gradient step
             self.optimizer.zero_grad()
-            self.scaler.scale(10. * loss_recon_rough + loss_recon_refine + 0.1 * loss_edge + loss_priv).backward()
+            self.scaler.scale(loss_recon_rough + loss_recon_refine + loss_edge + loss_priv).backward()
             # self.scaler.unscale_(self.optimizer)
             # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
             self.scaler.step(self.optimizer)
@@ -167,7 +177,7 @@ class Odometer:
         }
 
     def _update_obom_each_step(self, obs):
-        if self.cur_it < self.task_cfg.policy.update_since:
+        if self.cur_it < self.cfg.update_since:
             return
 
         # data selection
@@ -188,7 +198,7 @@ class Odometer:
             self.selected_indices = torch.cat(selected_indices)
 
         # odometer update
-        with torch.amp.autocast(device_type=self.device.type, dtype=torch.float16, enabled=self.cfg.use_amp):
+        with torch.amp.autocast(device_type=self.device.type, dtype=torch.float16, enabled=self.use_amp):
             prop = obs.proprio[self.selected_indices]
             depth = obs.depth[self.selected_indices]
             rough_scan = obs.rough_scan[self.selected_indices]
@@ -213,10 +223,11 @@ class Odometer:
             self.odom_update_infos['Loss/loss_priv'] = loss_priv.item()
 
     def play_reconstruct(self, obs, **kwargs):
-        with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):
-            recon_rough, recon_refine, est = self.odom.inference_forward(obs.proprio, obs.depth, eval_=True)
+        if obs.depth is None:
+            return {}
 
-            recon_refine[:, 1] = torch.where(recon_refine[:, 1] < 0., 0., 1.)
+        with torch.autocast(self.device.type, torch.float16, enabled=self.use_amp):
+            recon_rough, recon_refine, est = self.odom.inference_forward(obs.proprio, obs.depth, eval_=True)
 
             return {
                 'recon_rough': recon_rough,
@@ -226,8 +237,12 @@ class Odometer:
 
     def load(self, loaded_dict, load_optimizer=True):
 
-        if 'odometer_state_dict' in loaded_dict:
-            self.odom.load_state_dict(loaded_dict['odometer_state_dict'])
+        # if 'odometer_state_dict' in loaded_dict:
+        #     self.odom.load_state_dict(loaded_dict['odometer_state_dict'])
+
+        odom_path = '/home/harry/projects/parkour_genesis/logs/odom_online/2025-06-27_18-33-19/latest.pth'
+        print(f'No odometer state dict, loading from {odom_path}')
+        self.odom.load_state_dict(torch.load(odom_path, weights_only=True))
 
     def save(self):
         return {'odometer_state_dict': self.odom.state_dict()}

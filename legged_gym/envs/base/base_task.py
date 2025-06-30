@@ -554,7 +554,7 @@ class BaseTask:
                 self.joint_friction = self._zero_tensor(self.num_envs)
 
             if self.cfg.domain_rand.randomize_joint_armature:
-                self.joint_armatures = self._zero_tensor(self.num_envs)
+                self.joint_armatures = self._zero_tensor(self.num_envs, self.num_dof)
 
             if self.cfg.domain_rand.randomize_coulomb_friction:
                 self.randomized_joint_coulomb = self._zero_tensor(self.num_envs, self.num_dof)
@@ -611,19 +611,30 @@ class BaseTask:
             self.sim.set_dof_friction(friction_all, env_ids)
 
         if self.cfg.domain_rand.randomize_joint_armature:
-            if self.cfg.domain_rand.joint_armature_sample_log_space:
-                self.joint_armatures[env_ids] = torch.exp(torch_rand_float(math.log(self.cfg.domain_rand.joint_armature_range[0]),
-                                                                           math.log(self.cfg.domain_rand.joint_armature_range[1]),
-                                                                           (len(env_ids), 1),
-                                                                           device=self.device).squeeze(1))
-            else:
-                self.joint_armatures[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_armature_range[0],
-                                                                 self.cfg.domain_rand.joint_armature_range[1],
-                                                                 (len(env_ids), 1),
-                                                                 device=self.device).squeeze(1)
+            armature = self.joint_armatures[env_ids]
 
-            armatures = self.joint_armatures[env_ids, None].repeat(1, self.num_dof)
-            self.sim.set_dof_armature(armatures, env_ids)
+            for name, armature_params in self.cfg.domain_rand.joint_armature_range.items():
+                armature_params: dict
+                armature_dof_ids = armature_params.get('dof_ids', tuple(range(self.num_dof)))
+                armature_range = armature_params['range']
+
+                if armature_params['log_space']:
+                    armature[:, armature_dof_ids] = torch.exp(torch_rand_float(
+                        math.log(armature_range[0]),
+                        math.log(armature_range[1]),
+                        (len(env_ids), len(armature_dof_ids)),
+                        device=self.device
+                    ).squeeze(1))
+                else:
+                    armature[:, armature_dof_ids] = torch_rand_float(
+                        armature_range[0],
+                        armature_range[1],
+                        (len(env_ids), len(armature_dof_ids)),
+                        device=self.device
+                    ).squeeze(1)
+
+            self.joint_armatures[env_ids] = armature
+            self.sim.set_dof_armature(self.joint_armatures.clone(), env_ids)
 
         if self.cfg.domain_rand.randomize_coulomb_friction:
             self.randomized_joint_coulomb[env_ids] = torch_rand_float(self.cfg.domain_rand.joint_coulomb_range[0],

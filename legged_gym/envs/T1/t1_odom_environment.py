@@ -12,7 +12,7 @@ class ActorObs(ObsBase):
     def __init__(self, proprio, depth, priv_actor, rough_scan, scan, env_class):
         super().__init__()
         self.proprio = proprio.clone()
-        self.depth = depth.clone()
+        self.depth = depth
         self.priv_actor = priv_actor.clone()
         self.rough_scan = rough_scan.clone()
         self.scan = scan.clone()
@@ -120,8 +120,9 @@ class T1OdomEnvironment(T1BaseEnv):
             self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.ext_force[:, :2],  # 2
             self.ext_torque,  # 3
-            self.sim.friction_coeffs,  # 1
-            self.sim.payload_masses / 10.,  # 1
+            # self.sim.friction_coeffs,  # 1
+            # self.sim.payload_masses / 10.,  # 1
+            (self.target_pos_rel / 5.).clip(max=1.),
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
@@ -137,7 +138,10 @@ class T1OdomEnvironment(T1BaseEnv):
         base_edge_mask = self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
         scan_edge = torch.stack([scan, base_edge_mask], dim=1)
 
-        depth = self.sensors.get('depth_0').squeeze(2).half()
+        if self.cfg.sensors.activated:
+            depth = self.sensors.get('depth_0').squeeze(2).half()
+        else:
+            depth = None
         self.actor_obs = ActorObs(proprio, depth, priv_actor_obs, rough_scan, scan_edge, self.env_class)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
@@ -166,10 +170,11 @@ class T1OdomEnvironment(T1BaseEnv):
             depth_img = (depth_img - self.cfg.sensors.depth_0.near_clip) / self.cfg.sensors.depth_0.far_clip
             img = np.clip(depth_img * 255, 0, 255).astype(np.uint8)
 
-            cv2.imshow("depth_processed", cv2.resize(img, (530, 300)))
+            cv2.imshow("depth_processed", cv2.resize(img, (320, 320)))
             cv2.waitKey(1)
 
         super().render()
+
     #
     # def _reward_default_dof_pos(self):
     #     return (self.sim.dof_pos - self.init_state_dof_pos).abs().sum(dim=1)
@@ -250,3 +255,9 @@ class T1OdomEnvironment(T1BaseEnv):
     #
     #     rew[self.env_class < 4] = 0.
     #     return rew
+
+    def _reward_goal_dist_penalty(self):
+        if self.sim.terrain is None:
+            return self._zero_tensor(self.num_envs)
+
+        return self.target_pos_rel.norm(dim=1).clip(max=5.)

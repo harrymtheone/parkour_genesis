@@ -32,8 +32,8 @@ def train(args):
         task_cfg.runner.logger_backend = None
         # args.headless = False
         task_cfg.terrain.num_rows = 10
-        task_cfg.terrain.num_cols = 2
-        task_cfg.env.num_envs = 512
+        task_cfg.terrain.num_cols = 10
+        task_cfg.env.num_envs = 256
 
     if task_cfg.runner.logger_backend == 'wandb':
         import wandb

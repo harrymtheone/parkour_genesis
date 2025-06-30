@@ -8,6 +8,107 @@ from legged_gym.utils.math import xyz_to_quat, torch_rand_float
 from .sensor_base import SensorBase, SensorBuffer
 
 
+def expand_edge_mask_roll(edge_mask, expand_x=1, expand_y=1):
+    expanded_mask = edge_mask.clone()
+    # x方向扩展（水平方向）
+    for i in range(1, expand_x + 1):
+        # 向右扩展
+        expanded_mask = expanded_mask | torch.roll(edge_mask, shifts=i, dims=2)
+        # 向左扩展
+        expanded_mask = expanded_mask | torch.roll(edge_mask, shifts=-i, dims=2)
+
+    # y方向扩展（垂直方向）
+    for i in range(1, expand_y + 1):
+        # 向下扩展
+        expanded_mask = expanded_mask | torch.roll(edge_mask, shifts=i, dims=1)
+        # 向上扩展
+        expanded_mask = expanded_mask | torch.roll(edge_mask, shifts=-i, dims=1)
+    return expanded_mask
+
+
+def detect_depth_edge(depth_image, gradient_threshold=0.04):
+    grad_x = torch.gradient(depth_image, dim=2)[0]  # 沿宽度方向
+    grad_y = torch.gradient(depth_image, dim=1)[0]  # 沿高度方向
+    gradient_magnitude = torch.sqrt(grad_x ** 2 + grad_y ** 2)
+    boundary_mask = gradient_magnitude > gradient_threshold
+    # boundary_mask = expand_edge_mask_roll(boundary_mask, expand_x=2, expand_y=2)
+    return boundary_mask
+
+
+def edge_blank(depth_image, edge_mask, blank_ratio=0.3, blank_value=4):
+    random_mask = torch.rand_like(edge_mask, dtype=torch.float) < blank_ratio
+    selected_edge_mask = edge_mask & random_mask
+    depth_image[selected_edge_mask] = blank_value
+
+
+def image_blank(depth_image, blank_ratio=0.05, blank_value=4):
+    random_mask = torch.rand_like(depth_image, dtype=torch.float) < blank_ratio
+    depth_image[random_mask] = blank_value
+
+
+def image_blank_perlin(depth_image, blank_ratio=0.05, blank_value=4, noise_scale=0.1, time_offset=None):
+    if time_offset is None:
+        time_offset = time.time() * 0.1
+    height, width = depth_image.shape[1], depth_image.shape[2]
+    num_envs = depth_image.shape[0]
+
+    # 创建坐标网格
+    x_coords = np.linspace(0, 1, width) * noise_scale
+    y_coords = np.linspace(0, 1, height) * noise_scale
+
+    # 生成Perlin噪声（使用numpy数组）
+    noise_array = np.zeros((height, width))
+    for h in range(height):
+        for w in range(width):
+            noise_array[h, w] = noise.pnoise3(x_coords[w], y_coords[h], time_offset,
+                                              octaves=4, persistence=0.5, lacunarity=2.0)
+
+    # 转换为torch张量
+    noise_tensor = torch.from_numpy(noise_array).float().to(self.device)
+
+    # 归一化
+    noise_tensor = (noise_tensor - noise_tensor.min()) / (noise_tensor.max() - noise_tensor.min())
+
+    # 计算阈值
+    flat_noise = noise_tensor.flatten()
+    sorted_noise, _ = torch.sort(flat_noise)
+    threshold_idx = int((1 - blank_ratio) * len(sorted_noise))
+    threshold = sorted_noise[threshold_idx]
+
+    # 创建blank掩码
+    blank_mask = noise_tensor > threshold
+
+    # 应用到所有环境
+    processed_depth = depth_image.clone()
+    for env_idx in range(num_envs):
+        processed_depth[env_idx][blank_mask] = blank_value
+
+    return processed_depth
+
+
+def edge_repeat(depth_image, edge_mask, repeat_ratio=0.3):
+    random_mask = torch.rand_like(edge_mask.float()) < repeat_ratio  # 随机选择边缘像素
+    selected_boundary_mask = edge_mask & random_mask
+
+    processed_depth = depth_image.clone()
+    nearby_pixels = []
+    offsets = [
+        (-1, -1), (-1, 0), (-1, 1),
+        (0, -1), (0, 1),
+        (1, -1), (1, 0), (1, 1)
+    ]  # 获取8个方向的附近像素
+
+    for dy, dx in offsets:  # 使用滚动操作获取偏移后的图像
+        rolled_image = torch.roll(torch.roll(depth_image, shifts=dy, dims=1), shifts=dx, dims=2)
+        nearby_pixels.append(rolled_image)
+
+    random_idx = torch.randint(0, len(nearby_pixels), (1,)).item()
+    nearby_pix = nearby_pixels[random_idx]
+    processed_depth[selected_boundary_mask] = nearby_pix[selected_boundary_mask]  # 替换选中的边缘像素
+
+    return processed_depth
+
+
 class DepthCam(SensorBase):
     def __init__(self, cfg_dict, device, mesh_id, sim):
         super().__init__(cfg_dict, device, mesh_id, sim)
@@ -15,10 +116,13 @@ class DepthCam(SensorBase):
         self.data_format = cfg_dict['data_format']
         self.far_clip = cfg_dict['far_clip']
         self.near_clip = cfg_dict['near_clip']
+        self.edge_noise = cfg_dict.get('edge_noise', None)
         self.dis_noise_global = cfg_dict['dis_noise_global']
         self.dis_noise_gaussian = cfg_dict['dis_noise_gaussian']
+        self.crop = cfg_dict['crop']
 
         self.depth_raw = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']))
+        self.depth_processed = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resized']))
 
         if (self.data_format == 'cloud') or (self.data_format == 'hmap'):
             self.cloud = self._zero_tensor(self.num_envs, *reversed(self.cfg_dict['resolution']), 3)
@@ -57,12 +161,15 @@ class DepthCam(SensorBase):
                                     delay_prop=cfg_dict['delay_prop'],
                                     device=device)
 
-    def get(self, get_pos=False, get_depth=False, get_cloud=False, get_hmap=False, **kwargs):
+    def get(self, get_pos=False, get_depth_raw=False, get_depth=False, get_cloud=False, get_hmap=False, **kwargs):
         if get_pos:
             return wp.to_torch(self.sensor_pos)
 
-        if get_depth:
+        if get_depth_raw:
             return self.depth_raw.clone()
+
+        if get_depth:
+            return (self.depth_processed + 0.5) * self.far_clip + self.near_clip
 
         if get_cloud:
             return self.cloud.clone(), self.cloud_valid.clone()
@@ -84,12 +191,20 @@ class DepthCam(SensorBase):
         return self.buf.step(reset)
 
     def post_process(self):
-        if self.data_format == 'depth' or self.data_format == 'cloud':
+
+        if self.data_format == 'depth':
             # These operations are replicated on the hardware
             depth_image = self.depth_raw.clone()
+            if self.edge_noise:
+                edge_mask = detect_depth_edge(depth_image)
+                edge_blank(depth_image, edge_mask, self.edge_noise['blank_ratio'], blank_value=4)
+                edge_blank(depth_image, edge_mask, self.edge_noise['blank_ratio'] / 100, blank_value=0)
+                # edge_repeat(depth_image, edge_mask, repeat_ratio=self.edge_noise['repeat_ratio'])
 
-            # crop 30 pixels from the left and right and 20 pixels from bottom and return cropped image
-            depth_image = depth_image[:, :-2, 4:-4]
+            # image_blank(depth_image, blank_ratio=self.img_blank_ratio, blank_value=4)
+            # image_blank(depth_image, blank_ratio=self.image_blank_ratio / 100, blank_value=0)
+            # depth_image = image_blank_perlin(depth_image, blank_ratio=self.image_blank_ratio, blank_value=4, noise_scale=self.noise_scale_perlin)
+            # depth_image = depth_image[:, self.crop[0]: -self.crop[1], self.crop[2]: -self.crop[3]]
 
             # add global distance noise
             depth_image[:] += torch_rand_float(-self.dis_noise_global, self.dis_noise_global, (self.num_envs, 1), self.device).unsqueeze(-1)
@@ -106,11 +221,9 @@ class DepthCam(SensorBase):
             # normalize the depth image to range (-0.5, 0.5)
             depth_image[:] = (depth_image - self.near_clip) / (self.far_clip - self.near_clip) - 0.5
 
-            # self.depth_processed[:] = depth_image
+            self.depth_processed[:] = depth_image
             self.buf.append(depth_image)
 
-        elif self.data_format == 'hmap':
-            self.buf.append(torch.stack([self.hmap, self.hmap_std], dim=1))
         else:
             raise NotImplementedError
 
