@@ -2,10 +2,10 @@ try:
     import isaacgym, torch  # NOQA
 except ImportError:
     import torch
-
 import os
 from datetime import datetime
 
+import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
 from legged_gym.simulator import SimulatorType
@@ -18,7 +18,7 @@ def play(args):
     log_root = 'logs'
     args.simulator = SimulatorType.IsaacGym
     args.headless = True
-    args.resume = True
+    args.resume = False
 
     task_registry = TaskRegistry()
     task_cfg = task_registry.get_cfg(name=args.task)
@@ -26,7 +26,7 @@ def play(args):
     # override some parameters for testing
     task_cfg.play.control = False
     task_cfg.env.num_envs = 512
-    task_cfg.terrain.num_rows = 5
+    task_cfg.terrain.num_rows = 10
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
     task_cfg.terrain.curriculum = False
     # task_cfg.terrain.max_difficulty = True
@@ -69,7 +69,6 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
     env = task_registry.make_env(args=args, task_cfg=task_cfg)
     obs, obs_critic = env.get_observations(), env.get_critic_observations()
-    dones = torch.ones(env.num_envs, dtype=torch.bool, device=args.device)
 
     # load policy
     env.sim.clear_lines = True
@@ -85,6 +84,8 @@ def play(args):
     l1 = torch.nn.L1Loss()
     bce = torch.nn.BCEWithLogitsLoss()
 
+    transformer.load_state_dict(torch.load('', weights_only=True))
+
     if not args.debug:
         log_dir = os.path.join(log_root, 'odom_online', datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
         writer = SummaryWriter(log_dir)
@@ -97,7 +98,7 @@ def play(args):
     accumulation_steps = 4
     num_epoch = 0
 
-    for step_i in range(int(1e10)):
+    for step_i in tqdm.trange(int(1e10)):
 
         with torch.amp.autocast(enabled=use_amp, device_type=args.device):
             # rollout - use the training hidden state

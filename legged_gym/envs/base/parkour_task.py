@@ -482,7 +482,7 @@ class ParkourTask(BaseTask):
         self.commands[env_is_parkour, 2] = delta_yaw_error[env_is_parkour]
         # self.commands[env_is_parkour, 2] = torch.clip(self.commands[env_is_parkour, 2], *self.cmd_ranges_parkour['ang_vel_yaw'])
 
-        cmd_ratio = torch.clip(1 - torch.abs(3. * delta_yaw_error / torch.pi), min=0)
+        cmd_ratio = torch.clip(1 - torch.abs(1. * delta_yaw_error / torch.pi), min=0)
         self.commands[env_is_parkour, 0] = (cmd_ratio * self.command_x_parkour)[env_is_parkour]
 
         # constraint command ranges

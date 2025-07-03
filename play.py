@@ -28,7 +28,7 @@ def play(args):
 
     # override some parameters for testing
     task_cfg.play.control = False
-    task_cfg.env.num_envs = 32
+    task_cfg.env.num_envs = 16
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
@@ -50,10 +50,10 @@ def play(args):
     task_cfg.domain_rand.randomize_gains = False
 
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 1,
-        'rough_slope': 1,
-        'stairs_up': 1,
-        'stairs_down': 1,
+        'smooth_slope': 0,
+        'rough_slope': 0,
+        'stairs_up': 0,
+        'stairs_down': 0,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
@@ -87,7 +87,7 @@ def play(args):
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, dones=dones)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=True, eval_=True, dones=dones)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.9, eval_=True, dones=dones)
 
             actions = rtn['actions']
@@ -125,7 +125,7 @@ def play(args):
             # actions[env.lookat_id] = (env.ref_dof_pos - env.init_state_dof_pos)[env.lookat_id, env.dof_activated]
             # actions[env.lookat_id] /= env.cfg.control.action_scale
 
-            obs, obs_critic, rewards, dones, _ = env.step(actions)
+            obs, obs_critic, rewards, dones, extras = env.step(actions)
 
             live.update(vis.gen_info_panel(args, env))
 
@@ -190,7 +190,7 @@ def play(args):
 
 if __name__ == '__main__':
     # t1_vis = vis.T1ActionsVisualizer()
-    # t1_vis = vis.T1DofVelVisualizer()
+    t1_vis = vis.T1DofVelVisualizer()
     # t1_vis = vis.T1TorqueVisualizer()
 
     with torch.inference_mode():

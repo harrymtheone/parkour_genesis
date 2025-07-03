@@ -226,7 +226,7 @@ class T1ActionsVisualizer(BaseVisualizer):
 
 
 class T1DofVelVisualizer(BaseVisualizer):
-    figsize = (6, 12)
+    figsize = (12, 12)
     subplot_shape = (6, 2)
     subplot_props = {
         # 'Waist': {'lim': (-3, 3)},

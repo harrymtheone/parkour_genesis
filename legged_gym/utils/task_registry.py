@@ -5,15 +5,14 @@ from .helpers import get_load_path, set_seed
 
 
 class TaskRegistry:
-    def __init__(self, task_list=None):
+    def __init__(self, tasks: dict=None):
         self.task_classes = {}
         self.task_cfgs = {}
 
-        if task_list is None:
-            from ..envs import task_list
+        if tasks is None:
+            from legged_gym.envs import tasks
 
-        for t in task_list:
-            name, task_class, task_cfg = t
+        for name, (task_class, task_cfg) in tasks.items():
             self.task_classes[name] = task_class
             self.task_cfgs[name] = task_cfg
 

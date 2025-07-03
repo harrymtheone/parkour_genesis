@@ -204,7 +204,7 @@ class DepthCam(SensorBase):
             # image_blank(depth_image, blank_ratio=self.img_blank_ratio, blank_value=4)
             # image_blank(depth_image, blank_ratio=self.image_blank_ratio / 100, blank_value=0)
             # depth_image = image_blank_perlin(depth_image, blank_ratio=self.image_blank_ratio, blank_value=4, noise_scale=self.noise_scale_perlin)
-            # depth_image = depth_image[:, self.crop[0]: -self.crop[1], self.crop[2]: -self.crop[3]]
+            depth_image = depth_image[:, self.crop[0]: -self.crop[1], self.crop[2]: -self.crop[3]]
 
             # add global distance noise
             depth_image[:] += torch_rand_float(-self.dis_noise_global, self.dis_noise_global, (self.num_envs, 1), self.device).unsqueeze(-1)

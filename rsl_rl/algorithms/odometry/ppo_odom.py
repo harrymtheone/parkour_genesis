@@ -78,6 +78,8 @@ class PPO_Odom(BaseAlgorithm):
         self.transition = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
+        self.mse_loss = nn.MSELoss()
+
     def act(self,
             obs,
             obs_critic,
@@ -168,7 +170,7 @@ class PPO_Odom(BaseAlgorithm):
             mean_value_loss = mean_default_value_loss + mean_contact_value_loss
             mean_surrogate_loss += surrogate_loss.item()
             mean_entropy_loss += entropy_loss.item()
-            # mean_symmetry_loss += symmetry_loss.item()
+            mean_symmetry_loss += symmetry_loss.item()
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -277,23 +279,23 @@ class PPO_Odom(BaseAlgorithm):
             # Entropy loss
             entropy_loss = self.cfg.entropy_coef * masked_mean(self.actor.entropy, mask_batch)
 
-            # # Symmetry loss
-            # batch_size = 4
-            # action_mean_original = self.actor.action_mean[:batch_size].detach()
-            #
-            # obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
-            # self.actor.train_act(
-            #     obs_mirrored_batch,
-            #     recon_batch,
-            #     priv_batch,
-            #     hidden_states=actor_hidden_states_batch,
-            #     use_estimated_values=use_estimated_values_batch
-            # )
-            #
-            # mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-            # symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+            # Symmetry loss
+            batch_size = 4
+            action_mean_original = self.actor.action_mean[:batch_size].detach()
 
-            return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, 0.
+            obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
+            self.actor.train_act(
+                obs_mirrored_batch,
+                recon_batch,
+                priv_batch,
+                hidden_states=actor_hidden_states_batch,
+                use_estimated_values=use_estimated_values_batch
+            )
+
+            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
+            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+
+            return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
 
     def play_act(self, obs, use_estimated_values=True, recon=None, est=None, **kwargs):
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):

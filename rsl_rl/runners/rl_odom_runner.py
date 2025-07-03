@@ -17,6 +17,7 @@ class RunnerLogger:
     learn_time = -1
     episode_rew = []
     episode_terrain_level = []
+    step_rew = collections.deque(maxlen=100)
     episode_rew_sum = collections.deque(maxlen=100)
     episode_length = collections.deque(maxlen=100)
 
@@ -127,6 +128,7 @@ class RLOdomRunner(RunnerLogger):
                 new_ids = torch.where(dones > 0)
                 if len(new_ids[0]) > 0:
                     last_env_reward[new_ids] = cur_reward_sum[new_ids]
+                    self.step_rew.extend((cur_reward_sum / cur_episode_length)[new_ids].cpu().numpy().tolist())
                     self.episode_rew_sum.extend(cur_reward_sum[new_ids].cpu().numpy().tolist())
                     self.episode_length.extend(cur_episode_length[new_ids].cpu().numpy().tolist())
 
@@ -177,9 +179,8 @@ class RLOdomRunner(RunnerLogger):
         logger_dict = {}
 
         # logging episode reward
-        ep_rew = self.episode_rew
-        for rew_name in ep_rew[0]:
-            rew_tensor = [ep[rew_name] for ep in ep_rew]
+        for rew_name in self.episode_rew[0]:
+            rew_tensor = [ep[rew_name] for ep in self.episode_rew]
             rew_tensor = torch.stack(rew_tensor, dim=0)
             logger_dict['Episode_rew/' + rew_name] = torch.mean(rew_tensor).item()
 
@@ -197,8 +198,9 @@ class RLOdomRunner(RunnerLogger):
         logger_dict.update(update_info)
 
         if len(self.episode_rew_sum) > 10:
-            logger_dict['Train/mean_reward'] = statistics.mean(self.episode_rew_sum)  # use the latest 100 to compute
-            logger_dict['Train/mean_episode_length'] = statistics.mean(self.episode_length)
+            logger_dict['Train/step_reward'] = statistics.mean(self.step_rew)  # use the latest 100 to compute
+            logger_dict['Train/episode_reward'] = statistics.mean(self.episode_rew_sum)  # use the latest 100 to compute
+            logger_dict['Train/episode_length'] = statistics.mean(self.episode_length)
         logger_dict['Train/base_height'] = self.mean_base_height.mean().item()
         logger_dict['Train/AdaSmpl'] = self.p_smpl
 

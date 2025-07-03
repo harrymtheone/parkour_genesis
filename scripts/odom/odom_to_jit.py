@@ -101,6 +101,7 @@ def trace_odom(proj, cfg, exptid, checkpoint):
     ).to(device)
 
     model.load_state_dict(state_dict['odometer_state_dict'])
+    model.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/odom_017r3/latest.pth', weights_only=True))
     model.eval()
 
     # define the trace function
@@ -108,7 +109,7 @@ def trace_odom(proj, cfg, exptid, checkpoint):
         model(*args)
         model_jit = torch.jit.trace(model, args)
         model_jit(*args)
-        model_path = os.path.join(trace_path, f'recon_{exptid}_{checkpoint}_jit.pt')
+        model_path = os.path.join(trace_path, f'recon_jit.pt')
 
         try:
             torch.jit.save(model_jit, model_path)
@@ -126,7 +127,7 @@ def trace_odom(proj, cfg, exptid, checkpoint):
 
 
 if __name__ == '__main__':
-    kwargs = dict(proj='t1', cfg='t1_odom_stair', exptid='t1_odom_012r1r5', checkpoint=103300)
+    kwargs = dict(proj='t1', cfg='t1_odom_finetune', exptid='t1_odom_017r4', checkpoint=10900)
 
     trace_actor(**kwargs)
     trace_odom(**kwargs)

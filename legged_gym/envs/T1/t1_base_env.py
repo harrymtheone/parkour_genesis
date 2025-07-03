@@ -88,13 +88,13 @@ class T1BaseEnv(HumanoidEnv):
         scale_2 = 2 * scale_1
 
         # left swing (with double support phase)
-        clock_l[clock_l > -0.3] = 0
+        clock_l[clock_l > self.cfg.commands.double_support_phase] = 0
         ref_dof_pos[:, 1] = clock_l * scale_1
         ref_dof_pos[:, 4] = -clock_l * scale_2
         ref_dof_pos[:, 5] = clock_l * scale_1
 
         # right swing (with double support phase)
-        clock_r[clock_r > -0.3] = 0
+        clock_r[clock_r > self.cfg.commands.double_support_phase] = 0
         ref_dof_pos[:, 7] = clock_r * scale_1
         ref_dof_pos[:, 10] = -clock_r * scale_2
         ref_dof_pos[:, 11] = clock_r * scale_1
