@@ -5,8 +5,8 @@ import torch
 
 from legged_gym.utils.helpers import class_to_dict
 from legged_gym.utils.math import torch_rand_float, transform_by_yaw, wrap_to_pi, transform_quat_by_quat, xyz_to_quat
-from legged_gym.utils.terrain import Terrain
 from .base_task import BaseTask
+from ...utils.terrain.terrain_types import TerrainType
 
 
 class ParkourTask(BaseTask):
@@ -125,7 +125,7 @@ class ParkourTask(BaseTask):
             self.extras['episode_terrain_level'] = {}
 
             env_cls = np.unique(self.env_class.cpu().numpy())
-            env_cls_name = [Terrain.terrain_type(c).name for c in env_cls]
+            env_cls_name = [TerrainType(c).name for c in env_cls]
 
             for c, n in zip(env_cls, env_cls_name):
                 self.extras['episode_terrain_level'][n] = torch.mean(self.env_levels[self.env_class == c].float())

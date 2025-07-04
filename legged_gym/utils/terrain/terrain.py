@@ -1,28 +1,28 @@
-from enum import Enum
-
 import scipy
 
+from .terrain_types import *
 from .terrain_utils import *
-from .utils import convert_heightfield_to_trimesh, edge_detection, generate_fractal_noise_2d
+from .utils import convert_heightfield_to_trimesh, edge_detection
 
 
 class Terrain:
-    class terrain_type(Enum):
-        smooth_slope = 0
-        rough_slope = 1
-        stairs_up = 2
-        stairs_down = 3
-        discrete = 4
-        stepping_stone = 5
-        gap = 6
-        pit = 7
-        parkour = 8
-        parkour_gap = 9
-        parkour_box = 10
-        parkour_step = 11
-        parkour_stair = 12
-        parkour_mini_stair = 13
-        parkour_flat = 14
+    terrain_generators = {
+        'smooth_slope': SmoothSlope,
+        'rough_slope': RoughSlope,
+        'stairs_up': PyramidStairsUp,
+        'stairs_down': PyramidStairsDown,
+        'discrete': None,
+        'stepping_stone': None,
+        'gap': None,
+        'pit': None,
+        'parkour': None,
+        'parkour_gap': None,
+        'parkour_box': None,
+        'parkour_step': None,
+        'parkour_stair': ParkourStair,
+        'parkour_mini_stair': ParkourMiniStair,
+        'parkour_flat': ParkourFlat,
+    }
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -30,8 +30,6 @@ class Terrain:
         if cfg.description_type in ["none", 'plane']:
             return
 
-        self.proportions = np.array(list(cfg.terrain_dict.values()))
-        self.proportions = np.cumsum(self.proportions / np.sum(self.proportions))
         self.cfg.num_sub_terrains = cfg.num_rows * cfg.num_cols
         self.env_origins = np.zeros((cfg.num_rows, cfg.num_cols, 3))
         self.terrain_type = np.zeros((cfg.num_rows, cfg.num_cols))
@@ -84,18 +82,30 @@ class Terrain:
             print(f'Simplified to {self.triangles.shape[0]} triangles')
 
     def curriculum(self, max_difficulty=False):
+        terrain_dict = {t: p for t, p in self.cfg.terrain_dict.items() if p > 0.}
+        proportions = np.array(list(terrain_dict.values()))
+        prop_sum = np.cumsum(proportions / np.sum(proportions))
+
         terrain_mat = np.empty((self.cfg.num_rows, self.cfg.num_cols), dtype=object)
 
         for j in range(self.cfg.num_cols):
             for i in range(self.cfg.num_rows):
                 choice = j / self.cfg.num_cols + 0.001
-                difficulty = i / (self.cfg.num_rows - 1) if self.cfg.num_rows > 1 else 0.5
+
+                for selected_terrain_name, prop_sum_i in zip(terrain_dict, prop_sum):
+                    if choice < prop_sum_i:
+                        break
+
+                gen = self.terrain_generators[selected_terrain_name](
+                    selected_terrain_name,
+                    self.cfg.vertical_scale,
+                    self.cfg.horizontal_scale,
+                )
 
                 if max_difficulty:
-                    # terrain = self.make_terrain(choice, 0.8 + 0.2 * difficulty)
-                    terrain = self.make_terrain(choice, 0.9999)
+                    terrain = gen.generate(difficulty=0.9999)
                 else:
-                    terrain = self.make_terrain(choice, difficulty)
+                    terrain = gen.generate(difficulty=i / (self.cfg.num_rows - 1) if self.cfg.num_rows > 1 else 0.5)
 
                 terrain_mat[i, j] = terrain
 
@@ -122,83 +132,15 @@ class Terrain:
                     pts = (goal_xy / self.cfg.horizontal_scale).astype(int)
                     self.goals[r, c, goal_i, 2] = self.height_field_raw[pts[0], pts[1]] * self.cfg.vertical_scale
 
-    def add_roughness(self, terrain, difficulty=1.):
-        max_height = (self.cfg.roughness_height[1] - self.cfg.roughness_height[0]) * difficulty + self.cfg.roughness_height[0]
-        random_uniform_terrain(terrain,
-                               min_height=-max_height,
-                               max_height=max_height,
-                               step=0.005,
-                               downsampled_scale=self.cfg.downsampled_scale)
-
-    def add_fractal_roughness(self, terrain, difficulty=1):
-        # heightfield_noise = generate_fractal_noise_2d(
-        #     xSize=int(terrain.width * self.cfg.horizontal_scale),
-        #     ySize=int(terrain.length * self.cfg.horizontal_scale),
-        #     xSamples=terrain.width,
-        #     ySamples=terrain.length,
-        #     zScale=0.08 + 0.07 * difficulty,  # 0.08, 0.15
-        #     frequency=10,
-        # ) / self.cfg.vertical_scale
-
-        heightfield_noise = generate_fractal_noise_2d(
-            (terrain.width, terrain.length),
-            terrain.horizontal_scale,
-            difficulty
-        ) / self.cfg.vertical_scale
-
-        terrain.height_field_raw[:] += heightfield_noise
-
-    def make_terrain(self, choice, difficulty):
-        if choice < self.proportions[7]:
-            # legged_gym terrain
-            pixel_length_per_env = int(self.cfg.terrain_size[0] / self.cfg.horizontal_scale)
-            pixel_width_per_env = int(self.cfg.terrain_size[1] / self.cfg.horizontal_scale)
-        else:
-            # parkour terrain
-            pixel_length_per_env = int(self.cfg.terrain_parkour_size[0] / self.cfg.horizontal_scale)
-            pixel_width_per_env = int(self.cfg.terrain_parkour_size[1] / self.cfg.horizontal_scale)
-
-        terrain = SubTerrain("terrain",
-                             width=pixel_length_per_env,
-                             length=pixel_width_per_env,
-                             vertical_scale=self.cfg.vertical_scale,
-                             horizontal_scale=self.cfg.horizontal_scale)
-        slope = difficulty * 0.4
-        stair_up_height = 0.02 + 0.08 * difficulty
-        stair_down_height = 0.02 + 0.08 * difficulty
-        stair_height_goal = 0.05 + 0.10 * difficulty  # 跑酷楼梯的高度
+    def make_terrain(self, selected_terrain_type, difficulty):
         discrete_obstacles_height = 0.03 + difficulty * 0.15
         stepping_stones_size = 1.5 * (1.05 - difficulty)
         stone_distance = 0.05 if difficulty == 0 else 0.1
         gap_size = 0.1 + 0.4 * difficulty
         pit_depth = 0.1 + 0.3 * difficulty
 
-        if choice < self.proportions[0]:
-            terrain.terrain_type = Terrain.terrain_type.smooth_slope
-            # if choice < self.proportions[0] / 2:
-            #     slope *= -1
-            # terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
-            # add_fractal_roughness(terrain, scale=5)
-            # self.add_roughness(terrain, difficulty)
 
-        elif choice < self.proportions[1]:
-            terrain.terrain_type = Terrain.terrain_type.rough_slope
-            # self.terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
-            # random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
-            self.add_fractal_roughness(terrain, difficulty)
-            # self.add_roughness(terrain, difficulty)
-
-        elif choice < self.proportions[3]:
-            if choice < self.proportions[2]:
-                terrain.terrain_type = Terrain.terrain_type.stairs_up
-                pyramid_stairs_terrain(terrain, step_width=0.31, step_height=-stair_up_height, platform_size=3.)
-            else:
-                terrain.terrain_type = Terrain.terrain_type.stairs_down
-                pyramid_stairs_terrain(terrain, step_width=0.31, step_height=stair_down_height, platform_size=3.)
-
-            # self.add_roughness(terrain, difficulty)
-
-        elif choice < self.proportions[4]:
+        if selected_terrain_type < self.proportions[4]:
             terrain.terrain_type = Terrain.terrain_type.discrete
             num_rectangles = 20
             rectangle_min_size = 1.
@@ -207,25 +149,25 @@ class Terrain:
             self.terrain_utils.discrete_obstacles_terrain(terrain, discrete_obstacles_height, rectangle_min_size,
                                                           rectangle_max_size, num_rectangles, platform_size=3.)
 
-        elif choice < self.proportions[5]:
+        elif selected_terrain_type < self.proportions[5]:
             terrain.terrain_type = Terrain.terrain_type.stepping_stone
             raise NotImplementedError
             self.terrain_utils.stepping_stones_terrain(terrain, stone_size=stepping_stones_size,
                                                        stone_distance=stone_distance, max_height=0., platform_size=4.)
 
-        elif choice < self.proportions[6]:
+        elif selected_terrain_type < self.proportions[6]:
             terrain.terrain_type = Terrain.terrain_type.gap
             gap_terrain(terrain, gap_size=gap_size, outer_platform_size=6.)
             terrain.centered_origin = False
             self.add_roughness(terrain, difficulty)
 
-        elif choice < self.proportions[7]:
+        elif selected_terrain_type < self.proportions[7]:
             terrain.terrain_type = Terrain.terrain_type.pit
             pit_terrain(terrain, depth=pit_depth, bottom_size=4.)
             terrain.centered_origin = False
             self.add_roughness(terrain, difficulty)
 
-        elif choice < self.proportions[8]:
+        elif selected_terrain_type < self.proportions[8]:
             terrain.terrain_type = Terrain.terrain_type.parkour
             x_range = [-0.1, 0.1 + 0.3 * difficulty]  # offset to stone_len
             y_range = [0.2, 0.3 + 0.1 * difficulty]
@@ -244,7 +186,7 @@ class Terrain:
             terrain.centered_origin = False
             self.add_roughness(terrain, difficulty)
 
-        elif choice < self.proportions[9]:
+        elif selected_terrain_type < self.proportions[9]:
             terrain.terrain_type = Terrain.terrain_type.parkour_gap
             parkour_gap_terrain(terrain,
                                 gap_size=gap_size,
@@ -256,13 +198,13 @@ class Terrain:
             terrain.centered_origin = False
             self.add_roughness(terrain, difficulty)
 
-        elif choice < self.proportions[10]:
+        elif selected_terrain_type < self.proportions[10]:
             terrain.terrain_type = Terrain.terrain_type.parkour_box
             parkour_box_terrain(terrain, box_height_range=[pit_depth - 0.05, pit_depth + 0.05])
             terrain.centered_origin = False
             self.add_roughness(terrain, 0 * difficulty)
 
-        elif choice < self.proportions[11]:
+        elif selected_terrain_type < self.proportions[11]:
             terrain.terrain_type = Terrain.terrain_type.parkour_step
             parkour_step_terrain(terrain,
                                  step_height=pit_depth,
@@ -272,29 +214,6 @@ class Terrain:
             terrain.centered_origin = False
             self.add_roughness(terrain, difficulty)
 
-        elif choice < self.proportions[12]:
-            terrain.terrain_type = Terrain.terrain_type.parkour_stair
-            parkour_stair_terrain(terrain,
-                                  step_height=stair_height_goal,
-                                  step_depth=random.uniform(0.25, 0.35))  # 0.31
-                                  # step_depth=0.31)  # 0.31
-            terrain.centered_origin = False
-            # self.add_roughness(terrain, 0.5)
-
-        elif choice < self.proportions[13]:
-            terrain.terrain_type = Terrain.terrain_type.parkour_mini_stair
-            parkour_mini_stair_terrain(terrain,
-                                       step_height=stair_height_goal,
-                                       # step_depth=random.uniform(0.25, 0.35))  # 0.31
-                                       step_depth=0.31)  # 0.31
-            terrain.centered_origin = False
-            self.add_roughness(terrain, difficulty)
-
-        elif choice < self.proportions[14]:
-            terrain.terrain_type = Terrain.terrain_type.parkour_flat
-            parkour_flat_terrain(terrain)
-            terrain.centered_origin = False
-            self.add_roughness(terrain, difficulty)
 
         return terrain
 

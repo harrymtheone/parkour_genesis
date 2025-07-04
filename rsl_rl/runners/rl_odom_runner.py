@@ -96,7 +96,8 @@ class RLOdomRunner(RunnerLogger):
                         recon = priv_est = None
                     else:
                         recon, priv_est = self.odom.reconstruct(obs)
-                        recon[:, 1] = torch.where(recon[:, 1] < 0., 0., 1.)
+                        # recon[:, 1] = torch.where(recon[:, 1] < 0., 0., 1.)
+                        recon[:, 1] = torch.sigmoid(recon[:, 1])
 
                     actions = self.alg.act(
                         obs,
@@ -237,7 +238,8 @@ class RLOdomRunner(RunnerLogger):
 
         if 'recon_refine' in rtn:
             recon_refine = rtn['recon_refine']
-            recon_refine[:, 1] = torch.where(recon_refine[:, 1] < 0., 0., 1.)
+            # recon_refine[:, 1] = torch.where(recon_refine[:, 1] < 0., 0., 1.)
+            recon_refine[:, 1] = torch.sigmoid(recon_refine[:, 1])
             rtn.update(self.alg.play_act(obs, recon=rtn['recon_refine'], est=rtn['estimation'], **kwargs))
         else:
             rtn.update(self.alg.play_act(obs, recon=None, est=None, **kwargs))

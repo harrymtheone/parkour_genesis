@@ -4,6 +4,7 @@ import torch
 
 from .t1_base_env import T1BaseEnv
 from ..base.utils import ObsBase
+from ...utils.math import torch_rand_float, transform_by_yaw
 
 
 class ActorObs(ObsBase):
@@ -66,6 +67,15 @@ class T1OdomEnvironment(T1BaseEnv):
         self.goal_distance = self._zero_tensor(self.num_envs)
         self.last_goal_distance = self._zero_tensor(self.num_envs)
 
+        self.scan_dev_xy = self._zero_tensor(self.num_envs, 1, 2)
+        self.scan_dev_z = self._zero_tensor(self.num_envs, 1)
+
+    def _reset_idx(self, env_ids: torch.Tensor):
+        super()._reset_idx(env_ids)
+
+        self.scan_dev_xy[:] = torch_rand_float(-0.05, 0.05, (self.num_envs, 2), device=self.device).unsqueeze(1)
+        self.scan_dev_z[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 1), device=self.device)
+
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
         self.goal_distance[:] = torch.norm(self.cur_goals[:, :2] - self.sim.root_pos[:, :2], dim=1)
@@ -73,6 +83,25 @@ class T1OdomEnvironment(T1BaseEnv):
     def _post_physics_post_step(self):
         super()._post_physics_post_step()
         self.last_goal_distance[:] = self.goal_distance
+
+    def get_scan(self, noisy=False):
+        # convert height points coordinate to world frame
+        points = transform_by_yaw(
+            self.scan_points,
+            self.base_euler[:, 2:3].repeat(1, self.num_scan)
+        ).unflatten(0, (self.num_envs, -1))
+
+        points[:] += self.sim.root_pos.unsqueeze(1) + self.cfg.terrain.border_size
+
+        if not noisy:
+            return self._get_heights(points)
+
+        z_gauss = 0.03 * torch.randn(self.num_envs, self.scan_points.size(1), device=self.device)
+
+        points[:, :, :2] += self.scan_dev_xy
+        heights = self._get_heights(points)
+        heights[:] += self.scan_dev_z + z_gauss
+        return heights
 
     def _compute_observations(self):
         """
@@ -139,7 +168,7 @@ class T1OdomEnvironment(T1BaseEnv):
         rough_scan = torch.clip(self.get_body_hmap() - self.cfg.normalization.scan_norm_bias, -1, 1.)
         rough_scan = rough_scan.view(self.num_envs, *self.cfg.env.scan_shape)
 
-        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
 
         base_edge_mask = self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
@@ -181,120 +210,6 @@ class T1OdomEnvironment(T1BaseEnv):
             cv2.waitKey(1)
 
         super().render()
-
-    # def _reward_tracking_lin_vel(self):
-    #     lin_vel_error_square = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
-    #     rew = torch.exp(-lin_vel_error_square * self.cfg.rewards.tracking_sigma)
-    #     rew[self.env_class >= 4] = 0.
-    #     return rew
-    #
-    # def _reward_tracking_goal_vel(self):
-    #     if self.sim.terrain is None:
-    #         return self._zero_tensor(self.num_envs)
-    #
-    #     cmd_vel_norm = torch.norm(self.commands[:, :2], dim=1)
-    #     target_unit_vec = self.target_pos_rel / (torch.norm(self.target_pos_rel, dim=1, keepdim=True) + 1e-5)
-    #     root_lin_vel_projection = torch.sum(self.sim.root_lin_vel[:, :2] * target_unit_vec, dim=1)
-    #
-    #     lin_vel_error = torch.where(
-    #         self.env_class < 4,
-    #         torch.norm(self.commands[:, :2] - self.base_lin_vel[:, :2], dim=1),  # pyramid stair
-    #         torch.abs(cmd_vel_norm - root_lin_vel_projection)  # parkour terrain
-    #     )
-    #
-    #     rew = torch.where(
-    #         lin_vel_error < self.cfg.commands.parkour_vel_tolerance,
-    #         torch.exp(-lin_vel_error * 0.3),
-    #         torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma) - 1 + math.exp(-self.cfg.commands.parkour_vel_tolerance * 0.3)
-    #     )
-    #
-    #     rew[self.env_class < 4] = 0.
-    #     return rew
-    #
-    # def _reward_tracking_ang_vel(self):
-    #     ang_vel_error_square = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
-    #     rew = torch.exp(-ang_vel_error_square * self.cfg.rewards.tracking_sigma)
-    #     return rew
-    #
-    # def _reward_default_dof_pos(self):
-    #     return (self.sim.dof_pos - self.init_state_dof_pos).abs().sum(dim=1)
-    #
-    # def _reward_default_dof_pos_yr(self):
-    #     assert self.yaw_roll_dof_indices is not None
-    #     joint_diff = self.sim.dof_pos - self.init_state_dof_pos
-    #     yaw_roll = joint_diff[:, self.yaw_roll_dof_indices].abs()
-    #     return (yaw_roll - 0.1).clip(min=0, max=50).sum(dim=1)
-    #
-    # def _reward_feet_distance(self):
-    #     foot_pos = self.sim.link_pos[:, self.feet_indices, :2]
-    #     foot_dist = torch.norm(foot_pos[:, 0, :] - foot_pos[:, 1, :], dim=1)
-    #     penalty_min = torch.clamp(self.cfg.rewards.min_dist - foot_dist, 0., 0.5)
-    #     penalty_max = torch.clamp(foot_dist - self.cfg.rewards.max_dist, 0., 0.5)
-    #     return penalty_min + penalty_max
-    #
-    # def _reward_knee_distance(self):
-    #     """
-    #     Calculates the reward based on the distance between the knee of the humanoid.
-    #     """
-    #     knee_pos = self.sim.link_pos[:, self.knee_indices, :2]
-    #     knee_dist = torch.norm(knee_pos[:, 0, :] - knee_pos[:, 1, :], dim=1)
-    #     penalty_min = torch.clamp(self.cfg.rewards.min_dist - knee_dist, 0., 0.5)
-    #     penalty_max = torch.clamp(knee_dist - self.cfg.rewards.max_dist / 2, 0., 0.5)
-    #     return penalty_min + penalty_max
-    #
-    # def _reward_feet_rotation(self):
-    #     return self.feet_euler_xyz[:, :, :2].square().sum(dim=[1, 2])
-    #
-    # def _reward_orientation(self):
-    #     return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
-    #
-    # def _reward_base_height(self):
-    #     return torch.abs(self.base_height - self.cfg.rewards.base_height_target)
-    #
-    # def _reward_base_acc(self):
-    #     root_acc = self.last_root_vel - self.sim.root_lin_vel
-    #     return torch.norm(root_acc, dim=1)
-    #
-    # def _reward_lin_vel_z(self):
-    #     # Penalize z axis base linear velocity
-    #     return torch.square(self.base_lin_vel[:, 2])
-    #
-    # def _reward_ang_vel_xy(self):
-    #     # Penalize xy axes base angular velocity
-    #     return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
-    #
-    # def _reward_tracking_goal(self):
-    #     if self.sim.terrain is None:
-    #         return self._zero_tensor(self.num_envs)
-    #
-    #     root_lin_vel_xy = self.sim.root_lin_vel[:, :2]
-    #     root_lin_vel_xy_norm = torch.norm(root_lin_vel_xy, dim=1, keepdim=True)
-    #     root_lin_vel_unit_vec = torch.where(
-    #         root_lin_vel_xy_norm > self.cfg.commands.lin_vel_clip,
-    #         root_lin_vel_xy / (root_lin_vel_xy_norm + 1e-5),
-    #         0.
-    #     )
-    #
-    #     target_unit_vec = self.target_pos_rel / (torch.norm(self.target_pos_rel, dim=1, keepdim=True) + 1e-5)
-    #
-    #     rew = torch.sum(root_lin_vel_unit_vec * target_unit_vec, dim=1)
-    #     return rew
-    #
-    # def _reward_stall(self):
-    #     lin_vel_xy = torch.norm(self.base_lin_vel[:, :2], dim=1)
-    #     lin_vel_cmd_xy = torch.norm(self.commands[:, :2], dim=1)
-    #
-    #     lin_vel_stall = (lin_vel_xy < self.cfg.commands.lin_vel_clip) & (lin_vel_cmd_xy > 0)
-    #     ang_vel_stall = (torch.abs(self.base_ang_vel[:, 2]) < self.cfg.commands.ang_vel_clip) & (torch.abs(self.commands[:, 2]) > 0)
-    #
-    #     return (lin_vel_stall | ang_vel_stall).float()
-    #
-    # def _reward_timeout(self, dist_clip=3.):
-    #     time_out = torch.clamp(self.tracking_goal_timer - TIMEOUT_TIME, min=0)
-    #     rew = time_out * self.target_pos_rel.norm(dim=1).clip(max=dist_clip) / dist_clip
-    #
-    #     rew[self.env_class < 4] = 0.
-    #     return rew
 
     def _reward_goal_dist_change(self, vel_thresh=0.6):
         if self.sim.terrain is None:
