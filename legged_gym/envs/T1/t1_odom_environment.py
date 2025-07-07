@@ -44,8 +44,9 @@ class ObsNoDepth(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_his, scan, edge_mask):
+    def __init__(self, priv_actor, priv_his, scan, edge_mask):
         super().__init__()
+        self.priv_actor = priv_actor.clone()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
         self.edge_mask = edge_mask.clone()
@@ -162,29 +163,36 @@ class T1OdomEnvironment(T1BaseEnv):
             self.goal_distance.unsqueeze(1) / 10.,  # 1
         ), dim=-1)
 
-        priv_actor_obs = base_lin_vel * self.obs_scales.lin_vel  # 3
-
         # compute height map
         rough_scan = torch.clip(self.get_body_hmap() - self.cfg.normalization.scan_norm_bias, -1, 1.)
         rough_scan = rough_scan.view(self.num_envs, *self.cfg.env.scan_shape)
 
-        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.cfg.normalization.scan_norm_bias, -1, 1.)
-        scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
+        scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan_noisy = scan_noisy.view(self.num_envs, *self.cfg.env.scan_shape)
 
         base_edge_mask = self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
-        scan_edge = torch.stack([scan, base_edge_mask], dim=1)
+        scan_edge = torch.stack([scan_noisy, base_edge_mask], dim=1)
 
         if self.cfg.sensors.activated:
             depth = self.sensors.get('depth_0').squeeze(2).half()
         else:
             depth = None
-        self.actor_obs = ActorObs(proprio, depth, priv_actor_obs, rough_scan, scan_edge, self.env_class)
+
+        priv_actor = base_lin_vel * self.obs_scales.lin_vel  # 3
+
+        self.actor_obs = ActorObs(proprio, depth, priv_actor, rough_scan, scan_edge, self.env_class)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation
+        priv_actor_clean = self.base_lin_vel * self.obs_scales.lin_vel  # 3
+
+        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
+
         reset_flag = self.episode_length_buf <= 1
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask)
+
+        self.critic_obs = CriticObs(priv_actor_clean, self.critic_his_buf.get(), scan, base_edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):

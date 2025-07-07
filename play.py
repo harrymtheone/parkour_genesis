@@ -51,8 +51,8 @@ def play(args):
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
-        'rough_slope': 0,
-        'stairs_up': 0,
+        'rough_slope': 1,
+        'stairs_up': 1,
         'stairs_down': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -65,6 +65,7 @@ def play(args):
         'parkour_stair': 1,
         'parkour_mini_stair': 1,
         'parkour_flat': 0,
+        'huge_stair': 1,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
 

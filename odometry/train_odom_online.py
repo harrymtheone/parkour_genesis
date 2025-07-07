@@ -84,7 +84,7 @@ def play(args):
     l1 = torch.nn.L1Loss()
     bce = torch.nn.BCEWithLogitsLoss()
 
-    transformer.load_state_dict(torch.load('', weights_only=True))
+    transformer.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/best2/latest.pth', weights_only=True))
 
     if not args.debug:
         log_dir = os.path.join(log_root, 'odom_online', datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
@@ -106,9 +106,9 @@ def play(args):
 
             # Accumulate losses
             loss_recon_rough += mse(recon_rough, obs.rough_scan.unsqueeze(1))
-            loss_recon_refine += l1(recon_refine[:, 0], obs.scan[:, 0])
-            loss_edge += bce(recon_refine[:, 1], obs.scan[:, 1])
-            loss_priv += mse(priv_est, obs.priv_actor)
+            loss_recon_refine += l1(recon_refine[:, 0], obs_critic.scan)
+            loss_edge += bce(recon_refine[:, 1], obs_critic.edge_mask)
+            loss_priv += mse(priv_est, obs_critic.priv_actor)
 
             # Perform an update every `accumulation_steps`
             if (step_i + 1) % accumulation_steps == 0:

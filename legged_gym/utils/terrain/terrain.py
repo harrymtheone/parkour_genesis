@@ -1,3 +1,4 @@
+import numpy as np
 import scipy
 
 from .terrain_types import *
@@ -22,6 +23,7 @@ class Terrain:
         'parkour_stair': ParkourStair,
         'parkour_mini_stair': ParkourMiniStair,
         'parkour_flat': ParkourFlat,
+        'huge_stair': HugeStair,
     }
 
     def __init__(self, cfg):
@@ -30,15 +32,16 @@ class Terrain:
         if cfg.description_type in ["none", 'plane']:
             return
 
-        self.cfg.num_sub_terrains = cfg.num_rows * cfg.num_cols
+        self.border = int(cfg.border_size / self.cfg.horizontal_scale)
+
         self.env_origins = np.zeros((cfg.num_rows, cfg.num_cols, 3))
         self.terrain_type = np.zeros((cfg.num_rows, cfg.num_cols))
-        self.goals = None
-        self.num_goals = None
 
-        self.border = int(cfg.border_size / self.cfg.horizontal_scale)
         self.height_field_raw: np.array
         self.height_field_guidance: np.array
+
+        self.goals: np.array
+        self.num_goals: np.array
 
         self.curriculum(max_difficulty=cfg.max_difficulty)
 
@@ -96,16 +99,12 @@ class Terrain:
                     if choice < prop_sum_i:
                         break
 
-                gen = self.terrain_generators[selected_terrain_name](
-                    selected_terrain_name,
-                    self.cfg.vertical_scale,
-                    self.cfg.horizontal_scale,
-                )
+                terrain = self.terrain_generators[selected_terrain_name]()
 
                 if max_difficulty:
-                    terrain = gen.generate(difficulty=0.9999)
+                    terrain.make(difficulty=0.9999)
                 else:
-                    terrain = gen.generate(difficulty=i / (self.cfg.num_rows - 1) if self.cfg.num_rows > 1 else 0.5)
+                    terrain.make(difficulty=i / (self.cfg.num_rows - 1) if self.cfg.num_rows > 1 else 0.5)
 
                 terrain_mat[i, j] = terrain
 
