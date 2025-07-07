@@ -30,7 +30,7 @@ def play(args):
     task_cfg.play.control = False
     task_cfg.env.num_envs = 16
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
-    task_cfg.terrain.num_rows = 5
+    task_cfg.terrain.num_rows = 1
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
     task_cfg.terrain.curriculum = True
     # task_cfg.terrain.max_difficulty = True
@@ -51,9 +51,10 @@ def play(args):
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
-        'rough_slope': 1,
+        'rough_slope': 0,
         'stairs_up': 1,
         'stairs_down': 0,
+        'huge_stair': 1,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
@@ -62,10 +63,9 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
-        'parkour_mini_stair': 1,
+        'parkour_stair': 0,
+        'parkour_mini_stair': 0,
         'parkour_flat': 0,
-        'huge_stair': 1,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
 
@@ -108,13 +108,13 @@ def play(args):
                 args.est = est[env.lookat_id, :3] / 2
                 args.recon_loss = torch.nn.functional.l1_loss(obs.scan[env.lookat_id, 1], recon_refine[env.lookat_id, 1])
 
-                # env._draw_body_hmap(recon_rough[env.lookat_id])
-                env.draw_recon(recon_refine[env.lookat_id])
-                # env.draw_est_hmap(est)
-                # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
-                # env.draw_recon(obs.scan[env.lookat_id])
-            else:
-                env.draw_recon(obs.scan[env.lookat_id])
+            #     # env._draw_body_hmap(recon_rough[env.lookat_id])
+            #     env.draw_recon(recon_refine[env.lookat_id])
+            #     # env.draw_est_hmap(est)
+            #     # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
+            #     # env.draw_recon(obs.scan[env.lookat_id])
+            # else:
+            #     env.draw_recon(obs.scan[env.lookat_id])
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.

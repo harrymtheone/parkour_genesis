@@ -189,7 +189,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
     def _reward_tracking_lin_vel(self):
         lin_vel_error_square = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
         rew = torch.exp(-lin_vel_error_square * self.cfg.rewards.tracking_sigma)
-        rew[self.env_class >= 4] = 0.
+        rew[self.env_class >= 100] = 0.
         return rew
 
     def _reward_tracking_goal_vel(self):
@@ -200,11 +200,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
         target_unit_vec = self.target_pos_rel / (torch.norm(self.target_pos_rel, dim=1, keepdim=True) + 1e-5)
         root_lin_vel_projection = torch.sum(self.sim.root_lin_vel[:, :2] * target_unit_vec, dim=1)
 
-        lin_vel_error = torch.where(
-            self.env_class < 4,
-            torch.norm(self.commands[:, :2] - self.base_lin_vel[:, :2], dim=1),  # pyramid stair
-            torch.abs(cmd_vel_norm - root_lin_vel_projection)  # parkour terrain
-        )
+        lin_vel_error = torch.abs(cmd_vel_norm - root_lin_vel_projection)  # parkour terrain
 
         rew = torch.where(
             lin_vel_error < self.cfg.commands.parkour_vel_tolerance,
@@ -212,7 +208,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
             torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma) - 1 + math.exp(-self.cfg.commands.parkour_vel_tolerance * 0.3)
         )
 
-        rew[self.env_class < 4] = 0.
+        rew[self.env_class < 100] = 0.
         return rew
 
     def _reward_tracking_ang_vel(self):
@@ -297,7 +293,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
         time_out = torch.clamp(self.tracking_goal_timer - TIMEOUT_TIME, min=0)
         rew = time_out * self.target_pos_rel.norm(dim=1).clip(max=dist_clip) / dist_clip
 
-        rew[self.env_class < 4] = 0.
+        rew[self.env_class < 100] = 0.
         return rew
 
     def _reward_goal_dist_change(self, vel_thresh=0.6):
@@ -305,7 +301,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
             return self._zero_tensor(self.num_envs)
 
         rew = (self.last_goal_distance - self.goal_distance).clip(max=vel_thresh * self.dt)
-        rew *= (self.env_class >= 4) & ~self.is_zero_command
+        rew *= (self.env_class >= 100) & ~self.is_zero_command
         return rew
 
 

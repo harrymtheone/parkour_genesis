@@ -226,7 +226,7 @@ class T1OdomEnvironment(T1BaseEnv):
         dist_change = self.last_goal_distance - self.goal_distance
         rew = dist_change.clip(max=vel_thresh * self.dt)
         rew *= torch.clip(1 - 2 * torch.abs(self.delta_yaw) / torch.pi, min=0.)
-        rew *= (self.env_class >= 4) & ~self.is_zero_command & (dist_change > -1.)  # dist increase a lot in a sudden, meaning goal updated
+        rew *= (self.env_class >= 100) & ~self.is_zero_command & (dist_change > -1.)  # dist increase a lot in a sudden, meaning goal updated
         return rew
 
 

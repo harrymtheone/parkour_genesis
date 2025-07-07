@@ -138,7 +138,7 @@ class ParkourTask(BaseTask):
                 self.extras['reach_goals'] = self.reach_goal_cutoff.clone()
 
     def _reset_root_state(self, env_ids):
-        env_rand = self.env_class[env_ids] < 2
+        env_rand = self.env_class[env_ids] < 100
         num_env_rand = torch.sum(env_rand, dtype=torch.int).item()
 
         # base position
@@ -291,7 +291,7 @@ class ParkourTask(BaseTask):
         super()._check_termination()
 
         if self.sim.terrain is not None:
-            self.reach_goal_cutoff[:] = (self.cur_goal_idx >= self.env_goal_num) & (self.env_class >= 4)
+            self.reach_goal_cutoff[:] = (self.cur_goal_idx >= self.env_goal_num) & (self.env_class >= 100)
             self.reset_buf[:] |= self.reach_goal_cutoff
 
     def _post_physics_mid_step(self):
@@ -302,7 +302,7 @@ class ParkourTask(BaseTask):
 
             # update goals
             dist = torch.norm(self.sim.root_pos[:, :2] - self.cur_goals[:, :2], dim=1)
-            self.reached_goal_env[:] = (dist < self.cfg.env.next_goal_threshold) & (self.env_class >= 4)
+            self.reached_goal_env[:] = (dist < self.cfg.env.next_goal_threshold) & (self.env_class >= 100)
 
             # update goals
             self.reach_goal_timer[self.reached_goal_env] += 1
@@ -346,13 +346,13 @@ class ParkourTask(BaseTask):
             move_down[env_is_flat] = dis_to_origin[env_is_flat] < self.cfg.terrain.terrain_size[0] / 8
 
         # curriculum logic for stair terrain
-        env_is_stair = torch.logical_and(self.env_class[env_ids] >= 2, self.env_class[env_ids] < 4)
+        env_is_stair = torch.logical_and(self.env_class[env_ids] >= 2, self.env_class[env_ids] < 100)
         if len(env_is_stair) > 0:
             move_up[env_is_stair] = dis_to_origin[env_is_stair] > self.cfg.terrain.terrain_size[0] / 2
             move_down[env_is_stair] = dis_to_origin[env_is_stair] < 0.4 * threshold[env_is_stair]
 
         # curriculum logic for parkour terrain
-        env_is_parkour = self.env_class[env_ids] >= 4
+        env_is_parkour = self.env_class[env_ids] >= 100
         if len(env_is_parkour) > 0:
             move_up[env_is_parkour] = (self.cur_goal_idx >= self.env_goal_num)[env_ids][env_is_parkour]
             move_down[env_is_parkour] = (self.cur_goal_idx < self.env_goal_num // 2)[env_ids][env_is_parkour]
@@ -418,7 +418,7 @@ class ParkourTask(BaseTask):
             motion_type[env_ids_flat] = sample_motion_type([1, 4, 1, 4], len(env_ids_flat))
 
         # sample command for stair terrain (heading mode, yaw command is updated by heading)
-        env_ids_stair = env_ids[torch.logical_and(self.env_class[env_ids] >= 2, self.env_class[env_ids] < 4)]
+        env_ids_stair = env_ids[torch.logical_and(self.env_class[env_ids] >= 2, self.env_class[env_ids] < 100)]
         if len(env_ids_stair) > 0:
             self.commands[env_ids_stair, 0] = sample_cmd(self.cmd_ranges_stair["lin_vel_x"],
                                                          self.cfg.commands.lin_vel_clip,
@@ -432,7 +432,7 @@ class ParkourTask(BaseTask):
             motion_type[env_ids_stair] = sample_motion_type([2, 4, 0, 4], len(env_ids_stair))
 
         # sample command for parkour terrain (goal guided, no yaw command)
-        env_ids_parkour = env_ids[self.env_class[env_ids] >= 4]
+        env_ids_parkour = env_ids[self.env_class[env_ids] >= 100]
         if len(env_ids_parkour) > 0:
             self.commands[env_ids_parkour, 0] = sample_cmd(self.cmd_ranges_parkour["lin_vel_x"],
                                                            self.cfg.commands.lin_vel_clip,
@@ -440,7 +440,7 @@ class ParkourTask(BaseTask):
             motion_type[env_ids_parkour] = sample_motion_type([1, 0, 0, 9], len(env_ids_parkour))
 
         # re-scale command (to prevent speed norm greater than x_vel_max)
-        commands_normal = self.commands[self.env_class < 4]
+        commands_normal = self.commands[self.env_class < 100]
         command_norm = torch.norm(commands_normal[:, :2], dim=1, keepdim=True)
         command_norm = torch.clip(command_norm, min=self.cmd_ranges_flat["lin_vel_x"][1])
         commands_normal[:, :2] *= self.cmd_ranges_flat["lin_vel_x"][1] / command_norm
@@ -471,14 +471,14 @@ class ParkourTask(BaseTask):
         delta_yaw_error = 1.0 * self.delta_yaw
 
         # stair terrains use heading commands
-        env_is_stair = torch.logical_and(self.env_class >= 2, self.env_class < 4)
+        env_is_stair = torch.logical_and(self.env_class >= 2, self.env_class < 100)
         forward = transform_by_yaw(self.forward_vec, self.base_euler[:, 2])
         heading = torch.atan2(forward[:, 1], forward[:, 0])
         self.commands[env_is_stair, 2] = wrap_to_pi(self.commands[env_is_stair, 3] - heading[env_is_stair])
         self.commands[env_is_stair, 2] = torch.clip(self.commands[env_is_stair, 2], *self.cmd_ranges_stair['ang_vel_yaw'])
 
         # envs' yaw value of parkour terrain is computed using yaw difference
-        env_is_parkour = self.env_class >= 4
+        env_is_parkour = self.env_class >= 100
         self.commands[env_is_parkour, 2] = delta_yaw_error[env_is_parkour]
         # self.commands[env_is_parkour, 2] = torch.clip(self.commands[env_is_parkour, 2], *self.cmd_ranges_parkour['ang_vel_yaw'])
 
@@ -595,6 +595,7 @@ class ParkourTask(BaseTask):
         self.sim.clear_lines = False
 
         pts = []
+        pts_edge = []
         for i in range(self.sim.height_samples.shape[0]):
             for j in range(self.sim.height_samples.shape[1]):
                 if j % 50 != 0:
@@ -608,8 +609,12 @@ class ParkourTask(BaseTask):
                 else:
                     z = self.sim.height_samples[i, j] * self.cfg.terrain.vertical_scale + 0.02
 
-                pts.append((x, y, z))
+                if self.sim.edge_mask[i, j]:
+                    pts_edge.append((x, y, z))
+                else:
+                    pts.append((x, y, z))
         self.sim.draw_points(pts)
+        self.sim.draw_points(pts_edge, color=(1, 0, 0))
 
     def _draw_edge(self):
         # for debug use!!!

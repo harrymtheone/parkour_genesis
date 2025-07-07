@@ -185,7 +185,7 @@ class T1PIEEnvironment(T1BaseEnv):
         time_out = self.goal_task_timer - 100
         effective_out = torch.clamp(time_out, min=0)
         time_out_rew = effective_out * 0.001
-        time_out_rew[self.env_class < 4] = 0.
+        time_out_rew[self.env_class < 100] = 0.
         return time_out_rew
 
     def _reward_joint_pos(self):
