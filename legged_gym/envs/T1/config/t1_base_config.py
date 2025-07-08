@@ -57,8 +57,8 @@ class T1BaseCfg(BaseConfig):
         curriculum = True
         max_difficulty = False
 
-        static_friction = 1.0
-        dynamic_friction = 1.0
+        static_friction = 0.5
+        dynamic_friction = 0.5
         restitution = 0.
         measure_heights = True
 

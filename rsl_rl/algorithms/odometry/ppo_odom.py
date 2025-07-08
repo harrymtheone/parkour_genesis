@@ -116,12 +116,16 @@ class PPO_Odom(BaseAlgorithm):
         self.transition.dones = dones.unsqueeze(1)
 
         # from Logan
-        rew_elements = infos['rew_elements']
-        # rew_contact = rew_elements['feet_edge'].clone().unsqueeze(1)
-        rew_contact = (rew_elements['feet_contact_forces'] + rew_elements['feet_stumble'] + rew_elements['foothold']).clone().unsqueeze(1)
-        rew_default = rewards.clone().unsqueeze(1) - rew_contact
-        self.transition.rewards = rew_default
-        self.transition.rewards_contact = rew_contact
+        rew_elements: dict = infos['rew_elements']
+
+        rew_contact = rew_elements.get('feet_edge', 0.)
+        rew_contact += rew_elements.get('feet_contact_forces', 0.)
+        rew_contact += rew_elements.get('feet_stumble', 0.)
+        rew_contact += rew_elements.get('foothold', 0.)
+
+        rew_default = rewards - rew_contact
+        self.transition.rewards = rew_default.unsqueeze(1)
+        self.transition.rewards_contact = rew_contact.unsqueeze(1)
 
         # Bootstrapping on time-outs
         if 'time_outs' in infos:
@@ -299,7 +303,12 @@ class PPO_Odom(BaseAlgorithm):
 
     def play_act(self, obs, use_estimated_values=True, recon=None, est=None, **kwargs):
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):
-            kwargs['use_estimated_values'] = use_estimated_values & torch.ones(self.task_cfg.env.num_envs, 1, dtype=torch.bool, device=self.device)
+
+            if isinstance(use_estimated_values, bool):
+                kwargs['use_estimated_values'] = use_estimated_values & torch.ones(self.task_cfg.env.num_envs, 1, dtype=torch.bool, device=self.device)
+            else:
+                kwargs['use_estimated_values'] = use_estimated_values
+
             return {'actions': self.actor.act(obs, recon, est, **kwargs)}
 
     def train(self):

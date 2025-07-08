@@ -234,6 +234,9 @@ class RLOdomRunner(RunnerLogger):
     def play_act(self, obs, **kwargs):
         self.alg.actor.eval()
 
+        if 'recon' in kwargs:
+            return self.alg.play_act(obs, **kwargs)
+
         rtn = self.odom.play_reconstruct(obs)
 
         if 'recon_refine' in rtn:

@@ -25,6 +25,7 @@ class Terrain:
         'parkour_stair': ParkourStair,
         'parkour_stair_down': ParkourStairDown,
         'parkour_mini_stair': ParkourMiniStair,
+        'parkour_go_back_stair': ParkourGoBackStair,
     }
 
     def __init__(self, cfg):

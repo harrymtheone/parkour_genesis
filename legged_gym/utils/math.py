@@ -18,9 +18,8 @@ def normalize(x):
 
 
 @torch.jit.script
-def wrap_to_pi(angles):
-    angles %= 2 * torch.pi
-    return angles - 2 * torch.pi * (angles > torch.pi)
+def wrap_to_pi(angle):
+    return (angle + torch.pi) % (2 * torch.pi) - torch.pi
 
 
 @torch.jit.script

@@ -15,7 +15,7 @@ class ActorObs(ObsBase):
         self.priv_actor = priv_actor.clone()
         self.rough_scan = rough_scan.clone()
         self.scan = scan.clone()
-        self.env_class = env_class
+        self.env_class = env_class.clone()
 
     def no_depth(self):
         return ObsNoDepth(self.proprio, self.priv_actor, self.scan)
@@ -74,7 +74,7 @@ class T1OdomEnvironment(T1BaseEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         super()._reset_idx(env_ids)
 
-        self.scan_dev_xy[:] = torch_rand_float(-0.05, 0.05, (self.num_envs, 2), device=self.device).unsqueeze(1)
+        self.scan_dev_xy[:] = torch_rand_float(-0.02, 0.02, (self.num_envs, 2), device=self.device).unsqueeze(1)
         self.scan_dev_z[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 1), device=self.device)
 
     def _post_physics_pre_step(self):
@@ -204,7 +204,7 @@ class T1OdomEnvironment(T1BaseEnv):
             # self._draw_camera()
             # self._draw_link_COM(whole_body=False)
             self._draw_feet_at_edge()
-            # self._draw_foothold()
+            self._draw_foothold()
 
             # self._draw_height_field(draw_guidance=True)
             # self._draw_edge()
@@ -227,6 +227,11 @@ class T1OdomEnvironment(T1BaseEnv):
         rew = dist_change.clip(max=vel_thresh * self.dt)
         rew *= torch.clip(1 - 2 * torch.abs(self.delta_yaw) / torch.pi, min=0.)
         rew *= (self.env_class >= 100) & ~self.is_zero_command & (dist_change > -1.)  # dist increase a lot in a sudden, meaning goal updated
+        return rew
+
+    def _reward_penalize_vy(self):
+        rew = torch.abs(self.base_lin_vel[:, 1])
+        rew[self.env_class < 100] = 0.
         return rew
 
 

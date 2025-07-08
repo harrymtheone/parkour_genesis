@@ -55,7 +55,7 @@ class T1_Odom_Cfg(T1BaseCfg):
 
     class commands:
         num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
-        resampling_time = 8.  # time before command are changed[s]
+        resampling_time = 4.  # time before command are changed[s]
 
         lin_vel_clip = 0.2
         ang_vel_clip = 0.2
@@ -166,7 +166,7 @@ class T1_Odom_Cfg(T1BaseCfg):
 
         class scales:  # float or (start, end, span, start_it)
             # gait
-            joint_pos = 2.
+            joint_pos = 1.
             feet_contact_number = 1.2
             feet_clearance = 1.0
             feet_distance = 0.2
@@ -276,8 +276,9 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 1,
-            'stairs_down': 1,
+            'stairs_up': 0,
+            'stairs_down': 0,
+            'huge_stair': 0,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -286,8 +287,9 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,
-            'parkour_mini_stair': 1,
+            'parkour_stair': 2,
+            'parkour_stair_down': 2,
+            'parkour_mini_stair': 2,
             'parkour_flat': 0,
         }
 
@@ -311,6 +313,9 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
             feet_contact_forces = -1e-3
             feet_stumble = (0, -1., 1000, 3000)
             foothold = (0., -1., 1000, 3000)
+            feet_edge = (0., -0.5, 1000, 3000)
+
+            penalize_vy = -3.
 
             # base pos
             default_joint_pos = 2.0
@@ -366,7 +371,7 @@ class T1_Odom_Finetune_Cfg(T1_Odom_Stair_Cfg):
 
     class domain_rand(T1_Odom_Stair_Cfg.domain_rand):
         action_delay = True
-        action_delay_range = [(0, 6)]
+        action_delay_range = [(2, 6)]
 
     class algorithm(T1_Odom_Stair_Cfg.algorithm):
         continue_from_last_std = False

@@ -31,6 +31,8 @@ def play(args):
     task_cfg.terrain.curriculum = False
     # task_cfg.terrain.max_difficulty = True
 
+    task_cfg.commands.resampling_time = 1
+
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
@@ -47,19 +49,22 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
         'rough_slope': 0,
-        'stairs_up': 1,
-        'stairs_down': 1,
+        'stairs_up': 0,
+        'stairs_down': 0,
+        'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
         'pit': 0,
+        'parkour_flat': 0,
         'parkour': 0,
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
-        'parkour_mini_stair': 1,
-        'parkour_flat': 0,
+        'parkour_stair': 0,
+        'parkour_stair_down': 0,
+        'parkour_mini_stair': 0,
+        'parkour_go_back_stair': 1,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
     task_cfg.terrain.num_cols *= 1 if args.debug else 5
@@ -97,6 +102,8 @@ def play(args):
     loss_priv = 0.
     accumulation_steps = 4
     num_epoch = 0
+
+    use_estimated_values = torch.linspace(0, 1, task_cfg.env.num_envs, device=args.device) > 0.5
 
     for step_i in tqdm.trange(int(1e10)):
 
@@ -144,7 +151,13 @@ def play(args):
             env.draw_recon(recon_refine[env.lookat_id].detach())
 
         with torch.inference_mode():
-            rtn = runner.play_act(obs, use_estimated_values=False, eval_=False)
+            rtn = runner.play_act(
+                obs,
+                use_estimated_values=use_estimated_values.unsqueeze(1),
+                eval_=False,
+                recon=recon_refine.detach(),
+                est=priv_est.detach()
+            )
         obs, obs_critic, rewards, dones, _ = env.step(rtn['actions'])
 
         if torch.any(dones):

@@ -252,7 +252,7 @@ class HumanoidEnv(ParkourTask):
             torch.exp(-lin_vel_error_square * self.cfg.rewards.tracking_sigma)
         )
 
-        rew[self.env_class >= 100] = 0.
+        rew[self.env_class >= 2] = 0.
         return rew
 
     def _reward_tracking_goal_vel(self):
@@ -275,7 +275,11 @@ class HumanoidEnv(ParkourTask):
         target_unit_vec = self.target_pos_rel / (torch.norm(self.target_pos_rel, dim=1, keepdim=True) + 1e-5)
         root_lin_vel_projection = torch.sum(self.sim.root_lin_vel[:, :2] * target_unit_vec, dim=1)
 
-        lin_vel_error = torch.abs(cmd_vel_norm - root_lin_vel_projection)  # parkour terrain
+        lin_vel_error = torch.where(
+            self.env_class < 100,
+            torch.norm(self.commands[:, :2] - self.base_lin_vel[:, :2], dim=1),  # pyramid stair
+            torch.abs(cmd_vel_norm - root_lin_vel_projection)  # parkour terrain
+        )
 
         rew = torch.where(
             lin_vel_error < self.cfg.commands.parkour_vel_tolerance,

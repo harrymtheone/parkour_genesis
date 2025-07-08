@@ -127,7 +127,7 @@ def trace_odom(proj, cfg, exptid, checkpoint):
 
 
 if __name__ == '__main__':
-    kwargs = dict(proj='t1', cfg='t1_odom_finetune', exptid='t1_odom_017r6', checkpoint=13600)
+    kwargs = dict(proj='t1', cfg='t1_odom_finetune', exptid='t1_odom_017r7f1', checkpoint=50400)
 
     trace_actor(**kwargs)
     trace_odom(**kwargs)

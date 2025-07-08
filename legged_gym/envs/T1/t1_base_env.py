@@ -105,7 +105,7 @@ class T1BaseEnv(HumanoidEnv):
     def _get_stance_mask(self):
         # return float mask 1 is stance, 0 is swing
         clock_input = torch.stack(self._get_clock_input(), dim=1)
-        stance_mask = (clock_input >= -0.3) | self.is_zero_command.unsqueeze(1)
+        stance_mask = (clock_input >= self.cfg.commands.double_support_phase) | self.is_zero_command.unsqueeze(1)
         return stance_mask
 
 

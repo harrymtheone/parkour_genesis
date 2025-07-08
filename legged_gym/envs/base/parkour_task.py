@@ -62,7 +62,9 @@ class ParkourTask(BaseTask):
     # ---------------------------------------------- Robots Creation ----------------------------------------------
 
     def _get_env_origins(self):
-        if self.sim.terrain is not None:
+        if self.sim.terrain is None:
+            super()._get_env_origins()
+        else:
             # put robots at the origins defined by the terrain
             max_init_level = self.cfg.terrain.max_init_terrain_level
             if max_init_level >= self.cfg.terrain.num_rows:
@@ -87,9 +89,6 @@ class ParkourTask(BaseTask):
             self.terrain_goal_num = torch.from_numpy(self.sim.terrain.num_goals).to(self.device).to(torch.long)
             self.env_goals = self.terrain_goals[self.env_levels, self.env_cols]  # (num_envs, num_goals, 3))
             self.env_goal_num = self.terrain_goal_num[self.env_levels, self.env_cols]  # (num_envs, num_goals))
-
-        else:
-            super()._get_env_origins()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         # update curriculum
@@ -381,7 +380,6 @@ class ParkourTask(BaseTask):
         # randomize the terrain level for flat terrain
         # self.env_levels[env_ids[env_is_flat]] = torch.randint_like(self.env_levels[env_ids[env_is_flat]], self.max_terrain_level)
         self.env_origins[env_ids] = self.terrain_origins[self.env_levels[env_ids], self.env_cols[env_ids]]
-        self.env_class[env_ids] = self.terrain_class[self.env_levels[env_ids], self.env_cols[env_ids]]
         self.env_goals[:] = self.terrain_goals[self.env_levels, self.env_cols]
         self.env_goal_num[:] = self.terrain_goal_num[self.env_levels, self.env_cols]
 
@@ -479,8 +477,7 @@ class ParkourTask(BaseTask):
 
         # envs' yaw value of parkour terrain is computed using yaw difference
         env_is_parkour = self.env_class >= 100
-        self.commands[env_is_parkour, 2] = delta_yaw_error[env_is_parkour]
-        # self.commands[env_is_parkour, 2] = torch.clip(self.commands[env_is_parkour, 2], *self.cmd_ranges_parkour['ang_vel_yaw'])
+        self.commands[env_is_parkour, 2] = torch.clip(delta_yaw_error[env_is_parkour], *self.cmd_ranges_parkour['ang_vel_yaw'])
 
         cmd_ratio = torch.clip(1 - torch.abs(1. * delta_yaw_error / torch.pi), min=0)
         self.commands[env_is_parkour, 0] = (cmd_ratio * self.command_x_parkour)[env_is_parkour]

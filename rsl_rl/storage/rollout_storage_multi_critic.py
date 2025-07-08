@@ -136,7 +136,7 @@ class RolloutStorageMultiCritic:
 
         values_buf = self.storage['values'].buf
         values_contact_buf = self.storage['values_contact'].buf
-        w, w_contact = 1., 0.25
+        w, w_contact = 1., 0.5
 
         for step in reversed(range(self.num_transitions_per_env)):
             if step == self.num_transitions_per_env - 1:

@@ -236,13 +236,12 @@ class Odometer:
             }
 
     def load(self, loaded_dict, load_optimizer=True):
+        if 'odometer_state_dict' in loaded_dict:
+            self.odom.load_state_dict(loaded_dict['odometer_state_dict'])
 
-        # if 'odometer_state_dict' in loaded_dict:
-        #     self.odom.load_state_dict(loaded_dict['odometer_state_dict'])
-
-        odom_path = '/home/harry/projects/parkour_genesis/logs/odom_online/odom_017r7/latest.pth'
-        print(f'No odometer state dict, loading from {odom_path}')
-        self.odom.load_state_dict(torch.load(odom_path, weights_only=True))
+        # odom_path = '/home/harry/projects/parkour_genesis/logs/odom_online/odom_017r7/latest.pth'
+        # print(f'No odometer state dict, loading from {odom_path}')
+        # self.odom.load_state_dict(torch.load(odom_path, weights_only=True))
 
     def save(self):
         return {'odometer_state_dict': self.odom.state_dict()}

@@ -27,6 +27,7 @@ class TerrainType(Enum):
     parkour_stair = 105
     parkour_stair_down = 106
     parkour_mini_stair = 107
+    parkour_go_back_stair = 108
 
 
 class SubTerrain:
@@ -137,7 +138,7 @@ class PyramidStairsUp(SubTerrain):
 
 class PyramidStairsDown(PyramidStairsUp):
     size = (8, 8)
-    terrain_type = TerrainType.stairs_up
+    terrain_type = TerrainType.stairs_down
     centered_origin = True
 
     def make(self, difficulty):
@@ -229,43 +230,47 @@ class ParkourStair(GoalGuidedTerrain):
 
         self.parkour_stair_terrain(
             step_height=stair_height_goal,
-            step_depth=random.uniform(0.25, 0.35)  # 0.31
+            # step_width=random.uniform(0.5, 2.0),
+            step_width=3.0,
+            step_depth=random.uniform(0.23, 0.35)  # 0.31
         )
         # self.add_roughness(terrain, 0.5)
 
     def parkour_stair_terrain(
             self,
+            step_height,
+            step_width,
+            step_depth,
             platform_len=2.5,
-            step_height=0.2,
-            step_depth=0.2,
-            num_goals=5,
-            goal_deviation=0.5,
+            goal_deviation=0.3,
     ):
-        num_steps = 40
         mid_y = self.length // 2  # length is actually y width
 
         step_height = round(step_height / self.vertical_scale)
+        step_width = round(step_width / self.horizontal_scale)
         step_depth = round(step_depth / self.horizontal_scale)
-
         platform_len = round(platform_len / self.horizontal_scale)
 
         dis_x = platform_len
-        stair_height = 0
+        cur_height = 0
 
-        for i in range(num_steps):
-            stair_height += step_height
-            self.height_field_raw[dis_x:dis_x + step_depth] = stair_height
-
+        while dis_x < self.width - platform_len:
+            cur_height += step_height
+            self.height_field_raw[dis_x:dis_x + step_depth] = cur_height
             dis_x += step_depth
+
+        half_pad_width = int(mid_y - step_width / 2)
+        self.height_field_raw[:, :half_pad_width] = round(-20. / self.vertical_scale)
+        self.height_field_raw[:, -half_pad_width:] = round(-20. / self.vertical_scale)
 
         def rand_deviation():
             return round(random.uniform(-goal_deviation, goal_deviation) / self.horizontal_scale)
 
-        goals = np.zeros((num_goals, 2))
+        goals = np.zeros((4, 2))
         end_x = dis_x - round(1.0 / self.horizontal_scale)
-        step_x = int((end_x - platform_len) / num_goals)
+        step_x = int((end_x - platform_len) / 4)
 
-        for i in range(num_goals - 1):
+        for i in range(4 - 1):
             goals[i] = [platform_len + (i + 1) * step_x, mid_y + rand_deviation()]
 
         goals[-1] = [end_x, mid_y]
@@ -279,55 +284,76 @@ class ParkourStairDown(GoalGuidedTerrain):
     centered_origin = False
 
     def make(self, difficulty):
-        stair_height_goal = 0.05 + 0.10 * difficulty
+        stair_height_goal = 0.05 + 0.04 * difficulty
 
         self.parkour_stair_terrain(
             step_height=stair_height_goal,
-            step_depth=random.uniform(0.25, 0.35)  # 0.31
+            step_width_range=(0.5, 2.0),
+            step_depth=random.uniform(0.23, 0.35)
         )
-        # self.add_roughness(terrain, 0.5)
+        self.add_roughness(0.5)
 
     def parkour_stair_terrain(
             self,
+            step_height,
+            step_width_range,
+            step_depth,
             platform_len=2.5,
-            num_steps=16,
-            step_height=0.2,
-            step_depth=0.2,
-            num_goals=5,
-            goal_deviation=0.5,
-            only_up=True
+            goal_deviation=0.2,
     ):
-        if only_up:
-            num_steps = 40
-            mid_y = self.length // 2  # length is actually y width
+        mid_y = self.length // 2  # length is actually y width
 
-            step_height = round(step_height / self.vertical_scale)
-            step_depth = round(step_depth / self.horizontal_scale)
+        step_height = round(step_height / self.vertical_scale)
+        step_depth = round(step_depth / self.horizontal_scale)
+        platform_len = round(platform_len / self.horizontal_scale)
 
-            platform_len = round(platform_len / self.horizontal_scale)
+        def rand_deviation():
+            return round(random.uniform(-goal_deviation, goal_deviation) / self.horizontal_scale)
 
-            dis_x = platform_len
-            stair_height = 0
+        goals = np.zeros((5, 2))
 
-            for i in range(num_steps):
-                stair_height += step_height
-                self.height_field_raw[dis_x:dis_x + step_depth] = stair_height
+        start_x = platform_len
+        self.height_field_raw[start_x: start_x + 150] = self.gen_mini_stair(step_height, step_width_range, step_depth)
+        goals[0] = [start_x + 75, mid_y + rand_deviation()]
 
-                dis_x += step_depth
+        start_x = start_x + 150 + 50
+        self.height_field_raw[start_x: start_x + 150] = self.gen_mini_stair(step_height, step_width_range, step_depth)
+        goals[1] = [start_x + 75, mid_y + rand_deviation()]
 
-            def rand_deviation():
-                return round(random.uniform(-goal_deviation, goal_deviation) / self.horizontal_scale)
+        start_x = start_x + 150 + 50
+        self.height_field_raw[start_x: start_x + 150] = self.gen_mini_stair(step_height, step_width_range, step_depth)
+        goals[2] = [start_x + 75, mid_y + rand_deviation()]
 
-            goals = np.zeros((num_goals, 2))
-            end_x = dis_x - round(1.0 / self.horizontal_scale)
-            step_x = int((end_x - platform_len) / num_goals)
+        start_x = start_x + 150 + 50
+        self.height_field_raw[start_x: start_x + 150] = self.gen_mini_stair(step_height, step_width_range, step_depth)
+        goals[3] = [start_x + 75, mid_y + rand_deviation()]
 
-            for i in range(num_goals - 1):
-                goals[i] = [platform_len + (i + 1) * step_x, mid_y + rand_deviation()]
+        start_x = start_x + 150
+        goals[4] = [start_x + 75, mid_y + rand_deviation()]
 
-            goals[-1] = [end_x, mid_y]
+        self.goals = goals * self.horizontal_scale
 
-            self.goals = goals * self.horizontal_scale
+    def gen_mini_stair(self, step_height, step_width_range, step_depth):
+        mid_y = self.length // 2  # length is actually y width
+
+        half_step_width = round(random.uniform(*step_width_range) / self.horizontal_scale / 2)
+
+        y_slice = slice(mid_y - half_step_width, mid_y + half_step_width)
+
+        mini_stair_hf = np.zeros((150, self.length))
+
+        # a slope
+        mini_stair_hf[:3 * step_depth, y_slice] = np.tile(
+            np.linspace(0, 4 * step_height, 3 * step_depth),
+            (2 * half_step_width, 1)
+        ).T
+
+        # down stairs
+        mini_stair_hf[3 * step_depth: -3 * step_depth, y_slice] = 4 * step_height
+        mini_stair_hf[-3 * step_depth: -2 * step_depth, y_slice] = 3 * step_height
+        mini_stair_hf[-2 * step_depth: -step_depth, y_slice] = 2 * step_height
+        mini_stair_hf[-step_depth:, y_slice] = step_height
+        return mini_stair_hf
 
 
 class ParkourMiniStair(GoalGuidedTerrain):
@@ -367,26 +393,6 @@ class ParkourMiniStair(GoalGuidedTerrain):
         mini_stair_hf[-2 * step_depth: -step_depth] = 2 * step_height
         mini_stair_hf[-step_depth:] = step_height
 
-        # mini guidance terrain
-        mini_stair_hf_guidance = np.zeros((200, 100))
-        mini_stair_hf_guidance[50:] = mini_stair_hf
-        mini_stair_hf_guidance[50 - step_depth // 2: 50] = np.tile(
-            np.linspace(0 * step_height, 1 * step_height, step_depth // 2),
-            (100, 1)
-        ).T
-        mini_stair_hf_guidance[50 + step_depth - step_depth // 2: 50 + step_depth] = np.tile(
-            np.linspace(1 * step_height, 2 * step_height, step_depth // 2),
-            (100, 1)
-        ).T
-        mini_stair_hf_guidance[50 + 2 * step_depth - step_depth // 2: 50 + 2 * step_depth] = np.tile(
-            np.linspace(2 * step_height, 3 * step_height, step_depth // 2),
-            (100, 1)
-        ).T
-        mini_stair_hf_guidance[50 + 3 * step_depth - step_depth // 2: 50 + 3 * step_depth] = np.tile(
-            np.linspace(3 * step_height, 4 * step_height, step_depth // 2),
-            (100, 1)
-        ).T
-
         def rand_deviation():
             return round(random.uniform(-goal_deviation, goal_deviation) / self.horizontal_scale)
 
@@ -413,3 +419,53 @@ class ParkourMiniStair(GoalGuidedTerrain):
 
         self.goals = goals * self.horizontal_scale
 
+
+class ParkourGoBackStair(GoalGuidedTerrain):
+    size = (18, 4)
+    terrain_type = TerrainType.parkour_go_back_stair
+    centered_origin = False
+
+    def make(self, difficulty):
+        stair_height_goal = 0.05 + 0.04 * difficulty
+
+        self.parkour_stair_terrain(
+            step_height=stair_height_goal,
+            step_width=random.uniform(0.5, 2.0),
+            step_depth=random.uniform(0.23, 0.35)
+        )
+        # self.add_roughness(terrain, 0.5)
+
+    def parkour_stair_terrain(
+            self,
+            step_height,
+            step_width,
+            step_depth,
+            platform_len=2.5,
+            goal_deviation=0.2,
+    ):
+        mid_y = self.length // 2  # length is actually y width
+
+        step_height = round(step_height / self.vertical_scale)
+        step_width = round(step_width / self.horizontal_scale)
+        step_depth = round(step_depth / self.horizontal_scale)
+        platform_len = round(platform_len / self.horizontal_scale)
+
+        dis_x = platform_len
+        cur_height = 0
+
+        while dis_x < self.width // 3:
+            cur_height += step_height
+            self.height_field_raw[dis_x:dis_x + step_depth] = cur_height
+            dis_x += step_depth
+
+        self.height_field_raw[dis_x: dis_x + platform_len] = cur_height
+        half_pad_width = int(mid_y - step_width / 2)
+        self.height_field_raw[:, :half_pad_width] = round(-20. / self.vertical_scale)
+        self.height_field_raw[:, -half_pad_width:] = round(-20. / self.vertical_scale)
+
+
+        goals = np.zeros((2, 2))
+        goals[0] = [dis_x, mid_y]
+        goals[1] = [platform_len // 2, mid_y]
+
+        self.goals = goals * self.horizontal_scale

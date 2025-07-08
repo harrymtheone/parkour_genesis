@@ -84,51 +84,6 @@ matplotlib.use('TkAgg')  # Use a faster interactive backend than default
 import matplotlib.pyplot as plt
 
 
-# class BaseVisualizer:
-#     figsize: Tuple[int, int]
-#     subplot_shape: Tuple[int, int]
-#     subplot_props: Dict[str, dict]
-#     his_length: int
-#
-#     def __init__(self):
-#         assert len(self.subplot_props) == self.subplot_shape[0] * self.subplot_shape[1], "Names must match subplot grid size"
-#
-#         self.his = {n: deque(maxlen=self.his_length) for n in self.subplot_props}
-#
-#         self.fig, self.axes = plt.subplots(*self.subplot_shape, figsize=self.figsize)
-#         self.axes_dict = {}
-#         self.lines = {}
-#
-#         # Flatten axes
-#         axes_flat = self.axes.flatten() if isinstance(self.axes, np.ndarray) else [self.axes]
-#
-#         for (name, props), ax in zip(self.subplot_props.items(), axes_flat):
-#             self.axes_dict[name] = ax
-#             ax.set_title(name)
-#             ax.set_xlim(0, self.his_length)
-#             ax.set_ylim(*props['lim'])  # You may want to adjust this
-#             line, = ax.plot([], [], lw=1)
-#             self.lines[name] = line
-#
-#         self.fig.tight_layout()
-#         self.fig.canvas.draw()
-#         plt.show(block=False)
-#
-#     def plot(self, data: Dict[str, float]):
-#         for name, y_val in data.items():
-#             if name in self.axes_dict:
-#                 his = self.his[name]
-#                 his.append(y_val)
-#
-#                 line = self.lines[name]
-#                 line.set_ydata(his)
-#                 line.set_xdata(range(len(his)))
-#
-#         self.fig.canvas.draw()
-#         self.fig.canvas.flush_events()
-
-
-
 class BaseVisualizer:
     figsize: tuple
     subplot_shape: tuple
@@ -149,13 +104,13 @@ class BaseVisualizer:
         for (name, props), ax in zip(self.subplot_props.items(), axes_flat):
             ax.set_title(name)
             ax.set_xlim(0, self.his_length)
-            ax.set_ylim(*props['lim'])
+            ax.set_ylim(*props['range'])
 
             # Draw static horizontal limit lines if provided
-            if 'upper' in props:
-                ax.axhline(props['upper'], linestyle='--')
-            if 'lower' in props:
-                ax.axhline(props['lower'], linestyle='--')
+            if 'lim_upper' in props:
+                ax.axhline(props['lim_upper'], linestyle='--')
+            if 'lim_lower' in props:
+                ax.axhline(props['lim_lower'], linestyle='--')
 
             # Create animated line for data
             line, = ax.plot([], [], lw=1, animated=True)
@@ -203,24 +158,43 @@ class BaseVisualizer:
         self.fig.canvas.flush_events()
 
 
-
 class T1ActionsVisualizer(BaseVisualizer):
     figsize = (6, 12)
     subplot_shape = (6, 2)
     subplot_props = {
-        # 'Waist': {'lim': (-3, 3)},
-        'Left_Hip_Pitch': {'lim': (-3, 3)},
-        'Right_Hip_Pitch': {'lim': (-3, 3)},
-        'Left_Hip_Roll': {'lim': (-3, 3)},
-        'Right_Hip_Roll': {'lim': (-3, 3)},
-        'Left_Hip_Yaw': {'lim': (-3, 3)},
-        'Right_Hip_Yaw': {'lim': (-3, 3)},
-        'Left_Knee_Pitch': {'lim': (-3, 3)},
-        'Right_Knee_Pitch': {'lim': (-3, 3)},
-        'Left_Ankle_Pitch': {'lim': (-3, 3)},
-        'Right_Ankle_Pitch': {'lim': (-3, 3)},
-        'Left_Ankle_Roll': {'lim': (-3, 3)},
-        'Right_Ankle_Roll': {'lim': (-3, 3)},
+        # 'Waist': {'range': (-3, 3)},
+        'Left_Hip_Pitch': {'range': (-3, 3)},
+        'Right_Hip_Pitch': {'range': (-3, 3)},
+        'Left_Hip_Roll': {'range': (-3, 3)},
+        'Right_Hip_Roll': {'range': (-3, 3)},
+        'Left_Hip_Yaw': {'range': (-3, 3)},
+        'Right_Hip_Yaw': {'range': (-3, 3)},
+        'Left_Knee_Pitch': {'range': (-3, 3)},
+        'Right_Knee_Pitch': {'range': (-3, 3)},
+        'Left_Ankle_Pitch': {'range': (-3, 3)},
+        'Right_Ankle_Pitch': {'range': (-3, 3)},
+        'Left_Ankle_Roll': {'range': (-3, 3)},
+        'Right_Ankle_Roll': {'range': (-3, 3)},
+    }
+    his_length = 50
+
+
+class T1DofPosVisualizer(BaseVisualizer):
+    figsize = (12, 12)
+    subplot_shape = (6, 2)
+    subplot_props = {
+        'Left_Hip_Pitch': {'range': (-2.00, 1.77), 'lim_lower': -1.80, 'lim_upper': 1.57},
+        'Right_Hip_Pitch': {'range': (-2.00, 1.77), 'lim_lower': -1.80, 'lim_upper': 1.57},
+        'Left_Hip_Roll': {'range': (-0.40, 1.77), 'lim_lower': -0.20, 'lim_upper': 1.57},
+        'Right_Hip_Roll': {'range': (-1.77, 0.40), 'lim_lower': -1.57, 'lim_upper': 0.20},
+        'Left_Hip_Yaw': {'range': (-1.20, 1.20), 'lim_lower': -1.00, 'lim_upper': 1.00},
+        'Right_Hip_Yaw': {'range': (-1.20, 1.20), 'lim_lower': -1.00, 'lim_upper': 1.00},
+        'Left_Knee_Pitch': {'range': (-0.20, 2.54), 'lim_lower': 0.00, 'lim_upper': 2.34},
+        'Right_Knee_Pitch': {'range': (-0.20, 2.54), 'lim_lower': 0.00, 'lim_upper': 2.34},
+        'Left_Ankle_Pitch': {'range': (-1.07, 0.55), 'lim_lower': -0.87, 'lim_upper': 0.35},
+        'Right_Ankle_Pitch': {'range': (-1.07, 0.55), 'lim_lower': -0.87, 'lim_upper': 0.35},
+        'Left_Ankle_Roll': {'range': (-0.64, 0.64), 'lim_lower': -0.44, 'lim_upper': 0.44},
+        'Right_Ankle_Roll': {'range': (-0.64, 0.64), 'lim_lower': -0.44, 'lim_upper': 0.44},
     }
     his_length = 50
 
@@ -229,19 +203,19 @@ class T1DofVelVisualizer(BaseVisualizer):
     figsize = (12, 12)
     subplot_shape = (6, 2)
     subplot_props = {
-        # 'Waist': {'lim': (-3, 3)},
-        'Left_Hip_Pitch': {'lim': (-3, 3)},
-        'Right_Hip_Pitch': {'lim': (-3, 3)},
-        'Left_Hip_Roll': {'lim': (-3, 3)},
-        'Right_Hip_Roll': {'lim': (-3, 3)},
-        'Left_Hip_Yaw': {'lim': (-3, 3)},
-        'Right_Hip_Yaw': {'lim': (-3, 3)},
-        'Left_Knee_Pitch': {'lim': (-3, 3)},
-        'Right_Knee_Pitch': {'lim': (-3, 3)},
-        'Left_Ankle_Pitch': {'lim': (-3, 3)},
-        'Right_Ankle_Pitch': {'lim': (-3, 3)},
-        'Left_Ankle_Roll': {'lim': (-3, 3)},
-        'Right_Ankle_Roll': {'lim': (-3, 3)},
+        # 'Waist': {'range': (-3, 3)},
+        'Left_Hip_Pitch': {'range': (-3, 3)},
+        'Right_Hip_Pitch': {'range': (-3, 3)},
+        'Left_Hip_Roll': {'range': (-3, 3)},
+        'Right_Hip_Roll': {'range': (-3, 3)},
+        'Left_Hip_Yaw': {'range': (-3, 3)},
+        'Right_Hip_Yaw': {'range': (-3, 3)},
+        'Left_Knee_Pitch': {'range': (-3, 3)},
+        'Right_Knee_Pitch': {'range': (-3, 3)},
+        'Left_Ankle_Pitch': {'range': (-3, 3)},
+        'Right_Ankle_Pitch': {'range': (-3, 3)},
+        'Left_Ankle_Roll': {'range': (-3, 3)},
+        'Right_Ankle_Roll': {'range': (-3, 3)},
     }
     his_length = 50
 
@@ -250,20 +224,20 @@ class T1TorqueVisualizer(BaseVisualizer):
     figsize = (12, 12)
     subplot_shape = (7, 2)
     subplot_props = {
-        # 'Waist': {'lim': (-3, 3)},
-        'Left_Hip_Pitch': {'lim': (-55, 55), 'upper': 45, 'lower': -45},
-        'Right_Hip_Pitch': {'lim': (-55, 55), 'upper': 45, 'lower': -45},
-        'Left_Hip_Roll': {'lim': (-40, 40), 'upper': 30, 'lower': -30},
-        'Right_Hip_Roll': {'lim': (-40, 40), 'upper': 30, 'lower': -30},
-        'Left_Hip_Yaw': {'lim': (-40, 40), 'upper': 30, 'lower': -30},
-        'Right_Hip_Yaw': {'lim': (-40, 40), 'upper': 30, 'lower': -30},
-        'Left_Knee_Pitch': {'lim': (-70, 70), 'upper': 60, 'lower': -60},
-        'Right_Knee_Pitch': {'lim': (-70, 70), 'upper': 60, 'lower': -60},
-        'Left_Ankle_Pitch': {'lim': (-30, 30), 'upper': 20, 'lower': -20},
-        'Right_Ankle_Pitch': {'lim': (-30, 30), 'upper': 20, 'lower': -20},
-        'Left_Ankle_Roll': {'lim': (-25, 25), 'upper': 15, 'lower': -15},
-        'Right_Ankle_Roll': {'lim': (-25, 25), 'upper': 15, 'lower': -15},
-        'Left_Contact_Forces': {'lim': (0, 700), 'upper': 300, 'lower': 0},
-        'Right_Contact_Forces': {'lim': (0, 700), 'upper': 300, 'lower': 0},
+        # 'Waist': {'range': (-3, 3)},
+        'Left_Hip_Pitch': {'range': (-55, 55), 'lim_lower': -45, 'lim_upper': 45},
+        'Right_Hip_Pitch': {'range': (-55, 55), 'lim_lower': -45, 'lim_upper': 45},
+        'Left_Hip_Roll': {'range': (-40, 40), 'lim_lower': -30, 'lim_upper': 30},
+        'Right_Hip_Roll': {'range': (-40, 40), 'lim_lower': -30, 'lim_upper': 30},
+        'Left_Hip_Yaw': {'range': (-40, 40), 'lim_lower': -30, 'lim_upper': 30},
+        'Right_Hip_Yaw': {'range': (-40, 40), 'lim_lower': -30, 'lim_upper': 30},
+        'Left_Knee_Pitch': {'range': (-70, 70), 'lim_lower': -60, 'lim_upper': 60},
+        'Right_Knee_Pitch': {'range': (-70, 70), 'lim_lower': -60, 'lim_upper': 60},
+        'Left_Ankle_Pitch': {'range': (-30, 30), 'lim_lower': -20, 'lim_upper': 20},
+        'Right_Ankle_Pitch': {'range': (-30, 30), 'lim_lower': -20, 'lim_upper': 20},
+        'Left_Ankle_Roll': {'range': (-25, 25), 'lim_lower': -15, 'lim_upper': 15},
+        'Right_Ankle_Roll': {'range': (-25, 25), 'lim_lower': -15, 'lim_upper': 15},
+        'Left_Contact_Forces': {'range': (0, 700), 'lim_lower': 0, 'lim_upper': 300},
+        'Right_Contact_Forces': {'range': (0, 700), 'lim_lower': 0, 'lim_upper': 300},
     }
     his_length = 50
