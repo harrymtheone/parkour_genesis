@@ -81,32 +81,50 @@ class T1BaseEnv(HumanoidEnv):
         self.pending_vis_task.append(dict(points=height_points, color=(1, 1, 0)))
 
     def _compute_ref_state(self):
-        clock_l, clock_r = self._get_clock_input()
+        # clock_l, clock_r = self._get_clock_input()
+        #
+        # ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
+        # scale_1 = self.cfg.rewards.target_joint_pos_scale
+        # scale_2 = 2 * scale_1
+        #
+        # # left swing (with double support phase)
+        # clock_l[clock_l > self.cfg.commands.double_support_phase] = 0
+        # ref_dof_pos[:, 1] = clock_l * scale_1
+        # ref_dof_pos[:, 4] = -clock_l * scale_2
+        # ref_dof_pos[:, 5] = clock_l * scale_1
+        #
+        # # right swing (with double support phase)
+        # clock_r[clock_r > self.cfg.commands.double_support_phase] = 0
+        # ref_dof_pos[:, 7] = clock_r * scale_1
+        # ref_dof_pos[:, 10] = -clock_r * scale_2
+        # ref_dof_pos[:, 11] = clock_r * scale_1
+        #
+        # self.ref_dof_pos[:] = self.init_state_dof_pos
+        # self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
 
         ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
-        scale_1 = self.cfg.rewards.target_joint_pos_scale
+        scale_1 = self.cfg.commands.target_joint_pos_scale
         scale_2 = 2 * scale_1
 
-        # left swing (with double support phase)
-        clock_l[clock_l > self.cfg.commands.double_support_phase] = 0
-        ref_dof_pos[:, 1] = clock_l * scale_1
-        ref_dof_pos[:, 4] = -clock_l * scale_2
-        ref_dof_pos[:, 5] = clock_l * scale_1
+        phase = torch.stack(self._get_clock_input(wrap_sin=False), dim=1)
+        swing_ratio = self.cfg.commands.air_ratio
+        delta_t = self.cfg.commands.delta_t
 
-        # right swing (with double support phase)
-        clock_r[clock_r > self.cfg.commands.double_support_phase] = 0
-        ref_dof_pos[:, 7] = clock_r * scale_1
-        ref_dof_pos[:, 10] = -clock_r * scale_2
-        ref_dof_pos[:, 11] = clock_r * scale_1
+        phase_swing = torch.clip((phase - delta_t / 2) / (swing_ratio - delta_t), min=0., max=1.)
+        clock = torch.sin(torch.pi * phase_swing)
+
+        # left motion
+        ref_dof_pos[:, 1] = -clock[:, 0] * scale_1
+        ref_dof_pos[:, 4] = clock[:, 0] * scale_2
+        ref_dof_pos[:, 5] = -clock[:, 0] * scale_1
+
+        # right motion
+        ref_dof_pos[:, 7] = -clock[:, 1] * scale_1
+        ref_dof_pos[:, 10] = clock[:, 1] * scale_2
+        ref_dof_pos[:, 11] = -clock[:, 1] * scale_1
 
         self.ref_dof_pos[:] = self.init_state_dof_pos
         self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
-
-    def _get_stance_mask(self):
-        # return float mask 1 is stance, 0 is swing
-        clock_input = torch.stack(self._get_clock_input(), dim=1)
-        stance_mask = (clock_input >= self.cfg.commands.double_support_phase) | self.is_zero_command.unsqueeze(1)
-        return stance_mask
 
 
 @torch.jit.script

@@ -406,6 +406,10 @@ class IsaacGymWrapper(BaseWrapper):
         return self._rigid_body_states[..., 7:10]
 
     @property
+    def link_ang_vel(self):
+        return self._rigid_body_states[..., 10:13]
+
+    @property
     def link_COM(self):
         return self.link_pos + transform_by_quat(self._link_com_shift, self.link_quat).unflatten(0, (self.num_envs, -1))
 

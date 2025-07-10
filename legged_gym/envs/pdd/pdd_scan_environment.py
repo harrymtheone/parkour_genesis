@@ -36,7 +36,7 @@ class PddScanEnvironment(HumanoidEnv):
         sin_pos_r = sin_pos.clone()
 
         self.ref_dof_pos[:] = 0.
-        scale_1 = self.cfg.rewards.target_joint_pos_scale
+        scale_1 = self.cfg.commands.target_joint_pos_scale
         scale_2 = 2 * scale_1
 
         # left swing

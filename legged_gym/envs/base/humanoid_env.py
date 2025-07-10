@@ -119,26 +119,61 @@ class HumanoidEnv(ParkourTask):
 
     def _update_phase(self):
         """ return the phase value ranging from 0 to 1 """
-        cycle_time = self.cfg.rewards.cycle_time
+        cycle_time = self.cfg.commands.cycle_time
 
         if self.cfg.commands.sw_switch:
-            # not_being_pushed = torch.norm(self.ext_forces,dim=1) < 100
-            # stand_command = torch.logical_and(stand_command, not_being_pushed)
-            # phase = self.phase_length_buf * self.dt / cycle_time
             self.phase[:] = ((self.phase_length_buf / cycle_time) + self.gait_start) % 1.0 * (~self.is_zero_command)
         else:
             self.phase[:] = ((self.phase_length_buf / cycle_time) + self.gait_start) % 1.0
 
-    def _get_clock_input(self):
-        clock_l = torch.sin(2 * torch.pi * self.phase)
-        clock_r = -torch.sin(2 * torch.pi * self.phase)
-        return clock_l, clock_r
+    def _get_clock_input(self, wrap_sin=True):
+        clock_l = self.phase + self.cfg.commands.phase_offset_l
+        clock_r = self.phase + self.cfg.commands.phase_offset_r
+
+        if wrap_sin:
+            return torch.sin(2 * torch.pi * clock_l), torch.sin(2 * torch.pi * clock_r)
+        else:
+            return clock_l % 1.0, clock_r % 1.0
 
     def _get_stance_mask(self):
         # return float mask 1 is stance, 0 is swing
-        clock_input = torch.stack(self._get_clock_input(), dim=1)
-        stance_mask = (clock_input >= self.cfg.commands.double_support_phase) | self.is_zero_command.unsqueeze(1)
-        return stance_mask
+        # clock_input = torch.stack(self._get_clock_input(), dim=1)
+        # stance_mask = (clock_input >= self.cfg.commands.double_support_phase)
+        # return stance_mask
+
+        air_ratio = self.cfg.commands.air_ratio
+        delta_t = self.cfg.commands.delta_t
+        phase = torch.stack(self._get_clock_input(wrap_sin=False), dim=1)
+        stance_mask = (phase >= air_ratio + delta_t) & (phase < (1. - delta_t))
+        return stance_mask | self.is_zero_command.unsqueeze(1)
+
+    def _get_swing_mask(self):
+        air_ratio = self.cfg.commands.air_ratio
+        delta_t = self.cfg.commands.delta_t
+        phase = torch.stack(self._get_clock_input(wrap_sin=False), dim=1)
+        swing_mask = (phase >= delta_t) & (phase < (air_ratio - delta_t))
+        return swing_mask & ~self.is_zero_command.unsqueeze(1)
+
+    def _get_soft_stance_mask(self):
+        phase = torch.stack(self._get_clock_input(wrap_sin=False), dim=1)
+        air_ratio = 1. - self.cfg.commands.air_ratio
+        delta_t = self.cfg.commands.delta_t
+
+        trans_flag1 = phase < delta_t
+        swing_flag = (phase >= delta_t) & (phase < (air_ratio - delta_t))
+        trans_flag2 = (phase >= (air_ratio - delta_t)) & (phase < (air_ratio + delta_t))
+        stand_flag = (phase >= (air_ratio + delta_t)) & (phase < (1 - delta_t))
+        trans_flag3 = phase > (1 - delta_t)
+
+        soft_stance_mask = (
+                (0.5 - phase / (2 * delta_t)) * trans_flag1
+                + 0.0 * swing_flag
+                + (phase - air_ratio + delta_t) / (2 * delta_t) * trans_flag2
+                + 1.0 * stand_flag
+                + (1 + delta_t - phase) / (2 * delta_t) * trans_flag3
+        )
+
+        soft_stance_mask[self.is_zero_command.unsqueeze(1)] = 1.
 
     def _get_foothold_points(self):
         x_prop, y_prop, z_shift = self.cfg.terrain.foothold_pts
@@ -174,8 +209,35 @@ class HumanoidEnv(ParkourTask):
         Calculates a reward based on the number of feet contacts aligning with the gait phase.
         Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
         """
-        rew = torch.where(self.contact_filt == self._get_stance_mask(), 1, -0.3)
+        # rew = torch.where(self.contact_filt == self._get_stance_mask(), 1, -0.3)
+        # rew[self.env_class >= 2] *= 0.5
+        # return torch.mean(rew, dim=1)
+
+        swing = self._get_swing_mask()
+        stance = self._get_stance_mask()
+        contact = self.contact_filt
+
+        rew = self._zero_tensor(self.num_envs, len(self.feet_indices))
+
+        # Case 1: swing
+        rew[swing] = torch.where(contact[swing], -0.3, 1.0)
+
+        # Case 2: stance
+        rew[stance] = torch.where(contact[stance], 1.0, -0.3)
+
+        # Case 3: ~swing & ~stance → reward already 0
+
         rew[self.env_class >= 2] *= 0.5
+        return torch.mean(rew, dim=1)
+
+    def _reward_feet_contact_accordance(self):
+        rew = self.contact_filt * self._get_soft_stance_mask()
+        return torch.mean(rew, dim=1)
+
+    def _reward_feet_swing_accordance(self, vel_thresh=0.1, height_thresh=0.02):
+        feet_moving = torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2) > vel_thresh
+        feet_moving |= self.feet_height > height_thresh
+        rew = feet_moving * (1. - self._get_soft_stance_mask())
         return torch.mean(rew, dim=1)
 
     def _reward_feet_clearance(self):
@@ -185,6 +247,7 @@ class HumanoidEnv(ParkourTask):
 
         rew = (self.feet_height / self.cfg.rewards.feet_height_target).clip(min=-1, max=1)
         rew[self._get_stance_mask()] = 0.
+        # rew *= 1. - self._get_soft_stance_mask()
         return rew.sum(dim=1)
 
     def _reward_feet_air_time(self):
@@ -197,14 +260,20 @@ class HumanoidEnv(ParkourTask):
         air_time = self.feet_air_time.clamp(0, 0.5) * (first_contact & self.is_zero_command.unsqueeze(1))
         return air_time.sum(dim=1)
 
-    def _reward_feet_slip(self):
+    def _reward_feet_slip(self, lin_thresh=0.1, ang_thresh=0.1):
         """
         Calculates the reward for minimizing foot slip. The reward is based on the contact forces
         and the speed of the feet. A contact threshold is used to determine if the foot is in contact
         with the ground. The speed of the foot is calculated and scaled by the contact conditions.
         """
-        foot_speed_norm_contact = self.contact_filt * torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2)
-        return torch.sum(foot_speed_norm_contact.sqrt(), dim=1)
+        # foot_slip = torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2) > lin_thresh
+        # foot_slip |= self.sim.link_ang_vel[:, self.feet_indices, 2] > ang_thresh
+        # foot_slip &= self.contact_filt
+        # rew = torch.sum(foot_slip, dtype=torch.float, dim=1)
+
+        feet_lin_vel = torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2)
+        feet_ang_vel = torch.abs(self.sim.link_ang_vel[:, self.feet_indices, 2])
+        return torch.sum(self.contact_filt * (feet_lin_vel + feet_ang_vel), dim=1)
 
     def _reward_feet_distance(self):
         """

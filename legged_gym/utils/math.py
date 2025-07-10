@@ -8,7 +8,7 @@ import torch
 @torch.jit.script
 def torch_rand_float(lower, upper, shape, device):
     # type: (float, float, Tuple[int, int], torch.device) -> torch.Tensor
-    return (upper - lower) * torch.rand(*shape, device=device) + lower
+    return lower + (upper - lower) * torch.rand(*shape, device=device)
 
 
 @torch.jit.script

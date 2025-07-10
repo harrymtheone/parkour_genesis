@@ -63,14 +63,16 @@ class T1PIEEnvironment(T1BaseEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
-        self.goal_task_timer = self._zero_tensor(self.num_envs)
+        self.goal_distance = self._zero_tensor(self.num_envs)
+        self.last_goal_distance = self._zero_tensor(self.num_envs)
 
-    def _post_physics_mid_step(self):
-        super()._post_physics_mid_step()
+    def _post_physics_pre_step(self):
+        super()._post_physics_pre_step()
+        self.goal_distance[:] = torch.norm(self.cur_goals[:, :2] - self.sim.root_pos[:, :2], dim=1)
 
-        self.goal_task_timer[self.reached_goal_env] = 0
-        timer_increase = ~self.reached_goal_env & ~self.is_zero_command
-        self.goal_task_timer[timer_increase] += 1 * self.commands[timer_increase, 0] / self.cfg.commands.parkour_ranges.lin_vel_x[1]
+    def _post_physics_post_step(self):
+        super()._post_physics_post_step()
+        self.last_goal_distance[:] = self.goal_distance
 
     def _compute_observations(self):
         """
@@ -79,7 +81,7 @@ class T1PIEEnvironment(T1BaseEnv):
         # add lag to sensor observation
         if self.cfg.domain_rand.add_dof_lag:
             dof_data = self.dof_lag_buf.get()
-            dof_pos, dof_vel = dof_data[..., 0], dof_data[..., 1]
+            dof_pos, dof_vel = dof_data[:, 0], dof_data[:, 1]
         else:
             dof_pos, dof_vel = self.sim.dof_pos, self.sim.dof_vel
 
@@ -181,82 +183,17 @@ class T1PIEEnvironment(T1BaseEnv):
 
         super().render()
 
-    def _reward_timeout(self):
-        time_out = self.goal_task_timer - 100
-        effective_out = torch.clamp(time_out, min=0)
-        time_out_rew = effective_out * 0.001
-        time_out_rew[self.env_class < 100] = 0.
-        return time_out_rew
+    def _reward_goal_dist_change(self, vel_thresh=0.6):
+        if self.sim.terrain is None:
+            return self._zero_tensor(self.num_envs)
 
-    def _reward_joint_pos(self):
-        """
-        Calculates the reward based on the difference between the current joint positions and the target joint positions.
-        """
-        diff = self.sim.dof_pos - torch.where(
-            self.is_zero_command.unsqueeze(1),
-            self.init_state_dof_pos,
-            self.ref_dof_pos
-        )
-        diff = torch.norm(diff[:, self.dof_activated], dim=1)
-
-        # diff = self.sim.dof_pos - self.ref_dof_pos
-        # diff = torch.norm(diff[:, self.dof_activated], dim=1)
-        # diff[self.is_zero_command] = 0.
-
-        rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
-        rew[self.env_class >= 2] *= 0.1
+        dist_change = self.last_goal_distance - self.goal_distance
+        rew = dist_change.clip(max=vel_thresh * self.dt)
+        rew *= torch.clip(1 - 2 * torch.abs(self.delta_yaw) / torch.pi, min=0.)
+        rew *= (self.env_class >= 100) & ~self.is_zero_command & (dist_change > -1.)  # dist increase a lot in a sudden, meaning goal updated
         return rew
 
-    def _reward_feet_contact_number(self):
-        """
-        Calculates a reward based on the number of feet contacts aligning with the gait phase.
-        Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
-        """
-        rew = torch.where(self.contact_filt == self._get_stance_mask(), 1, -0.3)
-        rew[self.env_class >= 2] *= 0.1
-        return torch.mean(rew, dim=1)
-
-    # def _reward_lin_vel_z(self):
-    #     # Penalize z axis base linear velocity
-    #     return torch.square(self.base_lin_vel[:, 2])
-    #
-    # def _reward_ang_vel_xy(self):
-    #     # Penalize xy axes base angular velocity
-    #     return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
-    #
-    # def _reward_orientation(self):
-    #     # Penalize non flat base orientation
-    #     return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
-    #
-    # def _reward_base_height(self):
-    #     # Penalize base height away from target
-    #     return torch.square(self.base_height - self.cfg.rewards.base_height_target)
-    #
-    # def _reward_feet_clearance(self):
-    #     # encourage the robot to lift its legs when it moves
-    #     x = self.feet_height.clip(min=self.cfg.rewards.feet_height_target, max=self.cfg.rewards.feet_height_target_max)
-    #     pos_err = torch.square(self.feet_height - x)
-    #     return torch.sum(pos_err, dim=1) / self.cfg.rewards.feet_height_target
-    #
-    # def _reward_feet_distance(self):
-    #     feet_pos = self.sim.link_pos[:, self.feet_indices, :2]
-    #     feet_dist = torch.norm(feet_pos[:, 0, :] - feet_pos[:, 1, :], dim=1)
-    #
-    #     x = feet_dist.clip(min=self.cfg.rewards.min_dist, max=self.cfg.rewards.max_dist)
-    #     pos_err = torch.square(feet_dist - x) / self.cfg.rewards.min_dist
-    #     return torch.sum(pos_err)
-    #
-    # def _reward_knee_distance(self):
-    #     knee_pos = self.sim.link_pos[:, self.knee_indices, :2]
-    #     knee_dist = torch.norm(knee_pos[:, 0, :] - knee_pos[:, 1, :], dim=1)
-    #
-    #     x = knee_dist.clip(min=self.cfg.rewards.min_dist, max=self.cfg.rewards.max_dist / 2)
-    #     pos_err = torch.square(knee_dist - x) / self.cfg.rewards.min_dist
-    #     return torch.sum(pos_err)
-    #
-    # def _reward_feet_rotation(self):
-    #     return torch.sum(self.feet_euler_xyz[..., :2].square(), dim=[1, 2])
-    #
-    # @staticmethod
-    # def _reward_alive():
-    #     return 1.
+    def _reward_penalize_vy(self):
+        rew = torch.abs(self.base_lin_vel[:, 1])
+        rew[self.env_class < 100] = 0.
+        return rew

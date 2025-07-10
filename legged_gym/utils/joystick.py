@@ -8,7 +8,7 @@ class JoystickHandler:
         self.sim = sim
 
         self.x_vel_cmd, self.y_vel_cmd, self.yaw_vel_cmd = 0., 0., 0.
-        self.x_vel_cmd_scale, self.y_vel_cmd_scale, self.yaw_vel_cmd_scale = 1.2, 0.5, 1.0
+        self.x_vel_cmd_scale, self.y_vel_cmd_scale, self.yaw_vel_cmd_scale = 0.6, 0., 1.0
 
         self.btn_listened = [6, 7, 10, 14]
         self.btn_prev_state = [0] * len(self.btn_listened)
@@ -41,7 +41,7 @@ class JoystickHandler:
 
     def get_control_input(self):
         return [self.x_vel_cmd * self.x_vel_cmd_scale,
-                self.y_vel_cmd * self.y_vel_cmd_scale * 0,
+                self.y_vel_cmd * self.y_vel_cmd_scale,
                 self.yaw_vel_cmd * self.yaw_vel_cmd_scale]
 
     def handle_device_input(self):

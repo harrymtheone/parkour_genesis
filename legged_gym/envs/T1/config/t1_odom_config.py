@@ -61,8 +61,14 @@ class T1_Odom_Cfg(T1BaseCfg):
         ang_vel_clip = 0.2
         parkour_vel_tolerance = 0.3
 
+        cycle_time = 0.7  # 0.64
+        target_joint_pos_scale = 0.2
+
         sw_switch = True
-        double_support_phase = -0.3
+        phase_offset_l = 0.
+        phase_offset_r = 0.5
+        air_ratio = 0.4
+        delta_t = 0.1
 
         class flat_ranges:
             lin_vel_x = [-0.8, 1.2]
@@ -155,9 +161,6 @@ class T1_Odom_Cfg(T1BaseCfg):
         tracking_sigma = 5
         EMA_update_alpha = 0.99
 
-        cycle_time = 0.7  # 0.64
-        target_joint_pos_scale = 0.3  # 0.19
-
         min_dist = 0.25
         max_dist = 0.50
         max_contact_force = 300
@@ -166,9 +169,9 @@ class T1_Odom_Cfg(T1BaseCfg):
 
         class scales:  # float or (start, end, span, start_it)
             # gait
-            joint_pos = 1.
+            joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 1.0
+            feet_clearance = 1.
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
@@ -176,13 +179,15 @@ class T1_Odom_Cfg(T1BaseCfg):
             # vel tracking
             tracking_lin_vel = 2.5
             tracking_goal_vel = 3.0
-            tracking_ang_vel = 2.5
+            tracking_ang_vel = 1.5
 
             # contact
             feet_slip = -1.
             feet_contact_forces = -1e-3
             feet_stumble = -1.
             foothold = -1.
+
+            penalize_vy = -3.
 
             # base pos
             default_joint_pos = 1.0
@@ -224,7 +229,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 4
+        num_learning_epochs = 8
         num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
@@ -265,7 +270,7 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
 
         randomize_joint_armature = True
         joint_armature_range = {
-            'default': dict(range=(0.01, 0.05), log_space=False),
+            'default': dict(range=(0.005, 0.05), log_space=True),
             'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.001, 0.05), log_space=True)
         }
 
@@ -297,25 +302,23 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
         class scales(T1_Odom_Cfg.rewards.scales):  # start, end, span, start_it
             joint_pos = 2.
             feet_contact_number = 1.2
-            feet_clearance = 1.0
+            feet_clearance = 1.
             feet_distance = 0.2
             knee_distance = 0.2
             feet_rotation = 0.5
 
             # vel tracking
-            tracking_lin_vel = 2.5
+            tracking_lin_vel = 3.5
             tracking_goal_vel = 3.0
             tracking_ang_vel = 2.5
             goal_dist_change = (1000., 100, 1000, 2000)
 
             # contact
-            feet_slip = -1.
+            feet_slip = -0.5
             feet_contact_forces = -1e-3
             feet_stumble = (0, -1., 1000, 3000)
             foothold = (0., -1., 1000, 3000)
             feet_edge = (0., -0.5, 1000, 3000)
-
-            penalize_vy = -3.
 
             # base pos
             default_joint_pos = 2.0

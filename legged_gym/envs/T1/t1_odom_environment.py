@@ -74,7 +74,7 @@ class T1OdomEnvironment(T1BaseEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         super()._reset_idx(env_ids)
 
-        self.scan_dev_xy[:] = torch_rand_float(-0.02, 0.02, (self.num_envs, 2), device=self.device).unsqueeze(1)
+        self.scan_dev_xy[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 2), device=self.device).unsqueeze(1)
         self.scan_dev_z[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 1), device=self.device)
 
     def _post_physics_pre_step(self):

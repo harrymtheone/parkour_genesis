@@ -40,7 +40,7 @@ class G1BaseEnv(HumanoidEnv):
         clock_l, clock_r = self._get_clock_input()
 
         ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
-        scale_1 = self.cfg.rewards.target_joint_pos_scale
+        scale_1 = self.cfg.commands.target_joint_pos_scale
         scale_2 = 2 * scale_1
 
         # left swing

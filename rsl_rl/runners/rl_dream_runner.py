@@ -3,10 +3,11 @@ import os
 import statistics
 import time
 from pathlib import Path
+
 import torch
 import wandb
 
-from legged_gym.utils.terrain import Terrain
+from legged_gym.utils.terrain.terrain_types import TerrainType
 from rsl_rl.algorithms import BaseAlgorithm, algorithm_dict
 
 
@@ -69,7 +70,7 @@ class RLDreamRunner(RunnerLogger):
 
         # AdaSmpl for each terrain type
         terrain_class, terrain_env_counts = torch.unique(env.env_class, return_counts=True)
-        terrain_class_name = [Terrain.terrain_type(tc.item()).name for tc in terrain_class]
+        terrain_class_name = [TerrainType(tc.item()).name for tc in terrain_class]
         coefficient_variation = torch.ones_like(terrain_class)
         terrain_coefficient_variation = {}
 
