@@ -66,7 +66,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         phase_offset_l = 0.
         phase_offset_r = 0.5
         air_ratio = 0.4
-        delta_t = 0.1
+        delta_t = 0.02
 
         class flat_ranges:
             lin_vel_x = [-0.8, 1.2]
@@ -239,16 +239,22 @@ class T1_PIE_Cfg(T1BaseCfg):
         max_iterations = 6000  # number of policy updates
 
 
+# -----------------------------------------------------------------------------------------------
+# ------------------------------------------- Stair -------------------------------------------
+# -----------------------------------------------------------------------------------------------
+
+
 class T1_PIE_Stair_Cfg(T1_PIE_Cfg):
     class terrain(T1_PIE_Cfg.terrain):
         num_rows = 10  # number of terrain rows (levels), spread is beneficial!
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 2,
+            'smooth_slope': 1,
             'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
+            'huge_stair': 0,
             'discrete': 0,
             'stepping_stone': 0,
             'gap': 0,
@@ -257,24 +263,90 @@ class T1_PIE_Stair_Cfg(T1_PIE_Cfg):
             'parkour_gap': 0,
             'parkour_box': 0,
             'parkour_step': 0,
-            'parkour_stair': 1,
+            'parkour_stair': 2,
+            'parkour_stair_down': 2,
+            'parkour_mini_stair': 2,
+            'parkour_mini_stair_down': 2,
             'parkour_flat': 0,
         }
 
     class domain_rand(T1_PIE_Cfg.domain_rand):
-        randomize_start_yaw = False
-
-        push_robots = False
+        push_robots = True
+        push_duration = [0.3]
 
         action_delay = True
-        action_delay_range = [(0, 4)]
+        action_delay_range = [(0, 4), (0, 6)]
+        action_delay_update_steps = 5000 * 24
+
+        add_dof_lag = True
+        dof_lag_range = (0, 6)
+
+        randomize_joint_armature = True
+        joint_armature_range = {
+            'default': dict(range=(0.005, 0.05), log_space=True),
+            'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.001, 0.05), log_space=True)
+        }
 
     class rewards(T1_PIE_Cfg.rewards):
-        only_positive_rewards = False
+        class scales(T1_PIE_Cfg.rewards.scales):  # start, end, span, start_it
+            joint_pos = 2.
+            feet_contact_number = 1.2
+            feet_clearance = 1.
+            feet_distance = 0.2
+            knee_distance = 0.2
+            feet_rotation = 0.5
+
+            # vel tracking
+            tracking_lin_vel = 3.5
+            tracking_goal_vel = 3.0
+            tracking_ang_vel = 2.5
+            goal_dist_change = (1000., 100, 1000, 2000)
+
+            # contact
+            feet_slip = -0.5
+            feet_contact_forces = -1e-3
+            feet_stumble = (0, -1., 1000, 3000)
+            foothold = (0., -1., 1000, 3000)
+            feet_edge = (0., -0.5, 1000, 3000)
+
+            # base pos
+            default_joint_pos = 2.0
+            orientation = 1.
+            base_height = 0.2
+            base_acc = 0.2
+            vel_mismatch_exp = 0.5
+
+            # energy
+            action_smoothness = -3e-3
+            torques = -1e-5
+            dof_vel = -5e-4
+            dof_acc = -1e-7
+            collision = -1.
+
+            dof_vel_smoothness = (0., -1e-3, 1000, 3000)
+            dof_pos_limits = -10.
+            dof_vel_limits = -1.
+            dof_torque_limits = (0., -0.1, 1000, 3000)
+
+    class control(T1BaseCfg.control):
+        # PD Drive parameters:
+        stiffness = {
+            'Head': 30,
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+            'Waist': 100,
+            'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
+        }
+
+        damping = {
+            'Head': 1,
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+            'Waist': 3,
+            'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
+        }
 
     class algorithm(T1_PIE_Cfg.algorithm):
         continue_from_last_std = False
         init_noise_std = 0.6
 
     class runner(T1_PIE_Cfg.runner):
-        max_iterations = 50000  # number of policy updates
+        max_iterations = 300000  # number of policy updates

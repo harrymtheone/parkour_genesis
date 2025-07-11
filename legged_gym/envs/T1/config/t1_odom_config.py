@@ -95,19 +95,6 @@ class T1_Odom_Cfg(T1BaseCfg):
         terrain_dict = {
             'smooth_slope': 2,
             'rough_slope': 1,
-            'stairs_up': 0,
-            'stairs_down': 0,
-            'discrete': 0,
-            'stepping_stone': 0,
-            'gap': 0,
-            'pit': 0,
-            'parkour': 0,
-            'parkour_gap': 0,
-            'parkour_box': 0,
-            'parkour_step': 0,
-            'parkour_stair': 0,
-            'parkour_mini_stair': 0,
-            'parkour_flat': 0,
         }
 
     class noise(T1BaseCfg.noise):
@@ -170,9 +157,10 @@ class T1_Odom_Cfg(T1BaseCfg):
         class scales:  # float or (start, end, span, start_it)
             # gait
             joint_pos = 2.
-            feet_contact_number = (1.2, 0., 10, 500)
-            feet_contact_accordance = (0., 0.5, 10, 500)
-            feet_swing_accordance = (0., 0.5, 10, 500)
+            feet_contact_number = 1.2
+            # feet_contact_number = (1.2, 0., 10, 500)
+            # feet_contact_accordance = (0., 0.5, 10, 500)
+            # feet_swing_accordance = (0., 0.5, 10, 500)
             feet_clearance = 1.
             feet_distance = 0.2
             knee_distance = 0.2
@@ -283,21 +271,10 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 0,
-            'stairs_down': 0,
-            'huge_stair': 0,
-            'discrete': 0,
-            'stepping_stone': 0,
-            'gap': 0,
-            'pit': 0,
-            'parkour': 0,
-            'parkour_gap': 0,
-            'parkour_box': 0,
-            'parkour_step': 0,
             'parkour_stair': 2,
             'parkour_stair_down': 2,
             'parkour_mini_stair': 2,
-            'parkour_flat': 0,
+            'parkour_mini_stair_down': 2,
         }
 
     class rewards(T1_Odom_Cfg.rewards):
