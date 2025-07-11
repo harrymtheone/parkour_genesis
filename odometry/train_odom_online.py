@@ -15,7 +15,15 @@ from rsl_rl.modules.model_odom import OdomTransformer
 
 
 def play(args):
-    log_root = 'logs'
+    # check if it is on AutoDL
+    autodl_log_root = os.path.join(os.path.expanduser("~"), 'autodl-tmp')
+    if os.path.isdir(autodl_log_root):
+        log_root = os.path.join(autodl_log_root, 'logs')
+    else:
+        log_root = 'logs'
+
+    print('-' * 10, 'log_root: ', log_root, '-' * 10)
+
     args.simulator = SimulatorType.IsaacGym
     args.headless = True
     args.resume = False

@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import torch
 
-from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
+from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x, density_weighted_sampling
 from ..base.utils import ObsBase
 from ...utils.math import transform_by_trans_quat
 
@@ -326,23 +326,3 @@ class T1ZJUEnvironment(T1BaseEnv):
     def _reward_head_acc(self):
         head_acc = (self.last_link_vel - self.sim.link_vel)[:, self.head_link_indices]
         return head_acc.square().sum(dim=[1, 2])
-
-
-def density_weighted_sampling(points, num_samples, k=10):
-    from sklearn.neighbors import NearestNeighbors
-    nbrs = NearestNeighbors(n_neighbors=k).fit(points)
-    distances, _ = nbrs.kneighbors(points)
-
-    # Estimate density as the mean distance to k-nearest neighbors
-    density = np.mean(distances, axis=1)
-
-    # Higher density -> lower probability of being sampled
-    probabilities = density / np.sum(density)
-    probabilities = 1 - probabilities  # Invert probabilities for uniformity
-    probabilities /= np.sum(probabilities)
-
-    # Sample points based on computed probabilities
-    num_samples = min(num_samples, len(points) - 1)
-    sampled_indices = np.random.choice(len(points), size=num_samples, replace=False, p=probabilities)
-
-    return points[sampled_indices]

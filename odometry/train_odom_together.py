@@ -15,7 +15,15 @@ from rsl_rl.modules.model_odom import OdomTransformer
 
 
 def play(args):
-    log_root = 'logs'
+    # check if it is on AutoDL
+    autodl_log_root = os.path.join(os.path.expanduser("~"), 'autodl-tmp')
+    if os.path.isdir(autodl_log_root):
+        log_root = os.path.join(autodl_log_root, 'logs')
+    else:
+        log_root = 'logs'
+
+    print('-' * 10, 'log_root: ', log_root, '-' * 10)
+
     args.simulator = SimulatorType.IsaacGym
     args.headless = True
     args.resume = False
@@ -70,6 +78,8 @@ def play(args):
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
     task_cfg.terrain.num_cols *= 1 if args.debug else 5
 
+    task_cfg.runner.odometer_path = ''
+
     # prepare environment
     args.n_rendered_envs = task_cfg.env.num_envs
     task_cfg = task_registry.get_cfg(name=args.task)
@@ -90,7 +100,7 @@ def play(args):
     l1 = torch.nn.L1Loss()
     bce = torch.nn.BCEWithLogitsLoss()
 
-    transformer.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/best2/latest.pth', weights_only=True))
+    transformer.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-11_21-07-04/latest.pth', weights_only=True))
 
     if not args.debug:
         log_dir = os.path.join(log_root, 'odom_online', datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
@@ -170,6 +180,14 @@ def play(args):
 
         if not args.debug and num_epoch % 1000 == 0:
             torch.save(transformer.state_dict(), os.path.join(log_dir, 'latest.pth'))
+
+        if num_epoch % 1000 == 0:
+            try:
+                state_dict = torch.load(policy_path, weights_only=True)
+                runner.alg.actor.load_state_dict(state_dict['actor_state_dict'])
+                print(f'Loaded policy at epoch {state_dict["iter"]}')
+            except Exception as e:
+                print(e)
 
 
 if __name__ == '__main__':

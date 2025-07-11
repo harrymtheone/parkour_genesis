@@ -42,7 +42,7 @@ class IsaacGymWrapper(BaseWrapper):
     def _create_sim(self):
         """ Creates simulation, terrain and environments """
         # graphics device for rendering, -1 for no rendering
-        sim_device, sim_device_id = gymutil.parse_device_str(self.device.type)
+        sim_device, sim_device_id = gymutil.parse_device_str(str(self.device))
 
         if self.device.type == 'cuda':
             graphics_device_id = -1 if self.headless else 0

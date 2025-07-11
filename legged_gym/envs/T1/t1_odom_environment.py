@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import torch
 
-from .t1_base_env import T1BaseEnv
+from .t1_base_env import T1BaseEnv, density_weighted_sampling
 from ..base.utils import ObsBase
 from ...utils.math import torch_rand_float, transform_by_yaw
 
@@ -217,7 +217,18 @@ class T1OdomEnvironment(T1BaseEnv):
             cv2.imshow("depth_processed", cv2.resize(img, (320, 320)))
             cv2.waitKey(1)
 
+        # self.draw_cloud_from_depth()
         super().render()
+
+    def draw_cloud_from_depth(self):
+        # draw points cloud
+        cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
+        cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
+        pts = cloud[cloud_valid].cpu().numpy()
+
+        if len(pts) > 0:
+            pts = density_weighted_sampling(pts, 500)
+            self.pending_vis_task.append(dict(points=pts))
 
     def _reward_goal_dist_change(self, vel_thresh=0.6):
         if self.sim.terrain is None:

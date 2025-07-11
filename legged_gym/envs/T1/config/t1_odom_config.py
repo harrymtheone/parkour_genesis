@@ -32,7 +32,7 @@ class T1_Odom_Cfg(T1BaseCfg):
 
             data_format = 'depth'  # depth, cloud, hmap
             update_interval = 1
-            delay_prop = (5, 1)  # Gaussian (mean, std)
+            delay_prop = None  # Gaussian (mean, std), or None
 
             resolution = (114, 64)  # width, height
             crop = (0, 2, 4, 4)  # top, bottom, left, right
@@ -239,6 +239,9 @@ class T1_Odom_Cfg(T1BaseCfg):
 
         lock_smpl_to = 1.0
 
+        load_latest_interval = -1
+        odometer_path = ''
+
         max_iterations = 2000  # number of policy updates
 
 
@@ -290,7 +293,7 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
             tracking_lin_vel = 3.5
             tracking_goal_vel = 3.0
             tracking_ang_vel = 2.5
-            goal_dist_change = (1000., 100, 1000, 2000)
+            goal_dist_change = (1000., 0., 1000, 2000)
 
             # contact
             feet_slip = -0.5
@@ -361,3 +364,7 @@ class T1_Odom_Finetune_Cfg(T1_Odom_Stair_Cfg):
 
     class runner(T1_Odom_Stair_Cfg.runner):
         max_iterations = 100000
+
+        load_latest_interval = 100
+        odometer_path = ''
+        # odometer_path = '/home/harry/projects/parkour_genesis/logs/odom_online/odom_030r1/latest.pth'

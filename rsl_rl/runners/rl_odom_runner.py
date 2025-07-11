@@ -171,6 +171,14 @@ class RLOdomRunner(RunnerLogger):
                 self.save(os.path.join(self.model_dir, f'model_{self.cur_it}.pt'))
             self.save(os.path.join(self.model_dir, 'latest.pt'))
 
+            if self.cfg.load_latest_interval > 0 and self.cur_it % self.cfg.load_latest_interval == 0:
+                try:
+                    state_dict = torch.load(self.cfg.odometer_path, weights_only=True)
+                    self.odom.odom.load_state_dict(state_dict)
+                    print('updated odometer!')
+                except Exception as e:
+                    print(e)
+
     def log(self, update_info, width=80, pad=35):
         self.tot_steps += self.num_steps_per_env * self.task_cfg.env.num_envs
         iteration_time = self.collection_time + self.learn_time
