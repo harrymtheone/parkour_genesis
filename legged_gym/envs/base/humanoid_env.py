@@ -173,7 +173,8 @@ class HumanoidEnv(ParkourTask):
                 + (1 + delta_t - phase) / (2 * delta_t) * trans_flag3
         )
 
-        soft_stance_mask[self.is_zero_command.unsqueeze(1)] = 1.
+        soft_stance_mask[self.is_zero_command] = 1.
+        return soft_stance_mask
 
     def _get_foothold_points(self):
         x_prop, y_prop, z_shift = self.cfg.terrain.foothold_pts
@@ -237,7 +238,7 @@ class HumanoidEnv(ParkourTask):
     def _reward_feet_swing_accordance(self, vel_thresh=0.1, height_thresh=0.02):
         feet_moving = torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2) > vel_thresh
         feet_moving |= self.feet_height > height_thresh
-        rew = feet_moving * (1. - self._get_soft_stance_mask())
+        rew = feet_moving * self._get_soft_stance_mask()
         return torch.mean(rew, dim=1)
 
     def _reward_feet_clearance(self):
@@ -247,7 +248,7 @@ class HumanoidEnv(ParkourTask):
 
         rew = (self.feet_height / self.cfg.rewards.feet_height_target).clip(min=-1, max=1)
         rew[self._get_stance_mask()] = 0.
-        # rew *= 1. - self._get_soft_stance_mask()
+        # rew *= 1.0 - self._get_soft_stance_mask()
         return rew.sum(dim=1)
 
     def _reward_feet_air_time(self):

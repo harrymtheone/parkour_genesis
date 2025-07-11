@@ -54,7 +54,7 @@ def play(args):
 
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
-        'rough_slope': 1,
+        'rough_slope': 0,
         'stairs_up': 0,
         'stairs_down': 0,
         'huge_stair': 0,
@@ -67,9 +67,9 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 0,
-        'parkour_stair_down': 0,
-        'parkour_mini_stair': 0,
+        'parkour_stair': 1,
+        'parkour_stair_down': 1,
+        'parkour_mini_stair': 1,
         'parkour_go_back_stair': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
@@ -87,7 +87,7 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    # runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-10_17-25-11/latest.pth', weights_only=True))
+    runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/odom_030r1/latest.pth', weights_only=True))
 
     with Live(vis.gen_info_panel(args, env)) as live:
         for step_i in range(10 * int(env.max_episode_length)):
@@ -140,81 +140,14 @@ def play(args):
                 env.refresh_graphics(clear_lines=False)
             env.refresh_graphics(clear_lines=True)
 
-            actions = actions.cpu().numpy()
-            # t1_vis.plot({
-            #     'Waist': actions[env.lookat_id, 0],
-            #     'Left_Hip_Pitch': actions[env.lookat_id, 1],
-            #     'Left_Hip_Roll': actions[env.lookat_id, 2],
-            #     'Left_Hip_Yaw': actions[env.lookat_id, 3],
-            #     'Left_Knee_Pitch': actions[env.lookat_id, 4],
-            #     'Left_Ankle_Pitch': actions[env.lookat_id, 5],
-            #     'Left_Ankle_Roll': actions[env.lookat_id, 6],
-            #     'Right_Hip_Pitch': actions[env.lookat_id, 7],
-            #     'Right_Hip_Roll': actions[env.lookat_id, 8],
-            #     'Right_Hip_Yaw': actions[env.lookat_id, 9],
-            #     'Right_Knee_Pitch': actions[env.lookat_id, 10],
-            #     'Right_Ankle_Pitch': actions[env.lookat_id, 11],
-            #     'Right_Ankle_Roll': actions[env.lookat_id, 12],
-            # })
-
-            # dof_pos = env.sim.dof_pos.cpu().numpy()
-            # t1_vis.plot({
-            #     'Left_Hip_Pitch': dof_pos[env.lookat_id, 11],
-            #     'Left_Hip_Roll': dof_pos[env.lookat_id, 12],
-            #     'Left_Hip_Yaw': dof_pos[env.lookat_id, 13],
-            #     'Left_Knee_Pitch': dof_pos[env.lookat_id, 14],
-            #     'Left_Ankle_Pitch': dof_pos[env.lookat_id, 15],
-            #     'Left_Ankle_Roll': dof_pos[env.lookat_id, 16],
-            #     'Right_Hip_Pitch': dof_pos[env.lookat_id, 17],
-            #     'Right_Hip_Roll': dof_pos[env.lookat_id, 18],
-            #     'Right_Hip_Yaw': dof_pos[env.lookat_id, 19],
-            #     'Right_Knee_Pitch': dof_pos[env.lookat_id, 20],
-            #     'Right_Ankle_Pitch': dof_pos[env.lookat_id, 21],
-            #     'Right_Ankle_Roll': dof_pos[env.lookat_id, 22],
-            # })
-
-            dof_vel = env.sim.dof_vel.cpu().numpy()
-            # t1_vis.plot({
-            #     'Left_Hip_Pitch': dof_vel[env.lookat_id, 11],
-            #     'Left_Hip_Roll': dof_vel[env.lookat_id, 12],
-            #     'Left_Hip_Yaw': dof_vel[env.lookat_id, 13],
-            #     'Left_Knee_Pitch': dof_vel[env.lookat_id, 14],
-            #     'Left_Ankle_Pitch': dof_vel[env.lookat_id, 15],
-            #     'Left_Ankle_Roll': dof_vel[env.lookat_id, 16],
-            #     'Right_Hip_Pitch': dof_vel[env.lookat_id, 17],
-            #     'Right_Hip_Roll': dof_vel[env.lookat_id, 18],
-            #     'Right_Hip_Yaw': dof_vel[env.lookat_id, 19],
-            #     'Right_Knee_Pitch': dof_vel[env.lookat_id, 20],
-            #     'Right_Ankle_Pitch': dof_vel[env.lookat_id, 21],
-            #     'Right_Ankle_Roll': dof_vel[env.lookat_id, 22],
-            # })
-
-            torques = env.torques.cpu().numpy()
-            feet_contact_forces = torch.norm(env.sim.contact_forces[:, env.feet_indices], dim=-1).cpu().numpy()
-            t1_vis.plot({
-                'Waist': torques[env.lookat_id, 10],
-                'Left_Hip_Pitch': torques[env.lookat_id, 11],
-                'Left_Hip_Roll': torques[env.lookat_id, 12],
-                'Left_Hip_Yaw': torques[env.lookat_id, 13],
-                'Left_Knee_Pitch': torques[env.lookat_id, 14],
-                'Left_Ankle_Pitch': torques[env.lookat_id, 15],
-                'Left_Ankle_Roll': torques[env.lookat_id, 16],
-                'Right_Hip_Pitch': torques[env.lookat_id, 17],
-                'Right_Hip_Roll': torques[env.lookat_id, 18],
-                'Right_Hip_Yaw': torques[env.lookat_id, 19],
-                'Right_Knee_Pitch': torques[env.lookat_id, 20],
-                'Right_Ankle_Pitch': torques[env.lookat_id, 21],
-                'Right_Ankle_Roll': torques[env.lookat_id, 22],
-                'Left_Contact_Forces': feet_contact_forces[env.lookat_id, 0],
-                'Right_Contact_Forces': feet_contact_forces[env.lookat_id, 1],
-            })
+            t1_vis.plot(env)
 
 
 if __name__ == '__main__':
-    # t1_vis = vis.T1ActionsVisualizer()
+    t1_vis = vis.T1ActionsVisualizer()
     # t1_vis = vis.T1DofPosVisualizer()
     # t1_vis = vis.T1DofVelVisualizer()
-    t1_vis = vis.T1TorqueVisualizer()
+    # t1_vis = vis.T1TorqueVisualizer()
 
     with torch.inference_mode():
         play(get_args())

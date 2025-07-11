@@ -68,7 +68,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         phase_offset_l = 0.
         phase_offset_r = 0.5
         air_ratio = 0.4
-        delta_t = 0.1
+        delta_t = 0.02
 
         class flat_ranges:
             lin_vel_x = [-0.8, 1.2]
@@ -170,7 +170,9 @@ class T1_Odom_Cfg(T1BaseCfg):
         class scales:  # float or (start, end, span, start_it)
             # gait
             joint_pos = 2.
-            feet_contact_number = 1.2
+            feet_contact_number = (1.2, 0., 10, 500)
+            feet_contact_accordance = (0., 0.5, 10, 500)
+            feet_swing_accordance = (0., 0.5, 10, 500)
             feet_clearance = 1.
             feet_distance = 0.2
             knee_distance = 0.2

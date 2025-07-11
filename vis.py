@@ -128,7 +128,7 @@ class BaseVisualizer:
 
         plt.show(block=False)
 
-    def plot(self, data: dict):
+    def _plot(self, data: dict):
         # data: mapping subplot name -> new y-value
         for name, y_val in data.items():
             if name not in self.lines:
@@ -157,6 +157,9 @@ class BaseVisualizer:
         # Flush GUI events
         self.fig.canvas.flush_events()
 
+    def plot(self, env):
+        raise NotImplementedError
+
 
 class T1ActionsVisualizer(BaseVisualizer):
     figsize = (6, 12)
@@ -178,6 +181,24 @@ class T1ActionsVisualizer(BaseVisualizer):
     }
     his_length = 50
 
+    def plot(self, env):
+        actions = env.last_action_output.cpu().numpy()
+        self._plot({
+            'Waist': actions[env.lookat_id, 0],
+            'Left_Hip_Pitch': actions[env.lookat_id, 1],
+            'Left_Hip_Roll': actions[env.lookat_id, 2],
+            'Left_Hip_Yaw': actions[env.lookat_id, 3],
+            'Left_Knee_Pitch': actions[env.lookat_id, 4],
+            'Left_Ankle_Pitch': actions[env.lookat_id, 5],
+            'Left_Ankle_Roll': actions[env.lookat_id, 6],
+            'Right_Hip_Pitch': actions[env.lookat_id, 7],
+            'Right_Hip_Roll': actions[env.lookat_id, 8],
+            'Right_Hip_Yaw': actions[env.lookat_id, 9],
+            'Right_Knee_Pitch': actions[env.lookat_id, 10],
+            'Right_Ankle_Pitch': actions[env.lookat_id, 11],
+            'Right_Ankle_Roll': actions[env.lookat_id, 12],
+        })
+
 
 class T1DofPosVisualizer(BaseVisualizer):
     figsize = (12, 12)
@@ -197,6 +218,23 @@ class T1DofPosVisualizer(BaseVisualizer):
         'Right_Ankle_Roll': {'range': (-0.64, 0.64), 'lim_lower': -0.44, 'lim_upper': 0.44},
     }
     his_length = 50
+
+    def plot(self, env):
+        dof_pos = env.sim.dof_pos.cpu().numpy()
+        self._plot({
+            'Left_Hip_Pitch': dof_pos[env.lookat_id, 11],
+            'Left_Hip_Roll': dof_pos[env.lookat_id, 12],
+            'Left_Hip_Yaw': dof_pos[env.lookat_id, 13],
+            'Left_Knee_Pitch': dof_pos[env.lookat_id, 14],
+            'Left_Ankle_Pitch': dof_pos[env.lookat_id, 15],
+            'Left_Ankle_Roll': dof_pos[env.lookat_id, 16],
+            'Right_Hip_Pitch': dof_pos[env.lookat_id, 17],
+            'Right_Hip_Roll': dof_pos[env.lookat_id, 18],
+            'Right_Hip_Yaw': dof_pos[env.lookat_id, 19],
+            'Right_Knee_Pitch': dof_pos[env.lookat_id, 20],
+            'Right_Ankle_Pitch': dof_pos[env.lookat_id, 21],
+            'Right_Ankle_Roll': dof_pos[env.lookat_id, 22],
+        })
 
 
 class T1DofVelVisualizer(BaseVisualizer):
@@ -218,6 +256,23 @@ class T1DofVelVisualizer(BaseVisualizer):
         'Right_Ankle_Roll': {'range': (-3, 3)},
     }
     his_length = 50
+
+    def plot(self, env):
+        dof_vel = env.sim.dof_vel.cpu().numpy()
+        self._plot({
+            'Left_Hip_Pitch': dof_vel[env.lookat_id, 11],
+            'Left_Hip_Roll': dof_vel[env.lookat_id, 12],
+            'Left_Hip_Yaw': dof_vel[env.lookat_id, 13],
+            'Left_Knee_Pitch': dof_vel[env.lookat_id, 14],
+            'Left_Ankle_Pitch': dof_vel[env.lookat_id, 15],
+            'Left_Ankle_Roll': dof_vel[env.lookat_id, 16],
+            'Right_Hip_Pitch': dof_vel[env.lookat_id, 17],
+            'Right_Hip_Roll': dof_vel[env.lookat_id, 18],
+            'Right_Hip_Yaw': dof_vel[env.lookat_id, 19],
+            'Right_Knee_Pitch': dof_vel[env.lookat_id, 20],
+            'Right_Ankle_Pitch': dof_vel[env.lookat_id, 21],
+            'Right_Ankle_Roll': dof_vel[env.lookat_id, 22],
+        })
 
 
 class T1TorqueVisualizer(BaseVisualizer):
@@ -241,3 +296,24 @@ class T1TorqueVisualizer(BaseVisualizer):
         'Right_Contact_Forces': {'range': (0, 700), 'lim_lower': 0, 'lim_upper': 300},
     }
     his_length = 50
+
+    def plot(self, env):
+        torques = env.torques.cpu().numpy()
+        feet_contact_forces = torch.norm(env.sim.contact_forces[:, env.feet_indices], dim=-1).cpu().numpy()
+        self._plot({
+            'Waist': torques[env.lookat_id, 10],
+            'Left_Hip_Pitch': torques[env.lookat_id, 11],
+            'Left_Hip_Roll': torques[env.lookat_id, 12],
+            'Left_Hip_Yaw': torques[env.lookat_id, 13],
+            'Left_Knee_Pitch': torques[env.lookat_id, 14],
+            'Left_Ankle_Pitch': torques[env.lookat_id, 15],
+            'Left_Ankle_Roll': torques[env.lookat_id, 16],
+            'Right_Hip_Pitch': torques[env.lookat_id, 17],
+            'Right_Hip_Roll': torques[env.lookat_id, 18],
+            'Right_Hip_Yaw': torques[env.lookat_id, 19],
+            'Right_Knee_Pitch': torques[env.lookat_id, 20],
+            'Right_Ankle_Pitch': torques[env.lookat_id, 21],
+            'Right_Ankle_Roll': torques[env.lookat_id, 22],
+            'Left_Contact_Forces': feet_contact_forces[env.lookat_id, 0],
+            'Right_Contact_Forces': feet_contact_forces[env.lookat_id, 1],
+        })
