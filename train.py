@@ -32,7 +32,7 @@ def train(args):
         task_cfg.runner.logger_backend = None
         # args.headless = False
         task_cfg.terrain.num_rows = 5
-        task_cfg.terrain.num_cols = 10
+        task_cfg.terrain.num_cols = 5
         task_cfg.env.num_envs = 16
 
     if task_cfg.runner.logger_backend == 'wandb':

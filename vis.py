@@ -47,13 +47,15 @@ def gen_info_panel(args, env):
     table11.add_column("yaw")
     table11.add_row("cmd", f'{cmd_vx: .2f}', f'{cmd_vy: .2f}', f'{zero: .2f}', f'{cmd_yaw: .2f}')
     table11.add_row("real", f'{real_vx_avg: .2f}', f'{real_vy_avg: .2f}', f'{real_vz_avg: .2f}', f'{real_yaw_avg: .2f}')
-    if hasattr(args, 'est'):
-        table11.add_row("est_vel", f'{args.est[0]: .2f}', f'{args.est[1]: .2f}', f'{args.est[2]: .2f}', f'{zero: .2f}')
+    if hasattr(args, 'est_vel'):
+        table11.add_row("est_vel", f'{args.est_vel[0]: .2f}', f'{args.est_vel[1]: .2f}', f'{args.est_vel[2]: .2f}', f'{zero: .2f}')
 
     table12 = Table()
     table12.add_column("target_yaw")
     table12.add_column("base_height")
     table12.add_row(f'{env.target_yaw[env.lookat_id]: .2f}', f'{real_base_height: .2f}')
+    if hasattr(args, 'est_height'):
+        table12.add_row(f'', f'{args.est_height: .2f}')
 
     table21 = Table()
     table21.add_column("Pushing" if env.pushing_robots else "")

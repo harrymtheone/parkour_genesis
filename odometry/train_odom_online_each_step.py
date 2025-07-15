@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from legged_gym.simulator import SimulatorType
 from legged_gym.utils.helpers import get_args
 from legged_gym.utils.task_registry import TaskRegistry
-from rsl_rl.modules.model_odom import OdomTransformer
+from rsl_rl.modules.odometer.recurrent import OdomRecurrentTransformer
 from rsl_rl.storage.odometer_storage import OdometerStorage
 
 
@@ -35,7 +35,6 @@ def play(args):
     log_root = 'logs'
     args.simulator = SimulatorType.IsaacGym
     args.headless = True
-    args.resume = True
 
     task_registry = TaskRegistry()
     task_cfg = task_registry.get_cfg(name=args.task)
@@ -95,7 +94,7 @@ def play(args):
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
     use_amp = True
-    odom = OdomTransformer(50, 64, 128, 3).to(args.device)
+    odom = OdomRecurrentTransformer(50, 64, 128, 3).to(args.device)
     optim = torch.optim.Adam(odom.parameters(), lr=1e-4)
     scaler = torch.amp.GradScaler(enabled=use_amp)
     mse = torch.nn.MSELoss()

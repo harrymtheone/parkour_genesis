@@ -6,8 +6,7 @@ import torch
 
 from .t1_base_env import T1BaseEnv
 from ..base.utils import ObsBase
-
-TIMEOUT_TIME = 10.
+from ...utils.math import transform_by_yaw, torch_rand_float
 
 
 class ActorObs(ObsBase):
@@ -18,7 +17,7 @@ class ActorObs(ObsBase):
         self.priv_actor = priv_actor.clone()
         self.rough_scan = rough_scan.clone()
         self.scan = scan.clone()
-        self.env_class = env_class
+        self.env_class = env_class.clone()
 
     def no_depth(self):
         return ObsNoDepth(self.proprio, self.priv_actor, self.scan)
@@ -47,8 +46,9 @@ class ObsNoDepth(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_his, scan, edge_mask):
+    def __init__(self, priv_actor, priv_his, scan, edge_mask):
         super().__init__()
+        self.priv_actor = priv_actor.clone()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
         self.edge_mask = edge_mask.clone()
@@ -62,13 +62,19 @@ class T1OdomNegEnvironment(T1BaseEnv):
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
-        self.head_link_indices = self.sim.create_indices(
-            self.sim.get_full_names(['H2'], True), True)
-
     def _init_buffers(self):
         super()._init_buffers()
         self.goal_distance = self._zero_tensor(self.num_envs)
         self.last_goal_distance = self._zero_tensor(self.num_envs)
+
+        self.scan_dev_xy = self._zero_tensor(self.num_envs, 1, 2)
+        self.scan_dev_z = self._zero_tensor(self.num_envs, 1)
+
+    def _reset_idx(self, env_ids: torch.Tensor):
+        super()._reset_idx(env_ids)
+
+        self.scan_dev_xy[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 2), device=self.device).unsqueeze(1)
+        self.scan_dev_z[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 1), device=self.device)
 
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
@@ -77,6 +83,25 @@ class T1OdomNegEnvironment(T1BaseEnv):
     def _post_physics_post_step(self):
         super()._post_physics_post_step()
         self.last_goal_distance[:] = self.goal_distance
+
+    def get_scan(self, noisy=False):
+        # convert height points coordinate to world frame
+        points = transform_by_yaw(
+            self.scan_points,
+            self.base_euler[:, 2:3].repeat(1, self.num_scan)
+        ).unflatten(0, (self.num_envs, -1))
+
+        points[:] += self.sim.root_pos.unsqueeze(1) + self.cfg.terrain.border_size
+
+        if not noisy:
+            return self._get_heights(points)
+
+        z_gauss = 0.03 * torch.randn(self.num_envs, self.scan_points.size(1), device=self.device)
+
+        points[:, :, :2] += self.scan_dev_xy
+        heights = self._get_heights(points)
+        heights[:] += self.scan_dev_z + z_gauss
+        return heights
 
     def _compute_observations(self):
         """
@@ -134,32 +159,63 @@ class T1OdomNegEnvironment(T1BaseEnv):
             self.ext_torque,  # 3
             self.sim.payload_masses / 10.,  # 1
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
-            self.goal_distance.unsqueeze(1),  # 1
+            self.goal_distance.unsqueeze(1) / 10.,  # 1
         ), dim=-1)
 
-        priv_actor_obs = base_lin_vel * self.obs_scales.lin_vel  # 3
-
         # compute height map
-        rough_scan = torch.clip(self.get_body_hmap() - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        # rough_scan = torch.clip(self.get_body_hmap() - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        rough_scan = torch.clip(self.get_body_hmap() - self.base_height.unsqueeze(1), -1, 1.)
+        # rough_scan = self.get_body_hmap()
+        # rough_scan = torch.clip(rough_scan - rough_scan.mean(dim=1, keepdim=True), -1, 1.)
         rough_scan = rough_scan.view(self.num_envs, *self.cfg.env.scan_shape)
 
-        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
-        scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
+        # scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.base_height.unsqueeze(1), -1, 1.)
+        # scan_noisy = self.get_scan(noisy=True)
+        # scan_noisy = torch.clip(scan_noisy - scan_noisy.mean(dim=1, keepdim=True), -1, 1.)
+        scan_noisy = scan_noisy.view(self.num_envs, *self.cfg.env.scan_shape)
 
         base_edge_mask = self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
-        scan_edge = torch.stack([scan, base_edge_mask], dim=1)
+        scan_edge = torch.stack([scan_noisy, base_edge_mask], dim=1)
 
         if self.cfg.sensors.activated:
-            depth = self.sensors.get('depth_0').squeeze(2).half()
+            depth = self.sensors.get('depth_0').half()
+
+            if self.cfg.sensors.depth_0.data_format == 'hmap':
+                depth = depth.squeeze(1)
+                self.draw_hmap_from_depth(depth[self.lookat_id])
         else:
             depth = None
-        self.actor_obs = ActorObs(proprio, depth, priv_actor_obs, rough_scan, scan_edge, self.env_class)
+
+        priv_actor = torch.cat([
+            base_lin_vel * self.obs_scales.lin_vel,  # 3
+            self.base_height.unsqueeze(1),  # 1
+        ], dim=-1)
+
+        self.actor_obs = ActorObs(proprio, depth, priv_actor, rough_scan, scan_edge, self.env_class)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation
+        priv_actor_clean = torch.cat([
+            self.base_lin_vel * self.obs_scales.lin_vel,  # 3
+            self.base_height.unsqueeze(1),  # 1
+        ], dim=-1)
+
+        # hmap = root_height - scan
+        # base_height = root_height - scan.mean()
+        # new_hmap = scan - scan.mean()
+        # hmap = base_height - new_hmap
+
+        # scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.base_height.unsqueeze(1), -1, 1.)
+        # new_hmap = self.get_scan(noisy=False)
+        # scan = torch.clip(new_hmap - new_hmap.mean(dim=1, keepdim=True), -1, 1.)
+        scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
+
         reset_flag = self.episode_length_buf <= 1
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, base_edge_mask)
+
+        self.critic_obs = CriticObs(priv_actor_clean, self.critic_his_buf.get(), scan, base_edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):
@@ -263,21 +319,9 @@ class T1OdomNegEnvironment(T1BaseEnv):
         # Penalize xy axes base angular velocity
         return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
 
-    def _reward_tracking_goal(self):
-        if self.sim.terrain is None:
-            return self._zero_tensor(self.num_envs)
-
-        root_lin_vel_xy = self.sim.root_lin_vel[:, :2]
-        root_lin_vel_xy_norm = torch.norm(root_lin_vel_xy, dim=1, keepdim=True)
-        root_lin_vel_unit_vec = torch.where(
-            root_lin_vel_xy_norm > self.cfg.commands.lin_vel_clip,
-            root_lin_vel_xy / (root_lin_vel_xy_norm + 1e-5),
-            0.
-        )
-
-        target_unit_vec = self.target_pos_rel / (torch.norm(self.target_pos_rel, dim=1, keepdim=True) + 1e-5)
-
-        rew = torch.sum(root_lin_vel_unit_vec * target_unit_vec, dim=1)
+    def _reward_penalize_vy(self):
+        rew = torch.abs(self.base_lin_vel[:, 1])
+        rew[self.env_class < 100] = 0.
         return rew
 
     def _reward_stall(self):
@@ -288,21 +332,6 @@ class T1OdomNegEnvironment(T1BaseEnv):
         ang_vel_stall = (torch.abs(self.base_ang_vel[:, 2]) < self.cfg.commands.ang_vel_clip) & (torch.abs(self.commands[:, 2]) > 0)
 
         return (lin_vel_stall | ang_vel_stall).float()
-
-    def _reward_timeout(self, dist_clip=3.):
-        time_out = torch.clamp(self.tracking_goal_timer - TIMEOUT_TIME, min=0)
-        rew = time_out * self.target_pos_rel.norm(dim=1).clip(max=dist_clip) / dist_clip
-
-        rew[self.env_class < 100] = 0.
-        return rew
-
-    def _reward_goal_dist_change(self, vel_thresh=0.6):
-        if self.sim.terrain is None:
-            return self._zero_tensor(self.num_envs)
-
-        rew = (self.last_goal_distance - self.goal_distance).clip(max=vel_thresh * self.dt)
-        rew *= (self.env_class >= 100) & ~self.is_zero_command
-        return rew
 
 
 @torch.jit.script

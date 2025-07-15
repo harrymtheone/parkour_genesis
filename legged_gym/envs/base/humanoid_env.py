@@ -274,7 +274,10 @@ class HumanoidEnv(ParkourTask):
 
         feet_lin_vel = torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2)
         feet_ang_vel = torch.abs(self.sim.link_ang_vel[:, self.feet_indices, 2])
-        return torch.sum(self.contact_filt * (feet_lin_vel + feet_ang_vel), dim=1)
+        rew = torch.sum(self.contact_filt * (feet_lin_vel + feet_ang_vel), dim=1)
+
+        rew[(self.env_class >= 2) & (self.env_class < 4)] *= 0.3
+        return rew
 
     def _reward_feet_distance(self):
         """
@@ -599,6 +602,7 @@ class HumanoidEnv(ParkourTask):
         rew = torch.sum(self.feet_at_edge.float(), dim=-1)
 
         rew[self.env_class < 2] = 0.
+        rew[(self.env_class >= 2) & (self.env_class < 4)] *= 0.1
         return rew
 
     def _reward_foothold(self):
@@ -606,6 +610,7 @@ class HumanoidEnv(ParkourTask):
         rew = (1 - valid_foothold_perc) * self.contact_filt
 
         rew[self.env_class < 2] = 0.
+        rew[(self.env_class >= 2) & (self.env_class < 4)] *= 0.3
         return rew.sum(dim=1)
 
     # ----------------------------------------- Graphics -------------------------------------------

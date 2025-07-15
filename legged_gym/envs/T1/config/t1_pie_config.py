@@ -30,7 +30,8 @@ class T1_PIE_Cfg(T1BaseCfg):
 
             data_format = 'depth'  # depth, cloud, hmap
             update_interval = 1
-            delay_prop = (5, 1)  # Gaussian (mean, std)
+            delay_prop = None  # Gaussian (mean, std), or None
+            history_length = 2
 
             resolution = (114, 64)  # width, height
             crop = (0, 2, 4, 4)  # top, bottom, left, right

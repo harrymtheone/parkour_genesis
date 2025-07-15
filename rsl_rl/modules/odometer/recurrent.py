@@ -1,8 +1,7 @@
 import torch
-import torch.nn as nn
-from torch.distributions import Normal
+from torch import nn as nn
 
-from .utils import make_linear_layers, gru_wrapper
+from rsl_rl.modules.utils import gru_wrapper
 
 
 class UNet(nn.Module):
@@ -79,10 +78,12 @@ class UNet(nn.Module):
         d1 = self.decoder_conv1(d1)
 
         # Final output
-        return self.output_conv(d1), b
+        return self.output_conv(d1)
 
 
-class OdomTransformer(nn.Module):
+class OdomRecurrentTransformer(nn.Module):
+    is_recurrent = True
+
     def __init__(self, n_proprio, embed_dim, hidden_size, estimator_out_dim):
         super().__init__()
         num_heads = 4
@@ -105,7 +106,8 @@ class OdomTransformer(nn.Module):
 
         # transformer
         self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=128, batch_first=True, dropout=0.),
+            # nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=128, batch_first=True, dropout=0.),
+            nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=128, batch_first=True, dropout=0.1),
             num_layers=num_layers
         )
 
@@ -148,7 +150,7 @@ class OdomTransformer(nn.Module):
 
         # reconstructor
         recon_rough = self.recon_rough(out)
-        recon_refine, _ = self.recon_refine(recon_rough)
+        recon_refine = self.recon_refine(recon_rough)
 
         # estimator
         est = self.estimator(out)
@@ -164,7 +166,7 @@ class OdomTransformer(nn.Module):
 
         # reconstructor
         recon_rough = gru_wrapper(self.recon_rough, out)
-        recon_refine, _ = gru_wrapper(self.recon_refine, recon_rough.detach())
+        recon_refine = gru_wrapper(self.recon_refine, recon_rough.detach())
 
         # estimator
         est = gru_wrapper(self.estimator, out)
@@ -201,108 +203,3 @@ class OdomTransformer(nn.Module):
         else:
             if self.hidden_states_train is not None:
                 self.hidden_states_train[:, dones] = 0.
-
-
-class Actor(nn.Module):
-    def __init__(self, task_cfg):
-        super().__init__()
-        env_cfg = task_cfg.env
-        policy_cfg = task_cfg.policy
-        odom_cfg = task_cfg.odometer
-
-        self.scan_encoder = make_linear_layers(2 * 32 * 16, 256, 128,
-                                               activation_func=nn.ELU())
-
-        # belief encoder
-        self.gru = nn.GRU(env_cfg.n_proprio + 128 + odom_cfg.estimator_output_dim, policy_cfg.actor_gru_hidden_size, num_layers=1)
-        self.hidden_states = None
-
-        self.actor = make_linear_layers(policy_cfg.actor_gru_hidden_size,
-                                        *policy_cfg.actor_hidden_dims,
-                                        env_cfg.num_actions,
-                                        activation_func=nn.ELU(),
-                                        output_activation=False)
-
-        # Action noise
-        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions), requires_grad=True)
-        self.distribution = None
-
-    def act(self, obs, recon, est, use_estimated_values, eval_=False, **kwargs):
-        if torch.any(use_estimated_values):
-            scan_enc = torch.where(
-                use_estimated_values,
-                self.scan_encoder(recon.flatten(1)),
-                self.scan_encoder(obs.scan.flatten(1))
-            )
-
-            x = torch.where(
-                use_estimated_values,
-                torch.cat([obs.proprio, scan_enc, est], dim=1),
-                torch.cat([obs.proprio, scan_enc, obs.priv_actor], dim=1)
-            )
-
-        else:
-            scan_enc = self.scan_encoder(obs.scan.flatten(1))
-            x = torch.cat([obs.proprio, scan_enc, obs.priv_actor], dim=1)
-
-        x, self.hidden_states = self.gru(x.unsqueeze(0), self.hidden_states)
-        x = x.squeeze(0)
-
-        mean = self.actor(x)
-
-        if eval_:
-            return mean
-
-        self.distribution = Normal(mean, torch.exp(self.log_std))
-        return self.distribution.sample()
-
-    def train_act(self, obs, scan, est, hidden_states, use_estimated_values):
-        if torch.any(use_estimated_values):
-            scan_enc = torch.where(
-                use_estimated_values,
-                gru_wrapper(self.scan_encoder, scan.flatten(2)),
-                gru_wrapper(self.scan_encoder, obs.scan.flatten(2)),
-            )
-
-            x = torch.where(
-                use_estimated_values,
-                torch.cat([obs.proprio, scan_enc, est], dim=2),
-                torch.cat([obs.proprio, scan_enc, obs.priv_actor], dim=2),
-            )
-
-        else:
-            scan_enc = gru_wrapper(self.scan_encoder, obs.scan.flatten(2))
-            x = torch.cat([obs.proprio, scan_enc, obs.priv_actor], dim=2)
-
-        x, _ = self.gru(x, hidden_states)
-
-        mean = gru_wrapper(self.actor, x)
-
-        self.distribution = Normal(mean, torch.exp(self.log_std))
-
-    @property
-    def action_mean(self):
-        return self.distribution.mean
-
-    @property
-    def action_std(self):
-        return self.distribution.stddev
-
-    @property
-    def entropy(self):
-        return self.distribution.entropy().sum(dim=-1, keepdim=True)
-
-    def get_actions_log_prob(self, actions):
-        return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
-
-    def reset_std(self, std):
-        new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=self.log_std.device))
-        self.log_std.data = new_log_std.data
-
-    def get_hidden_states(self):
-        if self.hidden_states is None:
-            return None
-        return self.hidden_states.detach()
-
-    def reset(self, dones):
-        self.hidden_states[:, dones] = 0.

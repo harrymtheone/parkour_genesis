@@ -4,7 +4,7 @@ import os
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from rsl_rl.modules.model_odom import OdomTransformer
+from rsl_rl.modules.odometer.recurrent import OdomRecurrentTransformer
 
 
 # Define a simple dataset for a single data file loaded into memory
@@ -35,7 +35,7 @@ def main():
     epochs_per_file = 3
     num_workers = 4
 
-    transformer = OdomTransformer(
+    transformer = OdomRecurrentTransformer(
         n_proprio=50,
         embed_dim=64,
         hidden_size=128,

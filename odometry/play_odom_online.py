@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 from legged_gym.simulator import SimulatorType
 from legged_gym.utils.helpers import get_args
 from legged_gym.utils.task_registry import TaskRegistry
-from rsl_rl.modules.model_odom import OdomTransformer
+from rsl_rl.modules.odometer.recurrent import OdomRecurrentTransformer
 
 
 def play(args):

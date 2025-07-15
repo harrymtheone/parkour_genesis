@@ -1,3 +1,4 @@
+import numpy as np
 import scipy
 
 from .terrain_types import *
@@ -369,6 +370,11 @@ class Terrain:
                                         self.cfg.horizontal_scale,
                                         self.cfg.vertical_scale,
                                         self.cfg.slope_treshold)
+
+        if not np.any(self.edge_mask):
+            self.height_field_guidance = self.height_field_raw.copy()
+            return
+
         half_edge_width = int(self.cfg.edge_width_thresh / self.cfg.horizontal_scale)
         structure = np.ones((half_edge_width * 2 + 1, half_edge_width * 2 + 1))
         self.edge_mask = scipy.ndimage.binary_dilation(self.edge_mask, structure=structure)

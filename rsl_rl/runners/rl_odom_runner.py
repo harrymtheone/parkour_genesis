@@ -115,6 +115,7 @@ class RLOdomRunner(RunnerLogger):
                     #         odom_update_info = self.odom.update(self.cur_it)
                     # else:
                     #     self.odom.storage.clear()
+                    self.odom.odom.reset(dones)
 
                 if 'episode_rew' in infos:
                     self.episode_rew.append(infos['episode_rew'])
@@ -245,12 +246,14 @@ class RLOdomRunner(RunnerLogger):
         if 'recon' in kwargs:
             return self.alg.play_act(obs, **kwargs)
 
+        self.odom.odom.eval()
         rtn = self.odom.play_reconstruct(obs)
 
         if 'recon_refine' in rtn:
             recon_refine = rtn['recon_refine']
             # recon_refine[:, 1] = torch.where(recon_refine[:, 1] < 0., 0., 1.)
             recon_refine[:, 1] = torch.sigmoid(recon_refine[:, 1])
+            rtn['estimation'][:] = obs.priv_actor
             rtn.update(self.alg.play_act(obs, recon=rtn['recon_refine'], est=rtn['estimation'], **kwargs))
         else:
             rtn.update(self.alg.play_act(obs, recon=None, est=None, **kwargs))

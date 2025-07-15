@@ -60,9 +60,6 @@ class T1OdomEnvironment(T1BaseEnv):
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
-        self.head_link_indices = self.sim.create_indices(
-            self.sim.get_full_names(['H2'], True), True)
-
     def _init_buffers(self):
         super()._init_buffers()
         self.goal_distance = self._zero_tensor(self.num_envs)
@@ -164,29 +161,53 @@ class T1OdomEnvironment(T1BaseEnv):
         ), dim=-1)
 
         # compute height map
-        rough_scan = torch.clip(self.get_body_hmap() - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        # rough_scan = torch.clip(self.get_body_hmap() - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        rough_scan = torch.clip(self.get_body_hmap() - self.base_height.unsqueeze(1), -1, 1.)
+        # rough_scan = self.get_body_hmap()
+        # rough_scan = torch.clip(rough_scan - rough_scan.mean(dim=1, keepdim=True), -1, 1.)
         rough_scan = rough_scan.view(self.num_envs, *self.cfg.env.scan_shape)
 
-        scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        # scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.base_height.unsqueeze(1), -1, 1.)
+        # scan_noisy = self.get_scan(noisy=True)
+        # scan_noisy = torch.clip(scan_noisy - scan_noisy.mean(dim=1, keepdim=True), -1, 1.)
         scan_noisy = scan_noisy.view(self.num_envs, *self.cfg.env.scan_shape)
 
         base_edge_mask = self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
         scan_edge = torch.stack([scan_noisy, base_edge_mask], dim=1)
 
         if self.cfg.sensors.activated:
-            depth = self.sensors.get('depth_0').squeeze(2).half()
+            depth = self.sensors.get('depth_0').half()
+
+            if self.cfg.sensors.depth_0.data_format == 'hmap':
+                depth = depth.squeeze(1)
+                self.draw_hmap_from_depth(depth[self.lookat_id])
         else:
             depth = None
 
-        priv_actor = base_lin_vel * self.obs_scales.lin_vel  # 3
+        priv_actor = torch.cat([
+            base_lin_vel * self.obs_scales.lin_vel,  # 3
+            self.base_height.unsqueeze(1),  # 1
+        ], dim=-1)
 
         self.actor_obs = ActorObs(proprio, depth, priv_actor, rough_scan, scan_edge, self.env_class)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation
-        priv_actor_clean = self.base_lin_vel * self.obs_scales.lin_vel  # 3
+        priv_actor_clean = torch.cat([
+            self.base_lin_vel * self.obs_scales.lin_vel,  # 3
+            self.base_height.unsqueeze(1),  # 1
+        ], dim=-1)
 
-        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        # hmap = root_height - scan
+        # base_height = root_height - scan.mean()
+        # new_hmap = scan - scan.mean()
+        # hmap = base_height - new_hmap
+
+        # scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.base_height.unsqueeze(1), -1, 1.)
+        # new_hmap = self.get_scan(noisy=False)
+        # scan = torch.clip(new_hmap - new_hmap.mean(dim=1, keepdim=True), -1, 1.)
         scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
 
         reset_flag = self.episode_length_buf <= 1
@@ -219,6 +240,23 @@ class T1OdomEnvironment(T1BaseEnv):
 
         # self.draw_cloud_from_depth()
         super().render()
+
+    def draw_hmap_from_depth(self, hmap):
+        hmap, valid_mask = hmap[0], hmap[1] > 0.
+
+        hmap = hmap.flatten().cpu().numpy()
+        base_pos = self.sim.root_pos[self.lookat_id].cpu().numpy()
+        yaw = self.base_euler[self.lookat_id, 2].repeat(256)
+        height_points = transform_by_yaw(self.scan_points[self.lookat_id][256:], yaw).cpu().numpy()
+        height_points[:, :2] += base_pos[None, :2]
+        height_points[:, 2] = base_pos[2] - hmap
+
+        valid_mask = valid_mask.flatten().cpu().numpy()
+        valid_pts = height_points[valid_mask]
+        empty_pts = height_points[~valid_mask]
+
+        self.pending_vis_task.append(dict(points=valid_pts, color=(0, 1, 0)))
+        self.pending_vis_task.append(dict(points=empty_pts, color=(1, 0, 0)))
 
     def draw_cloud_from_depth(self):
         # draw points cloud

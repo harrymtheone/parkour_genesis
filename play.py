@@ -28,7 +28,6 @@ def play(args):
 
     # override some parameters for testing
     task_cfg.play.control = False
-
     task_cfg.env.num_envs = 8
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
@@ -53,8 +52,8 @@ def play(args):
     task_cfg.domain_rand.randomize_gains = False
 
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 0,
-        'rough_slope': 0,
+        'smooth_slope': 1,
+        'rough_slope': 1,
         'stairs_up': 0,
         'stairs_down': 0,
         'huge_stair': 0,
@@ -67,10 +66,10 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
+        'parkour_stair': 0,
         'parkour_stair_down': 1,
-        'parkour_mini_stair': 1,
-        'parkour_mini_stair_down': 1,
+        'parkour_mini_stair': 0,
+        'parkour_mini_stair_down': 0,
         'parkour_go_back_stair': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
@@ -88,13 +87,15 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-11_22-03-59/latest.pth', weights_only=True))
+    runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-14_20-18-00/latest.pth',
+                                                map_location=args.device,
+                                                weights_only=True))
 
     with Live(vis.gen_info_panel(args, env)) as live:
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, dones=dones)
+            rtn = runner.play_act(obs, obs_critic=obs_critic,  use_estimated_values=False, eval_=True, dones=dones)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.9, eval_=True, dones=dones)
 
             actions = rtn['actions']
@@ -111,16 +112,27 @@ def play(args):
                 recon_refine = rtn['recon_refine']
                 est = rtn['estimation']
 
-                args.est = est[env.lookat_id, :3] / 2
+                args.est_vel = est[env.lookat_id, :3] / 2
+                args.est_height = est[env.lookat_id, 3]
                 args.recon_loss = torch.nn.functional.l1_loss(obs.scan[env.lookat_id, 1], recon_refine[env.lookat_id, 1])
 
                 # env._draw_body_hmap(recon_rough[env.lookat_id])
-                env.draw_recon(recon_refine[env.lookat_id])
+                # env.draw_recon(recon_refine[env.lookat_id])
                 # env.draw_est_hmap(est)
                 # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
                 # env.draw_recon(obs.scan[env.lookat_id])
+
+                recon_refine = recon_refine[env.lookat_id].clone()
+                # recon_refine[0] = - recon_refine[0] - 0.7
+                # recon_refine[0] = recon_refine[0] - task_cfg.normalization.scan_norm_bias + est[env.lookat_id, 3]
+                recon_refine[0] = recon_refine[0] - task_cfg.normalization.scan_norm_bias + obs_critic.priv_actor[env.lookat_id, 3]
+                env.draw_recon(recon_refine)
+
             elif hasattr(obs, 'scan'):
-                env.draw_recon(obs.scan[env.lookat_id])
+                noisy_scan = obs.scan[env.lookat_id].clone()
+                # noisy_scan[0] = - noisy_scan[0] - 0.7
+                noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
+                env.draw_recon(noisy_scan)
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.
@@ -141,7 +153,7 @@ def play(args):
                 env.refresh_graphics(clear_lines=False)
             env.refresh_graphics(clear_lines=True)
 
-            t1_vis.plot(env)
+            # t1_vis.plot(env)
 
 
 if __name__ == '__main__':

@@ -2,7 +2,8 @@ import math
 
 import torch
 
-from rsl_rl.modules.model_odom import OdomTransformer
+from rsl_rl.modules.odometer.auto_regression import OdomAutoRegressionTransformer
+from rsl_rl.modules.odometer.recurrent import OdomRecurrentTransformer
 from rsl_rl.storage.odometer_storage import OdometerStorage
 
 try:
@@ -53,12 +54,18 @@ class Odometer:
         self.cur_it = 0
 
         # Odometer components
-        self.odom = OdomTransformer(
-            task_cfg.env.n_proprio,
-            task_cfg.odometer.odom_transformer_embed_dim,
-            task_cfg.odometer.odom_gru_hidden_size,
-            task_cfg.odometer.estimator_output_dim
-        ).to(self.device)
+        if self.cfg.odometer_type == 'recurrent':
+            self.odom = OdomRecurrentTransformer(
+                task_cfg.env.n_proprio,
+                task_cfg.odometer.odom_transformer_embed_dim,
+                task_cfg.odometer.odom_gru_hidden_size,
+                task_cfg.odometer.estimator_output_dim
+            ).to(self.device)
+        else:
+            self.odom = OdomAutoRegressionTransformer(
+                task_cfg.env.n_proprio,
+                task_cfg.odometer.odom_transformer_embed_dim,
+            ).to(self.device)
 
         self.optimizer = torch.optim.Adam(self.odom.parameters(), lr=task_cfg.odometer.learning_rate)
         self.scaler = GradScaler(enabled=self.use_amp)
@@ -78,11 +85,13 @@ class Odometer:
         with torch.autocast(str(self.device), torch.float16, enabled=self.use_amp):
             # store observations
             self.transition.observations = obs
-            self.transition.hidden_states = self.odom.hidden_states
+
+            if self.odom.is_recurrent:
+                self.transition.hidden_states = self.odom.hidden_states
 
             _, recon_refine, priv_est = self.odom.inference_forward(obs.proprio, obs.depth, eval_=True)
 
-            if self.transition.hidden_states is None:
+            if self.odom.is_recurrent and self.transition.hidden_states is None:
                 self.transition.hidden_states = torch.zeros_like(self.odom.hidden_states)
 
             return recon_refine, priv_est
@@ -119,8 +128,6 @@ class Odometer:
 
         self.storage.add_transitions(self.transition)
         self.transition.clear()
-
-        self.odom.reset(dones)
 
     def update(self, cur_it):
         self.cur_it = cur_it
@@ -236,8 +243,8 @@ class Odometer:
             }
 
     def load(self, loaded_dict, load_optimizer=True):
-        if 'odometer_state_dict' in loaded_dict:
-            self.odom.load_state_dict(loaded_dict['odometer_state_dict'])
+        # if 'odometer_state_dict' in loaded_dict:
+        #     self.odom.load_state_dict(loaded_dict['odometer_state_dict'])
 
         if self.task_cfg.runner.odometer_path:
             odom_path = self.task_cfg.runner.odometer_path

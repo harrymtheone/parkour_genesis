@@ -119,4 +119,3 @@ class SensorManager:
                         sensor_cfg[cfg_element_name] = cfg_dict['depth_0'][cfg_element_name]
 
             sensor_cfg['num_envs'] = self.cfg.env.num_envs
-            sensor_cfg['buf_len'] = self.cfg.env.len_depth_his

@@ -6,7 +6,8 @@ except ImportError:
 import os
 
 from legged_gym.utils.task_registry import TaskRegistry
-from rsl_rl.modules.model_odom import Actor, OdomTransformer
+from rsl_rl.modules.odometer.actor import Actor
+from rsl_rl.modules.odometer.recurrent import OdomRecurrentTransformer
 from torch import nn
 
 
@@ -21,7 +22,7 @@ class ActorJIT(Actor):
         return self.actor(x), hidden_states_new
 
 
-class OdometerToJit(OdomTransformer):
+class OdometerToJit(OdomRecurrentTransformer):
 
     def forward(self, prop, depth, hidden_states):
         enc = self.transformer_forward(prop, depth)
@@ -32,7 +33,7 @@ class OdometerToJit(OdomTransformer):
 
         # reconstructor
         recon_rough = self.recon_rough(out)
-        recon_refine, _ = self.recon_refine(recon_rough)
+        recon_refine = self.recon_refine(recon_rough)
 
         # estimator
         est = self.estimator(out)
@@ -74,7 +75,7 @@ def trace_actor(proj, cfg, exptid, checkpoint):
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
         recon = torch.zeros(1, 2, 32, 16, device=device)
-        priv_est = torch.zeros(1, 3, device=device)
+        priv_est = torch.zeros(1, task_cfg.odometer.estimator_output_dim, device=device)
         hidden_states = torch.zeros(1, 1, task_cfg.policy.actor_gru_hidden_size, device=device)
 
         trace_and_save(model, (proprio, recon, priv_est, hidden_states))
@@ -101,7 +102,7 @@ def trace_odom(proj, cfg, exptid, checkpoint):
     ).to(device)
 
     model.load_state_dict(state_dict['odometer_state_dict'])
-    # model.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/odom_030r1/latest.pth', weights_only=True))
+    model.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/best3_dropout/latest.pth', weights_only=True))
     model.eval()
 
     # define the trace function
@@ -127,7 +128,7 @@ def trace_odom(proj, cfg, exptid, checkpoint):
 
 
 if __name__ == '__main__':
-    kwargs = dict(proj='t1', cfg='t1_odom_finetune', exptid='t1_odom_030r1f2', checkpoint=28800)
+    kwargs = dict(proj='t1', cfg='t1_odom_finetune', exptid='t1_odom_032s1', checkpoint=29900)
 
     trace_actor(**kwargs)
     trace_odom(**kwargs)

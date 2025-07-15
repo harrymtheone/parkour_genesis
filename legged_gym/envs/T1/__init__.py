@@ -34,9 +34,9 @@ t1_tasks = {
     't1_odom_stair': (T1OdomEnvironment, T1_Odom_Stair_Cfg()),
     't1_odom_finetune': (T1OdomEnvironment, T1_Odom_Finetune_Cfg()),
 
-    # 't1_odom_neg': (T1OdomNegEnvironment, T1_Odom_Neg_Cfg()),
-    # 't1_odom_neg_stair': (T1OdomNegEnvironment, T1_Odom_Stair_Neg_Cfg()),
-    # 't1_odom_neg_finetune': (T1OdomNegEnvironment, T1_Odom_Neg_Finetune_Cfg()),
+    't1_odom_neg': (T1OdomNegEnvironment, T1_Odom_Neg_Cfg()),
+    't1_odom_neg_stair': (T1OdomNegEnvironment, T1_Odom_Stair_Neg_Cfg()),
+    't1_odom_neg_finetune': (T1OdomNegEnvironment, T1_Odom_Neg_Finetune_Cfg()),
 
     # 't1_phase': (T1_Phase_Environment, T1_Phase_Cfg()),
     # 't1_phase_stair': (T1_Phase_Environment, T1_Phase_Stair_Cfg()),

@@ -55,23 +55,29 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
 
     class commands:
         num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
-        resampling_time = 8.  # time before command are changed[s]
+        resampling_time = 4.  # time before command are changed[s]
 
         lin_vel_clip = 0.2
         ang_vel_clip = 0.2
         parkour_vel_tolerance = 0.3
 
+        cycle_time = 0.7  # 0.64
+        target_joint_pos_scale = 0.2
+
         sw_switch = True
-        double_support_phase = -0.3
+        phase_offset_l = 0.
+        phase_offset_r = 0.5
+        air_ratio = 0.4
+        delta_t = 0.02
 
         class flat_ranges:
-            lin_vel_x = [-0.5, 0.8]
-            lin_vel_y = [-0.4, 0.4]
+            lin_vel_x = [-0.8, 1.2]
+            lin_vel_y = [-0.8, 0.8]
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [-0.5, 0.8]
-            lin_vel_y = [-0.4, 0.4]
+            lin_vel_x = [-0.8, 1.2]
+            lin_vel_y = [-0.8, 0.8]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
@@ -80,8 +86,6 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
-        # description_type = 'plane'  # plane, heightfield or trimesh
-
         body_pts_x = np.linspace(-0.6, 1.2, 32)
         body_pts_y = np.linspace(-0.6, 0.6, 16)
 
@@ -93,17 +97,6 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             'rough_slope': 1,
             'stairs_up': 0,
             'stairs_down': 0,
-            'discrete': 0,
-            'stepping_stone': 0,
-            'gap': 0,
-            'pit': 0,
-            'parkour': 0,
-            'parkour_gap': 0,
-            'parkour_box': 0,
-            'parkour_step': 0,
-            'parkour_stair': 0,
-            'parkour_mini_stair': 0,
-            'parkour_flat': 0,
         }
 
     class noise(T1BaseCfg.noise):
@@ -153,12 +146,9 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         feet_height_target_max = 0.06
         use_guidance_terrain = True
         only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
-        only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
+        only_positive_rewards_until_epoch = 500  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         EMA_update_alpha = 0.99
-
-        cycle_time = 0.7  # 0.64
-        target_joint_pos_scale = 0.3  # 0.19
 
         min_dist = 0.25
         max_dist = 0.50
@@ -168,8 +158,8 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
 
         class scales:  # float or (start, end, span, start_it)
             # gait
-            joint_pos = (2.0, 0.5, 100, 0)
-            feet_contact_number = (1.2, 0.3, 100, 0)
+            joint_pos = (2.0, 0.5, 100, 500)
+            feet_contact_number = (1.2, 0.3, 100, 500)
             feet_clearance = (1., 0.1, 100, 300)
             feet_distance = -1.
             knee_distance = -1.
@@ -181,18 +171,18 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             tracking_ang_vel = 1.0
 
             # contact
-            feet_slip = (0., -1., 100, 500)
+            feet_slip = (0., -0.25, 100, 500)
             feet_contact_forces = (0., -1e-3, 100, 500)
-            feet_stumble = 0.
+            feet_stumble = -2.0
             foothold = 0.
 
             # base pos
             default_dof_pos = -0.04
             default_dof_pos_yr = -1.
-            orientation = (-1., -10, 100, 0)
+            orientation = -2.0
             base_height = -10.
             base_acc = -1.
-            lin_vel_z = -2.0
+            lin_vel_z = -1.0
             ang_vel_xy = -0.05
 
             # energy
@@ -200,9 +190,8 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
-            dof_acc = -1e-7
+            dof_acc = -1.e-7
             collision = -1.
-
             dof_pos_limits = -10.
             dof_torque_limits = -0.01
 
@@ -215,10 +204,13 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         critic_hidden_dims = [512, 256, 128]
 
     class odometer:
+        odometer_type = 'recurrent'  # recurrent, auto-regression
+        # odometer_type = 'auto-regression'  # recurrent, auto-regression
+
         # odometer parameters
         odom_transformer_embed_dim = 64
         odom_gru_hidden_size = 128
-        estimator_output_dim = 3
+        estimator_output_dim = 4
         update_since = 100000000
         batch_size = 258
         learning_rate = 1e-3
@@ -229,7 +221,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 4
+        num_learning_epochs = 8
         num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
@@ -248,6 +240,9 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         algorithm_name = 'ppo_odom'
 
         lock_smpl_to = 1.0
+
+        load_latest_interval = -1
+        odometer_path = ''
 
         max_iterations = 3000  # number of policy updates
 

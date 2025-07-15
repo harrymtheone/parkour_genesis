@@ -35,7 +35,7 @@ class DepthCamIsaacGym:
         )
 
         self.buf = SensorBuffer(self.num_envs,
-                                cfg_dict['buf_len'],
+                                cfg_dict['history_length'],
                                 (cfg_dict['resized'][1], cfg_dict['resized'][0]),
                                 delay_prop=cfg_dict['delay_prop'],
                                 device=device)

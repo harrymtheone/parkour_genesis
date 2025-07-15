@@ -10,7 +10,6 @@ class T1_Odom_Cfg(T1BaseCfg):
         n_proprio = 50
         len_prop_his = 10
 
-        len_depth_his = 1
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
@@ -33,6 +32,7 @@ class T1_Odom_Cfg(T1BaseCfg):
             data_format = 'depth'  # depth, cloud, hmap
             update_interval = 1
             delay_prop = None  # Gaussian (mean, std), or None
+            history_length = 1
 
             resolution = (114, 64)  # width, height
             crop = (0, 2, 4, 4)  # top, bottom, left, right
@@ -172,12 +172,10 @@ class T1_Odom_Cfg(T1BaseCfg):
             tracking_ang_vel = 1.5
 
             # contact
-            feet_slip = -1.
-            feet_contact_forces = -1e-3
+            feet_slip = (0, -1., 10, 1000)
+            feet_contact_forces = (0, -1e-3, 10, 1000)
             feet_stumble = -1.
             foothold = -1.
-
-            penalize_vy = -3.
 
             # base pos
             default_joint_pos = 1.0
@@ -205,10 +203,13 @@ class T1_Odom_Cfg(T1BaseCfg):
         critic_hidden_dims = [512, 256, 128]
 
     class odometer:
+        odometer_type = 'recurrent'  # recurrent, auto-regression
+        # odometer_type = 'auto-regression'  # recurrent, auto-regression
+
         # odometer parameters
         odom_transformer_embed_dim = 64
         odom_gru_hidden_size = 128
-        estimator_output_dim = 3
+        estimator_output_dim = 4
         update_since = 100000000
         batch_size = 258
         learning_rate = 1e-3
@@ -274,13 +275,19 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'parkour_stair': 2,
-            'parkour_stair_down': 2,
-            'parkour_mini_stair': 2,
-            'parkour_mini_stair_down': 2,
+            'huge_stair': 1,
+            'stairs_up': 2,
+            'stairs_down': 2,
+            'parkour_stair': 0,
+            'parkour_stair_down': 0,
+            'parkour_mini_stair': 0,
+            'parkour_mini_stair_down': 0,
         }
 
     class rewards(T1_Odom_Cfg.rewards):
+        only_positive_rewards = True
+        only_positive_rewards_until_epoch = 2500
+
         class scales(T1_Odom_Cfg.rewards.scales):  # start, end, span, start_it
             joint_pos = 2.
             feet_contact_number = 1.2
@@ -290,17 +297,17 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
             feet_rotation = 0.5
 
             # vel tracking
-            tracking_lin_vel = 3.5
+            tracking_lin_vel = 5.0
             tracking_goal_vel = 3.0
             tracking_ang_vel = 2.5
             goal_dist_change = (1000., 0., 1000, 2000)
 
             # contact
-            feet_slip = -0.5
+            feet_slip = 0.  # (0, -0.5, 1000, 3000)
             feet_contact_forces = -1e-3
-            feet_stumble = (0, -1., 1000, 3000)
-            foothold = (0., -1., 1000, 3000)
-            feet_edge = (0., -0.5, 1000, 3000)
+            feet_stumble = 0.  # (0, -1., 1000, 3000)
+            foothold = 0.  # (0., -1., 1000, 3000)
+            feet_edge = 0.  # (0., -0.5, 1000, 3000)
 
             # base pos
             default_joint_pos = 2.0
@@ -367,4 +374,4 @@ class T1_Odom_Finetune_Cfg(T1_Odom_Stair_Cfg):
 
         load_latest_interval = 100
         odometer_path = ''
-        # odometer_path = '/home/harry/projects/parkour_genesis/logs/odom_online/odom_030r1/latest.pth'
+        # odometer_path = '/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-14_09-36-24/latest.pth'

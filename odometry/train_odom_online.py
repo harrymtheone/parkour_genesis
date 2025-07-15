@@ -11,7 +11,6 @@ from torch.utils.tensorboard import SummaryWriter
 from legged_gym.simulator import SimulatorType
 from legged_gym.utils.helpers import get_args
 from legged_gym.utils.task_registry import TaskRegistry
-from rsl_rl.modules.model_odom import OdomTransformer
 
 
 def play(args):
@@ -57,8 +56,8 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
         'rough_slope': 1,
-        'stairs_up': 0,
-        'stairs_down': 0,
+        'stairs_up': 1,
+        'stairs_down': 1,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -91,14 +90,14 @@ def play(args):
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
     use_amp = True
-    transformer = OdomTransformer(50, 64, 128, 3).to(args.device)
-    optim = torch.optim.Adam(transformer.parameters(), lr=1e-4)
+    reconstructor = runner.odom.odom
+    optim = torch.optim.Adam(reconstructor.parameters(), lr=1e-4)
     scaler = torch.amp.GradScaler(enabled=use_amp)
     mse = torch.nn.MSELoss()
     l1 = torch.nn.L1Loss()
     bce = torch.nn.BCEWithLogitsLoss()
 
-    transformer.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/best2/latest.pth', weights_only=True))
+    # reconstructor.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/best2/latest.pth', weights_only=True))
 
     if not args.debug:
         log_dir = os.path.join(log_root, 'odom_online', datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
@@ -118,7 +117,7 @@ def play(args):
 
         with torch.amp.autocast(enabled=use_amp, device_type=args.device):
             # rollout - use the training hidden state
-            recon_rough, recon_refine, priv_est = transformer.inference_forward(obs.proprio, obs.depth, eval_=False)
+            recon_rough, recon_refine, priv_est = reconstructor.inference_forward(obs.proprio, obs.depth, eval_=False)
 
             # Accumulate losses
             loss_recon_rough += mse(recon_rough, obs.rough_scan.unsqueeze(1))
@@ -150,7 +149,7 @@ def play(args):
                     writer.add_scalar('Loss/total', total_loss.item(), num_epoch)
 
                 # Detach the training hidden state to start a new BPTT trajectory
-                transformer.detach_hidden_states()
+                reconstructor.detach_hidden_states()
                 loss_recon_rough = 0.
                 loss_recon_refine = 0.
                 loss_edge = 0.
@@ -171,13 +170,13 @@ def play(args):
 
         if torch.any(dones):
             # Reset both hidden states when an episode ends
-            transformer.reset(dones, eval_=False)
+            reconstructor.reset(dones, eval_=False)
 
         if not args.headless:
             env.refresh_graphics(clear_lines=True)
 
         if not args.debug and num_epoch % 1000 == 0:
-            torch.save(transformer.state_dict(), os.path.join(log_dir, 'latest.pth'))
+            torch.save(reconstructor.state_dict(), os.path.join(log_dir, 'latest.pth'))
 
 
 if __name__ == '__main__':

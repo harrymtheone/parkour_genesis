@@ -5,10 +5,10 @@ except ImportError:
 
 import os
 
-from rsl_rl.modules.model_odom import OdomTransformer
+from rsl_rl.modules.odometer.recurrent import OdomRecurrentTransformer
 
 
-class OdometerToJit(OdomTransformer):
+class OdometerToJit(OdomRecurrentTransformer):
 
     def forward(self, prop, depth, hidden_states):
         enc = self.transformer_forward(prop, depth)

@@ -507,7 +507,7 @@ class ParkourTask(BaseTask):
         height_points[:, 2] = base_pos[2] - hmap - self.cfg.normalization.scan_norm_bias
         self.pending_vis_task.append(dict(points=height_points, color=color))
 
-    def draw_recon(self, recon, edge_thresh=0.999):
+    def draw_recon(self, recon):
         if recon.size(0) == 2:
             hmap, edge_mask = recon[0], recon[1]
         else:
