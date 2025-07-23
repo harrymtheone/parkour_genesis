@@ -6,17 +6,8 @@ import torch
 from rich import print
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.simulator.base_wrapper import BaseWrapper, DriveMode
+from legged_gym.simulator.base_wrapper import BaseWrapper
 from legged_gym.utils.terrain import Terrain
-
-LATEST = True
-
-
-def wrapper_unsafe(func, *args, **kwargs):
-    if LATEST:
-        return func(*args, unsafe=True, **kwargs)
-    else:
-        return func(*args, **kwargs)
 
 
 class GenesisWrapper(BaseWrapper):
@@ -53,29 +44,12 @@ class GenesisWrapper(BaseWrapper):
     def _create_scene(self, n_rendered_envs):
         """ Creates simulation, terrain and environments
         """
-        # compute dt and substeps based on drive mode
-        if self.cfg.asset.default_dof_drive_mode == 1:
-            self.drive_mode = DriveMode.pos_target
-            dt = self.cfg.sim.dt * self.cfg.control.decimation
-            substeps = self.cfg.control.decimation
-        elif self.cfg.asset.default_dof_drive_mode == 2:
-            self.drive_mode = DriveMode.vel_target
-            dt = self.cfg.sim.dt * self.cfg.control.decimation
-            substeps = self.cfg.control.decimation
-            raise ValueError("pos_vel drive mode not implemented yet!")
-        elif self.cfg.asset.default_dof_drive_mode == 3:
-            dt = self.cfg.sim.dt
-            substeps = 1
-            self.drive_mode = DriveMode.torque
-        else:
-            raise ValueError(f'Invalid drive mode value: {self.cfg.asset.default_dof_drive_mode}')
-
         if self.cfg.asset.disable_gravity:
             self.cfg.sim.gravity[2] = 0
 
         sim_options = gs.options.SimOptions(
-            dt=dt,
-            substeps=substeps,
+            dt=self.cfg.sim.dt,
+            substeps=self.cfg.sim.substeps,
             gravity=self.cfg.sim.gravity,
             floor_height=0.0,
             requires_grad=False,
@@ -98,10 +72,7 @@ class GenesisWrapper(BaseWrapper):
             max_FPS=60
         )
 
-        if LATEST:
-            vis_options = gs.options.VisOptions(rendered_envs_idx=list(range(n_rendered_envs)))
-        else:
-            vis_options = gs.options.VisOptions(n_rendered_envs=n_rendered_envs)
+        vis_options = gs.options.VisOptions(n_rendered_envs=n_rendered_envs)
 
         # create Scene
         self._scene = gs.Scene(
@@ -120,6 +91,7 @@ class GenesisWrapper(BaseWrapper):
             raise ValueError("Terrain description type not specified!")
 
         terrain_desc_type = 'plane'
+        # terrain_desc_type = 'heightfield'
 
         if terrain_desc_type in ['heightfield', 'trimesh']:
             # TODO: maybe remove this in later release of Genesis?
@@ -156,7 +128,8 @@ class GenesisWrapper(BaseWrapper):
     def _create_heightfield(self):
         """ Adds a heightfield terrain to the simulation, sets parameters based on the cfg.
         """
-        horizontal_scale = self.cfg.terrain.horizontal_scale_downsample
+        # horizontal_scale = self.cfg.terrain.horizontal_scale_downsample
+        horizontal_scale = 0.25
         self._scene.add_entity(gs.morphs.Terrain(
             pos=(-self.cfg.terrain.border_size, -self.cfg.terrain.border_size, 0.0),
             horizontal_scale=horizontal_scale,
@@ -164,16 +137,18 @@ class GenesisWrapper(BaseWrapper):
             height_field=self.terrain.height_field_raw_downsample,
         ))
 
-        # self._scene.add_entity(gs.morphs.Terrain(
-        #     n_subterrains=(5, 1),
+        # terrain = self._scene.add_entity(gs.morphs.Terrain(
+        #     n_subterrains=(1, 5),
         #     subterrain_size=(8, 8),
-        #     horizontal_scale=0.25,
+        #     horizontal_scale=0.1,
         #     vertical_scale=0.005,
-        #     subterrain_types=[['random_uniform_terrain', ]] * 5,
+        #     subterrain_types=[['pyramid_stairs_terrain'] * 5],
         # ))
+
         self.height_samples = torch.tensor(self.terrain.height_field_raw, dtype=torch.float, device=self.device)
         self.height_guidance = torch.tensor(self.terrain.height_field_guidance, dtype=torch.float, device=self.device)
         self.edge_mask = torch.tensor(self.terrain.edge_mask, dtype=torch.bool, device=self.device)
+
 
     def _create_trimesh(self):
         """ Adds a triangle mesh terrain to the simulation, sets parameters based on the cfg.
@@ -232,8 +207,9 @@ class GenesisWrapper(BaseWrapper):
         self._dof_indices = torch.tensor([self._robot.get_joint(n).dof_idx_local for n in self._dof_names], dtype=torch.long, device=self.device)
 
         # read dof properties
-        self.dof_pos_limits = torch.stack(wrapper_unsafe(self._robot.get_dofs_limit, self._dof_indices), dim=1)
-        self.torque_limits = wrapper_unsafe(self._robot.get_dofs_force_range, self._dof_indices)[1]
+        self.dof_pos_limits = torch.stack(self._robot.get_dofs_limit(self._dof_indices), dim=1)
+        self.dof_vel_limits = 1e5 + self._zero_tensor(self.num_envs, self.num_dof)  # TODO: not supported by Genesis yet
+        self.dof_torque_limits = self._robot.get_dofs_force_range(self._dof_indices)[1]
 
         # # set joint stiffness
         # joint_stiffness = self.cfg.asset.stiffness + self._zero_tensor(self.num_envs, self.num_dof)
@@ -241,7 +217,7 @@ class GenesisWrapper(BaseWrapper):
 
         # set joint damping
         joint_damping = self.cfg.asset.angular_damping + self._zero_tensor(self.num_envs, self.num_dof)
-        wrapper_unsafe(self._robot.set_dofs_damping, joint_damping, self._dof_indices)
+        self._robot.set_dofs_damping(joint_damping, self._dof_indices)
 
         # # set joint armature
         # joint_armature = self.cfg.asset.armature + self._zero_tensor(self.num_envs, self.num_dof)
@@ -349,7 +325,7 @@ class GenesisWrapper(BaseWrapper):
             print(f"[bold red]⚠️ genesis has no joint friction?! [/bold red]")
 
     def set_dof_armature(self, armature, env_ids=None):
-        self._robot.set_dofs_armature(armature, self._dof_indices, env_ids)
+        self._robot.set_dofs_armature(armature[env_ids], self._dof_indices, env_ids)
 
     @property
     def root_pos(self):
@@ -390,6 +366,10 @@ class GenesisWrapper(BaseWrapper):
     @property
     def link_vel(self):
         return self._robot.get_links_vel()
+
+    @property
+    def link_ang_vel(self):
+        return self._robot.get_links_ang()
 
     @property
     def link_COM(self):

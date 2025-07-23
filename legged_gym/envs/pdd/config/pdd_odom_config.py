@@ -192,6 +192,8 @@ class PddOdomCfg(PddBaseCfg):
             dof_pos_limits = -10.
             dof_torque_limits = -0.01
 
+            alive = 0.01
+
     class policy:
         actor_gru_hidden_size = 128
         actor_hidden_dims = [512, 256, 128]

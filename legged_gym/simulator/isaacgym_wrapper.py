@@ -9,7 +9,7 @@ from isaacgym import gymapi, gymutil, gymtorch
 from tqdm import tqdm
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.simulator.base_wrapper import BaseWrapper, DriveMode
+from legged_gym.simulator.base_wrapper import BaseWrapper
 from legged_gym.utils.helpers import class_to_dict
 from legged_gym.utils.math import transform_by_quat
 from legged_gym.utils.terrain import Terrain
@@ -54,22 +54,6 @@ class IsaacGymWrapper(BaseWrapper):
         gymutil.parse_sim_config(class_to_dict(self.cfg.sim), sim_params)
         sim_params.use_gpu_pipeline = sim_device == 'cuda'
         sim_params.physx.use_gpu = sim_device == 'cuda'
-
-        if self.cfg.asset.default_dof_drive_mode == 1:
-            self.drive_mode = DriveMode.pos_target
-            sim_params.dt = self.cfg.sim.dt * self.cfg.control.decimation
-            sim_params.substeps = self.cfg.control.decimation
-        elif self.cfg.asset.default_dof_drive_mode == 2:
-            self.drive_mode = DriveMode.vel_target
-            sim_params.dt = self.cfg.sim.dt * self.cfg.control.decimation
-            sim_params.substeps = self.cfg.control.decimation
-            raise ValueError("pos_vel drive mode not implemented yet!")
-        elif self.cfg.asset.default_dof_drive_mode == 3:
-            sim_params.dt = self.cfg.sim.dt
-            sim_params.substeps = 1
-            self.drive_mode = DriveMode.torque
-        else:
-            raise ValueError(f'Invalid drive mode value: {self.cfg.asset.default_dof_drive_mode}')
 
         self.sim = self.gym.create_sim(sim_device_id,
                                        graphics_device_id,

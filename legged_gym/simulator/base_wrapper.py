@@ -7,13 +7,6 @@ import warp as wp
 from legged_gym.utils.math import torch_rand_float
 
 
-class DriveMode(Enum):
-    none = 0
-    pos_target = 1
-    vel_target = 2
-    torque = 3
-
-
 class BaseWrapper:
     def __init__(self, cfg, args):
         self.cfg = cfg

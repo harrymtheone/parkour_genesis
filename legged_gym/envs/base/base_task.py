@@ -4,8 +4,7 @@ import torch
 import warp as wp
 
 from legged_gym.envs.base.utils import DelayBufferHumanoidGym as DelayBuffer
-# from legged_gym.envs.base.utils import DelayBufferCircular as DelayBuffer
-from legged_gym.simulator import get_simulator, SimulatorType, DriveMode, SensorManager
+from legged_gym.simulator import get_simulator, SensorManager
 from legged_gym.utils.helpers import class_to_dict
 from legged_gym.utils.joystick import JoystickHandler
 from legged_gym.utils.math import torch_rand_float, inv_quat, axis_angle_to_quat, quat_to_xyz, transform_quat_by_quat, transform_by_quat, xyz_to_quat
@@ -20,11 +19,6 @@ class BaseTask:
         self.cfg = cfg
         self.debug = True
         self.init_done = False
-
-        if hasattr(args, 'drive_mode') and args.drive_mode is not None:
-            self.cfg.asset.default_dof_drive_mode = args.drive_mode
-        if args.simulator is SimulatorType.IsaacGym:
-            self.cfg.asset.default_dof_drive_mode = 3
 
         # prepare simulator
         simulator_class = get_simulator(args.simulator)
@@ -195,7 +189,7 @@ class BaseTask:
                     self.dof_activated[i] = True
 
         # set the kp and kd value for simulator built-in PD controller
-        if self.sim.drive_mode is not DriveMode.torque:
+        if self.cfg.asset.default_dof_drive_mode != 3:
             self.sim.set_dof_kp(self.p_gains.repeat(self.num_envs, 1))
             self.sim.set_dof_kv(self.d_gains.repeat(self.num_envs, 1))
 
@@ -244,31 +238,22 @@ class BaseTask:
         return self.actor_obs, self.critic_obs, self.rew_buf.clone(), self.reset_buf.clone(), self.extras
 
     def _step_environment(self):
-        if self.sim.drive_mode is DriveMode.torque:
-            for step_i in range(self.cfg.control.decimation):
-                if self.cfg.domain_rand.action_delay:
-                    self.torques[:] = self._compute_torques(self.action_delay_buf.compute(self.actions))
-                else:
-                    self.torques[:] = self._compute_torques(self.actions)
+        for step_i in range(self.cfg.control.decimation):
+            if self.cfg.domain_rand.action_delay:
+                self.torques[:] = self._compute_torques(self.action_delay_buf.compute(self.actions))
+            else:
+                self.torques[:] = self._compute_torques(self.actions)
 
-                self.sim.control_dof_torque(self.torques)
-                self.sim.step_environment()
-
-                if self.cfg.domain_rand.add_dof_lag:
-                    self.dof_lag_buf.compute(torch.stack([self.sim.dof_pos, self.sim.dof_vel], dim=1))
-
-                if self.cfg.domain_rand.add_imu_lag:
-                    raise NotImplementedError
-                    self.imu_lag_buf.append(torch.stack([self.sim.root_quat,
-                                                         self.sim.root_ang_vel], dim=2))
-                    self.imu_lag_buf.step()
-        else:
-            target_dof_pos = self.actions * self.cfg.control.action_scale + self.init_state_dof_pos
-            self.sim.control_dof_position(target_dof_pos)
+            self.sim.control_dof_torque(self.torques)
             self.sim.step_environment()
 
-            # TODO: 111
-            raise NotImplementedError("Torque is not updated")
+            if self.cfg.domain_rand.add_dof_lag:
+                self.dof_lag_buf.compute(torch.stack([self.sim.dof_pos, self.sim.dof_vel], dim=1))
+
+            if self.cfg.domain_rand.add_imu_lag:
+                raise NotImplementedError
+                self.imu_lag_buf.append(torch.stack([self.sim.root_quat, self.sim.root_ang_vel], dim=2))
+                self.imu_lag_buf.step()
 
     def _compute_torques(self, actions):
         # pd controller
@@ -575,7 +560,7 @@ class BaseTask:
                                                                self.cfg.domain_rand.kd_multiplier_range[1],
                                                                (len(env_ids), self.num_dof),
                                                                device=self.device)
-            if self.sim.drive_mode is not DriveMode.torque:
+            if self.cfg.asset.default_dof_drive_mode != 3:
                 self.sim.set_dof_kp(self.p_gain_multiplier[env_ids] * self.p_gains, env_ids)
                 self.sim.set_dof_kv(self.d_gain_multiplier[env_ids] * self.d_gains, env_ids)
 

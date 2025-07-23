@@ -69,7 +69,9 @@ class PddOdomEnvironment(PddBaseEnvironment):
 
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
-        self.goal_distance[:] = torch.norm(self.cur_goals[:, :2] - self.sim.root_pos[:, :2], dim=1)
+
+        if self.sim.terrain is not None:
+            self.goal_distance[:] = torch.norm(self.cur_goals[:, :2] - self.sim.root_pos[:, :2], dim=1)
 
     def _post_physics_post_step(self):
         super()._post_physics_post_step()
@@ -323,6 +325,10 @@ class PddOdomEnvironment(PddBaseEnvironment):
         ang_vel_stall = (torch.abs(self.base_ang_vel[:, 2]) < self.cfg.commands.ang_vel_clip) & (torch.abs(self.commands[:, 2]) > 0)
 
         return (lin_vel_stall | ang_vel_stall).float()
+
+    @staticmethod
+    def _reward_alive():
+        return 1.
 
 
 @torch.jit.script
