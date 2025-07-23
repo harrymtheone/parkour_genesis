@@ -113,13 +113,17 @@ class PyramidStairsUp(SubTerrain):
     def make(self, difficulty):
         stair_up_height = 0.02 + 0.08 * difficulty
 
-        self.pyramid_stairs_terrain(step_width=0.31, step_height=-stair_up_height, platform_size=3.)
+        self.pyramid_stairs_terrain(
+            step_height=stair_up_height,
+            step_depth=random.uniform(0.23, 0.35),  # 0.31
+            platform_size=3.
+        )
         # self.add_roughness(terrain, difficulty)
 
-    def pyramid_stairs_terrain(self, step_width, step_height, platform_size=1.):
+    def pyramid_stairs_terrain(self, step_height, step_depth, platform_size=1.):
         # switch parameters to discrete units
-        step_width = int(step_width / self.horizontal_scale)
         step_height = int(step_height / self.vertical_scale)
+        step_depth = int(step_depth / self.horizontal_scale)
         platform_size = int(platform_size / self.horizontal_scale)
 
         height = 0
@@ -129,10 +133,10 @@ class PyramidStairsUp(SubTerrain):
         stop_y = self.length
 
         while (stop_x - start_x) > platform_size and (stop_y - start_y) > platform_size:
-            start_x += step_width
-            stop_x -= step_width
-            start_y += step_width
-            stop_y -= step_width
+            start_x += step_depth
+            stop_x -= step_depth
+            start_y += step_depth
+            stop_y -= step_depth
             height += step_height
             self.height_field_raw[start_x: stop_x, start_y: stop_y] = height
 
@@ -145,7 +149,11 @@ class PyramidStairsDown(PyramidStairsUp):
     def make(self, difficulty):
         stair_up_height = 0.02 + 0.08 * difficulty
 
-        self.pyramid_stairs_terrain(step_width=0.31, step_height=-stair_up_height, platform_size=3.)
+        self.pyramid_stairs_terrain(
+            step_height=-stair_up_height,
+            step_depth=random.uniform(0.23, 0.35),  # 0.31
+            platform_size=3.
+        )
         # self.add_roughness(terrain, difficulty)
 
 
@@ -231,8 +239,8 @@ class ParkourStair(GoalGuidedTerrain):
 
         self.parkour_stair_terrain(
             step_height=stair_height_goal,
-            step_width=random.uniform(0.5, 2.0),
-            # step_width=3.0,
+            # step_width=random.uniform(0.5, 2.0),
+            step_width=4.0,
             step_depth=random.uniform(0.23, 0.35)  # 0.31
         )
         # self.add_roughness(terrain, 0.5)
@@ -263,8 +271,9 @@ class ParkourStair(GoalGuidedTerrain):
         self.height_field_raw[dis_x:] = cur_height
 
         half_pad_width = int(mid_y - step_width / 2)
-        self.height_field_raw[:, :half_pad_width] = round(-20. / self.vertical_scale)
-        self.height_field_raw[:, -half_pad_width:] = round(-20. / self.vertical_scale)
+        if half_pad_width > 0.:
+            self.height_field_raw[:, :half_pad_width] = round(-20. / self.vertical_scale)
+            self.height_field_raw[:, -half_pad_width:] = round(-20. / self.vertical_scale)
 
         def rand_deviation():
             return round(random.uniform(-goal_deviation, goal_deviation) / self.horizontal_scale)
@@ -291,8 +300,8 @@ class ParkourStairDown(ParkourStair):
 
         self.parkour_stair_terrain(
             step_height=-stair_height_goal,
-            step_width=random.uniform(0.5, 2.0),
-            # step_width=3.0,
+            # step_width=random.uniform(0.5, 2.0),
+            step_width=4.0,
             step_depth=random.uniform(0.23, 0.35)  # 0.31
         )
         # self.add_roughness(terrain, 0.5)

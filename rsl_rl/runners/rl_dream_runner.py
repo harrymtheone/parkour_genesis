@@ -201,7 +201,9 @@ class RLDreamRunner(RunnerLogger):
         )
         print(log_string)
 
-    def play_act(self, obs, **kwargs):
+    def play_act(self, obs, dones, **kwargs):
+        self.alg.reset(dones)
+
         self.alg.actor.eval()
         return self.alg.play_act(obs, **kwargs)
 

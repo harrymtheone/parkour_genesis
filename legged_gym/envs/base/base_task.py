@@ -693,7 +693,6 @@ class BaseTask:
 
         # add termination reward after clipping
         if 'termination' in self.reward_scales:
-            assert hasattr(self, '_reward_termination')
             rew = self._reward_termination() * self.reward_scales["termination"] * self.dt
             self.rew_buf[:] += rew
             self.episode_sums["termination"][:] += rew

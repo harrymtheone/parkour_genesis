@@ -196,7 +196,8 @@ class ActorGRU(nn.Module):
         return self.hidden_states.detach()
 
     def reset(self, dones):
-        self.hidden_states[:, dones] = 0.
+        if self.hidden_states is not None:
+            self.hidden_states[:, dones] = 0.
 
 
 class Critic(nn.Module):

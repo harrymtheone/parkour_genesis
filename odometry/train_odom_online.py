@@ -75,7 +75,7 @@ def play(args):
         'parkour_go_back_stair': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
-    task_cfg.terrain.num_cols *= 1 if args.debug else 5
+    task_cfg.terrain.num_cols *= 1 if args.debug else 4
 
     # prepare environment
     args.n_rendered_envs = task_cfg.env.num_envs
@@ -122,7 +122,7 @@ def play(args):
             # Accumulate losses
             loss_recon_rough += mse(recon_rough, obs.rough_scan.unsqueeze(1))
             loss_recon_refine += l1(recon_refine[:, 0], obs_critic.scan)
-            loss_edge += bce(recon_refine[:, 1], obs_critic.edge_mask)
+            loss_edge += mse(recon_refine[:, 1], obs_critic.edge_mask)
             loss_priv += mse(priv_est, obs_critic.priv_actor)
 
             # Perform an update every `accumulation_steps`
@@ -167,6 +167,9 @@ def play(args):
                 est=priv_est.detach()
             )
         obs, obs_critic, rewards, dones, _ = env.step(rtn['actions'])
+
+        with torch.inference_mode():
+            runner.alg.actor.reset(dones)
 
         if torch.any(dones):
             # Reset both hidden states when an episode ends

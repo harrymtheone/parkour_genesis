@@ -221,24 +221,22 @@ class HumanoidEnv(ParkourTask):
         rew = self._zero_tensor(self.num_envs, len(self.feet_indices))
 
         # Case 1: swing
-        rew[swing] = torch.where(contact[swing], -0.3, 1.0)
-
         # Case 2: stance
-        rew[stance] = torch.where(contact[stance], 1.0, -0.3)
-
         # Case 3: ~swing & ~stance → reward already 0
+        rew[swing] = torch.where(contact[swing], -0.3, 1.0)
+        rew[stance] = torch.where(contact[stance], 1.0, -0.3)
 
         rew[self.env_class >= 2] *= 0.5
         return torch.mean(rew, dim=1)
 
-    def _reward_feet_contact_accordance(self):
-        rew = self.contact_filt * self._get_soft_stance_mask()
+    def _reward_swing_phase(self):
+        contact_frc = torch.norm(self.sim.contact_forces[:, self.feet_indices], dim=2)
+        rew = (1. - self._get_soft_stance_mask()) * torch.exp(-200 * torch.square(contact_frc))
         return torch.mean(rew, dim=1)
 
-    def _reward_feet_swing_accordance(self, vel_thresh=0.1, height_thresh=0.02):
-        feet_moving = torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2) > vel_thresh
-        feet_moving |= self.feet_height > height_thresh
-        rew = feet_moving * self._get_soft_stance_mask()
+    def _reward_support_phase(self):
+        feet_speed = torch.norm(self.sim.link_vel[:, self.feet_indices], dim=2)
+        rew = self._get_soft_stance_mask() * torch.exp(-100 * torch.square(feet_speed))
         return torch.mean(rew, dim=1)
 
     def _reward_feet_clearance(self):
@@ -275,8 +273,6 @@ class HumanoidEnv(ParkourTask):
         feet_lin_vel = torch.norm(self.sim.link_vel[:, self.feet_indices, :2], dim=2)
         feet_ang_vel = torch.abs(self.sim.link_ang_vel[:, self.feet_indices, 2])
         rew = torch.sum(self.contact_filt * (feet_lin_vel + feet_ang_vel), dim=1)
-
-        rew[(self.env_class >= 2) & (self.env_class < 4)] *= 0.3
         return rew
 
     def _reward_feet_distance(self):
@@ -505,9 +501,6 @@ class HumanoidEnv(ParkourTask):
         of its feet when they are in contact with the ground.
         """
         return torch.exp(-torch.abs(self.base_height - self.cfg.rewards.base_height_target) * 100)
-        #
-        # rew = (self.base_height - self.cfg.rewards.base_height_target).square()
-        # return rew
 
     def _reward_base_acc(self):
         """
@@ -602,7 +595,7 @@ class HumanoidEnv(ParkourTask):
         rew = torch.sum(self.feet_at_edge.float(), dim=-1)
 
         rew[self.env_class < 2] = 0.
-        rew[(self.env_class >= 2) & (self.env_class < 4)] *= 0.1
+        rew[(self.env_class >= 2) & (self.env_class < 4)] = 0.
         return rew
 
     def _reward_foothold(self):
@@ -610,7 +603,6 @@ class HumanoidEnv(ParkourTask):
         rew = (1 - valid_foothold_perc) * self.contact_filt
 
         rew[self.env_class < 2] = 0.
-        rew[(self.env_class >= 2) & (self.env_class < 4)] *= 0.3
         return rew.sum(dim=1)
 
     # ----------------------------------------- Graphics -------------------------------------------

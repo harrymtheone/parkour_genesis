@@ -1,14 +1,15 @@
 import torch
 
-from legged_gym.envs.base.humanoid_env import HumanoidEnv
-from ..base.utils import ObsBase, HistoryBuffer
+from .pdd_base_env import PddBaseEnvironment
+from ..base.utils import ObsBase
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his):
+    def __init__(self, proprio, prop_his, priv_actor):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
+        self.priv_actor = priv_actor.clone()
 
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
@@ -31,38 +32,7 @@ class CriticObs(ObsBase):
         return torch.cat((self.priv_his.flatten(1), self.scan.flatten(1)), dim=1)
 
 
-class PddDreamWaqEnvironment(HumanoidEnv):
-
-    def _init_buffers(self):
-        super()._init_buffers()
-
-        env_cfg = self.cfg.env
-        self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
-        self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
-
-    def _compute_ref_state(self):
-        clock_l, clock_r = self._get_clock_input()
-
-        self.ref_dof_pos[:] = 0.
-        scale_1 = self.cfg.commands.target_joint_pos_scale
-        scale_2 = 2 * scale_1
-
-        # left swing
-        clock_l[clock_l > 0] = 0
-        self.ref_dof_pos[:, 2] = clock_l * scale_1
-        self.ref_dof_pos[:, 3] = -clock_l * scale_2
-        self.ref_dof_pos[:, 4] = clock_l * scale_1
-
-        # right swing
-        clock_r[clock_r > 0] = 0
-        self.ref_dof_pos[:, 7] = clock_r * scale_1
-        self.ref_dof_pos[:, 8] = -clock_r * scale_2
-        self.ref_dof_pos[:, 9] = clock_r * scale_1
-
-        # Add double support phase
-        # self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
-
-        self.ref_dof_pos[:] += self.init_state_dof_pos
+class PddDreamWaqEnvironment(PddBaseEnvironment):
 
     def _compute_observations(self):
         """
@@ -72,7 +42,7 @@ class PddDreamWaqEnvironment(HumanoidEnv):
         # add lag to sensor observation
         if self.cfg.domain_rand.add_dof_lag:
             dof_data = self.dof_lag_buf.get()
-            dof_pos, dof_vel = dof_data[..., 0], dof_data[..., 1]
+            dof_pos, dof_vel = dof_data[:, 0], dof_data[:, 1]
         else:
             dof_pos, dof_vel = self.sim.dof_pos, self.sim.dof_vel
 
@@ -121,6 +91,8 @@ class PddDreamWaqEnvironment(HumanoidEnv):
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
+        priv_actor_obs = self.base_lin_vel * self.obs_scales.lin_vel
+
         # compute height map
         scan = torch.clip(self.sim.root_pos[:, 2].unsqueeze(1) - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
@@ -128,7 +100,7 @@ class PddDreamWaqEnvironment(HumanoidEnv):
         # compose actor observation
         reset_flag = self.episode_length_buf <= 1
         self.prop_his_buf.append(proprio, reset_flag)
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get())
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), priv_actor_obs)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation

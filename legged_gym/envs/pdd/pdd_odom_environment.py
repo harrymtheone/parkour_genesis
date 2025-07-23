@@ -1,10 +1,8 @@
-import math
-
 import cv2
 import numpy as np
 import torch
 
-from .t1_base_env import T1BaseEnv
+from .pdd_base_env import PddBaseEnvironment
 from ..base.utils import ObsBase
 from ...utils.math import transform_by_yaw, torch_rand_float
 
@@ -54,14 +52,7 @@ class CriticObs(ObsBase):
         self.edge_mask = edge_mask.clone()
 
 
-class T1OdomNegEnvironment(T1BaseEnv):
-
-    def _init_robot_props(self):
-        super()._init_robot_props()
-
-        self.yaw_roll_dof_indices = self.sim.create_indices(
-            self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
-
+class PddOdomEnvironment(PddBaseEnvironment):
     def _init_buffers(self):
         super()._init_buffers()
         self.goal_distance = self._zero_tensor(self.num_envs)
@@ -226,8 +217,8 @@ class T1OdomNegEnvironment(T1BaseEnv):
             self._draw_goals()
             # self._draw_camera()
             # self._draw_link_COM(whole_body=False)
-            self._draw_feet_at_edge()
-            # self._draw_foothold()
+            # self._draw_feet_at_edge()
+            self._draw_foothold()
 
             # self._draw_height_field(draw_guidance=True)
             # self._draw_edge()
@@ -336,18 +327,16 @@ class T1OdomNegEnvironment(T1BaseEnv):
 
 @torch.jit.script
 def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):
-    left_idx = start_idx + torch.tensor([1, 2, 3, 4, 5, 6], dtype=torch.long, device=prop.device)
-    right_idx = left_idx + 6
+    left_idx = start_idx + torch.tensor([0, 1, 2, 3, 4], dtype=torch.long, device=prop.device)
+    right_idx = left_idx + 5
 
     dof_left = prop[:, left_idx].clone()
     prop[:, left_idx] = prop[:, right_idx]
     prop[:, right_idx] = dof_left
 
-    prop[:, start_idx + 0] *= -1.  # invert waist
-
-    invert_idx = start_idx + torch.tensor([2, 3, 6], dtype=torch.long, device=prop.device)
+    invert_idx = start_idx + torch.tensor([0, 1], dtype=torch.long, device=prop.device)
     prop[:, invert_idx] *= -1.
-    prop[:, invert_idx + 6] *= -1.
+    prop[:, invert_idx + 5] *= -1.
 
 
 @torch.jit.script
@@ -371,10 +360,10 @@ def mirror_proprio_by_x(prop: torch.Tensor) -> torch.Tensor:
     mirror_dof_prop_by_x(prop, 11)
 
     # dof vel
-    mirror_dof_prop_by_x(prop, 11 + 13)
+    mirror_dof_prop_by_x(prop, 11 + 10)
 
     # last actions
-    mirror_dof_prop_by_x(prop, 11 + 13 + 13)
+    mirror_dof_prop_by_x(prop, 11 + 10 + 10)
 
     return prop
 

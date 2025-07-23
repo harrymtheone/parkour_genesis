@@ -164,7 +164,7 @@ class BaseVisualizer:
 
 
 class T1ActionsVisualizer(BaseVisualizer):
-    figsize = (6, 12)
+    figsize = (12, 12)
     subplot_shape = (6, 2)
     subplot_props = {
         # 'Waist': {'range': (-3, 3)},
@@ -319,3 +319,17 @@ class T1TorqueVisualizer(BaseVisualizer):
             'Left_Contact_Forces': feet_contact_forces[env.lookat_id, 0],
             'Right_Contact_Forces': feet_contact_forces[env.lookat_id, 1],
         })
+
+
+class RewVisualizer(BaseVisualizer):
+    figsize = (12, 6)
+    subplot_shape = (1, 1)
+    subplot_props = {
+        'Rew': {'range': (-0.2, 0.2), 'lim_lower': 0.},
+    }
+    his_length = 50
+
+    def plot(self, env):
+        # rew = env.extras['rew_elements']
+        rew = env.rew_buf[env.lookat_id].item()
+        self._plot({'Rew': rew})

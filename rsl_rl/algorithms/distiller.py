@@ -1,13 +1,16 @@
 import torch
 
-from rsl_rl.algorithms import BaseAlgorithm, PPO_Priv, PPO_PIE
+from rsl_rl.algorithms import BaseAlgorithm, PPO_PIE
+from rsl_rl.algorithms.odometry.ppo_odom import PPO_Odom
 
 
 class Distiller(BaseAlgorithm):
     def __init__(self, task_cfg, device, **kwargs):
         super().__init__()
+        self.task_cfg = task_cfg
+        self.device = device
 
-        self.teacher = PPO_Priv(task_cfg, device, **kwargs)
+        self.teacher = PPO_Odom(task_cfg, device, **kwargs)
 
         from legged_gym.envs.T1.config.t1_pie_config import T1_PIE_Stair_Cfg
         pie_cfg = T1_PIE_Stair_Cfg()
@@ -20,11 +23,12 @@ class Distiller(BaseAlgorithm):
         self.actions_teacher = []
 
     def act(self, obs, obs_critic, **kwargs):
-        with torch.enable_grad():
-            self.actions_student.append(self.student.actor.act(obs, eval_=True))
+        with torch.amp.autocast(enabled=self.task_cfg.algorithm.use_amp, dtype=torch.float16, device_type=str(self.device)):
+            with torch.enable_grad():
+                self.actions_student.append(self.student.actor.act(obs, eval_=True))
 
-        with torch.no_grad():
-            self.actions_teacher.append(self.teacher.actor.act(obs_critic, eval_=True))
+            with torch.no_grad():
+                self.actions_teacher.append(self.teacher.actor.act(obs_critic, eval_=True))
 
         return self.actions_student[-1].detach()
         # return self.actions_teacher[-1].detach()

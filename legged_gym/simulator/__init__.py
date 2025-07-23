@@ -20,6 +20,7 @@ def get_simulator(simulator: SimulatorType):
         return GenesisWrapper
 
     elif simulator == SimulatorType.IsaacSim:
+        raise NotImplementedError
         from .isaacsim_wrapper import IsaacSimWrapper
         return IsaacSimWrapper
 

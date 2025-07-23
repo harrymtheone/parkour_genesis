@@ -3,7 +3,7 @@ import numpy as np
 from .pdd_base_config import PddBaseCfg
 
 
-class PddDreamWaqCfg(PddBaseCfg):
+class PddOdomCfg(PddBaseCfg):
     class env(PddBaseCfg.env):
         num_envs = 4096  # 6144
         n_proprio = 41
@@ -12,11 +12,45 @@ class PddDreamWaqCfg(PddBaseCfg):
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 53
+        num_critic_obs = 61
         len_critic_his = 50
 
         num_actions = 10
         episode_length_s = 30  # episode length in seconds
+
+    class sensors:
+        activated = False
+
+        class depth_0:
+            link_attached_to = 'base_link'
+            position = [0.07, 0, 0.09]  # front camera
+            position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
+            pitch = 0  # positive is looking down
+            pitch_range = [-3, 3]
+
+            data_format = 'depth'  # depth, cloud, hmap
+            update_interval = 1
+            delay_prop = None  # Gaussian (mean, std), or None
+            history_length = 1
+
+            resolution = (114, 64)  # width, height
+            crop = (0, 2, 4, 4)  # top, bottom, left, right
+
+            edge_process = True
+            edge_noise = dict(blank_ratio=0.2, repeat_ratio=0.2)
+            blank_ratio = 0.002
+
+            near_clip = 0
+            far_clip = 2
+            dis_noise_global = 0.01  # in meters
+            dis_noise_gaussian = 0.01  # in meters
+            noise_scale_perlin = 1  # 0-1
+
+            resized = (64, 64)
+            horizontal_fov = 87
+
+            bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
+            hmap_shape = (16, 16)  # x dim, y dim
 
     class commands:
         num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
@@ -51,12 +85,17 @@ class PddDreamWaqCfg(PddBaseCfg):
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(PddBaseCfg.terrain):
+        body_pts_x = np.linspace(-0.6, 1.2, 32)
+        body_pts_y = np.linspace(-0.6, 0.6, 16)
+
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 3,
+            'smooth_slope': 1,
             'rough_slope': 1,
+            'stairs_up': 2,
+            'stairs_down': 2,
         }
 
     class noise(PddBaseCfg.noise):
@@ -115,42 +154,61 @@ class PddDreamWaqCfg(PddBaseCfg):
 
         class scales:
             # gait
-            joint_pos = 2.
-            feet_contact_number = 1.2
-            feet_clearance = 1.2  # 0.2
-            feet_distance = 0.2
-            knee_distance = 0.2
-            feet_rotation = 0.3
-
-            # contact
-            feet_slip = (0, -0.5, 1, 500)
-            feet_contact_forces = -0.001
+            joint_pos = (2.0, 0.3, 10, 200)
+            feet_contact_number = (1.2, 0.6, 10, 200)
+            feet_clearance = (1., 0.5, 10, 200)
+            feet_distance = -1.
+            knee_distance = -1.
+            feet_rotation = -0.3
 
             # vel tracking
-            tracking_lin_vel = 1.2
-            tracking_ang_vel = 1.1
-            vel_mismatch_exp = 0.5
+            tracking_lin_vel = 1.5
+            tracking_goal_vel = 2.5
+            tracking_ang_vel = 1.0
+
+            # contact
+            feet_slip = -0.1
+            feet_contact_forces = -1e-3
+            feet_stumble = -2.
+            foothold = -0.1
+            # feet_edge = -0.1
 
             # base pos
-            default_joint_pos = 0.5
-            orientation = 1.
-            base_height = 0.2
-            base_acc = 0.2
+            default_dof_pos = -0.04
+            default_dof_pos_yr = (0., -1., 10, 100)
+            orientation = -10.0
+            # base_height = -10.
+            base_acc = -1.
+            lin_vel_z = -1.
+            ang_vel_xy = (0., -0.05, 10, 100)
 
             # energy
-            action_smoothness = (-1e-4, -3e-3, 1, 500)
+            action_smoothness = (0., -1e-3, 10, 100)
             # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
-            dof_acc = -1e-7
+            dof_acc = -1.e-7
             collision = -1.
-            # stand_still = 2.0
+            dof_pos_limits = -10.
+            dof_torque_limits = -0.01
 
     class policy:
-        use_recurrent_policy = True
+        actor_gru_hidden_size = 128
         actor_hidden_dims = [512, 256, 128]
+
         critic_hidden_dims = [512, 256, 128]
-        activation = 'elu'  # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
+
+    class odometer:
+        odometer_type = 'recurrent'  # recurrent, auto-regression
+        # odometer_type = 'auto-regression'  # recurrent, auto-regression
+
+        # odometer parameters
+        odom_transformer_embed_dim = 64
+        odom_gru_hidden_size = 128
+        estimator_output_dim = 4
+        update_since = 100000000
+        batch_size = 258
+        learning_rate = 1e-3
 
     class algorithm:
         # training params
@@ -158,8 +216,8 @@ class PddDreamWaqCfg(PddBaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 10
-        num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
+        num_learning_epochs = 8
+        num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
         gamma = 0.99
@@ -172,9 +230,13 @@ class PddDreamWaqCfg(PddBaseCfg):
         init_noise_std = 1.0
 
     class runner(PddBaseCfg.runner):
-        runner_name = 'rl_dream'
-        algorithm_name = 'ppo_dreamwaq'
+        runner_name = 'rl_odom'
+        algorithm_name = 'ppo_odom'
 
+        initial_smpl = 1.0
         lock_smpl_until = 1e10
+
+        load_latest_interval = -1
+        odometer_path = ''
 
         max_iterations = 50000  # number of policy updates

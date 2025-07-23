@@ -227,11 +227,14 @@ class PPODreamWaQ(BaseAlgorithm):
             entropy_loss = self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
             # Symmetry loss
-            action_mean_original = self.actor.action_mean.detach()
-            obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (actions_batch.size(0), -1))
-            self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states_batch)
-            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (actions_batch.size(0), -1))
-            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+            if hasattr(obs_batch, 'mirror'):
+                action_mean_original = self.actor.action_mean.detach()
+                obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (actions_batch.size(0), -1))
+                self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states_batch)
+                mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (actions_batch.size(0), -1))
+                symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+            else:
+                symmetry_loss = torch.zeros_like(surrogate_loss)
 
             loss = (surrogate_loss + self.cfg.value_loss_coef * value_loss - entropy_loss + symmetry_loss)
 
@@ -283,6 +286,10 @@ class PPODreamWaQ(BaseAlgorithm):
 
     def play_act(self, obs, **kwargs):
         return {'actions': self.actor.act(obs, **kwargs)}
+
+    def reset(self, dones):
+        if self.actor.is_recurrent:
+            self.actor.reset(dones)
 
     def train(self):
         self.actor.train()

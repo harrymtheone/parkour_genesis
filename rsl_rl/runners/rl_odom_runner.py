@@ -79,7 +79,7 @@ class RLOdomRunner(RunnerLogger):
         terrain_coefficient_variation = {}
 
         # adaptive sampling probability (prob to use ground truth)
-        self.p_smpl = self.cfg.lock_smpl_to
+        self.p_smpl = self.cfg.initial_smpl
         use_estimated_values = torch.zeros(n_envs, dtype=torch.bool, device=self.device)
 
         for self.cur_it in range(self.start_it, self.start_it + self.cfg.max_iterations):
@@ -250,10 +250,9 @@ class RLOdomRunner(RunnerLogger):
         rtn = self.odom.play_reconstruct(obs)
 
         if 'recon_refine' in rtn:
-            recon_refine = rtn['recon_refine']
+            # recon_refine = rtn['recon_refine']
             # recon_refine[:, 1] = torch.where(recon_refine[:, 1] < 0., 0., 1.)
-            recon_refine[:, 1] = torch.sigmoid(recon_refine[:, 1])
-            rtn['estimation'][:] = obs.priv_actor
+            # recon_refine[:, 1] = torch.sigmoid(recon_refine[:, 1])
             rtn.update(self.alg.play_act(obs, recon=rtn['recon_refine'], est=rtn['estimation'], **kwargs))
         else:
             rtn.update(self.alg.play_act(obs, recon=None, est=None, **kwargs))

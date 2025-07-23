@@ -4,7 +4,6 @@ import statistics
 import time
 
 import torch
-import wandb
 
 from legged_gym.utils.terrain import Terrain
 from rsl_rl.algorithms import BaseAlgorithm, algorithm_dict

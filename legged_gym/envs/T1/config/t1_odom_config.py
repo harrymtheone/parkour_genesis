@@ -238,7 +238,7 @@ class T1_Odom_Cfg(T1BaseCfg):
         runner_name = 'rl_odom'
         algorithm_name = 'ppo_odom'
 
-        lock_smpl_to = 1.0
+        initial_smpl = 1.0
 
         load_latest_interval = -1
         odometer_path = ''
@@ -303,11 +303,11 @@ class T1_Odom_Stair_Cfg(T1_Odom_Cfg):
             goal_dist_change = (1000., 0., 1000, 2000)
 
             # contact
-            feet_slip = 0.  # (0, -0.5, 1000, 3000)
+            feet_slip = (0, -0.5, 1000, 3000)
             feet_contact_forces = -1e-3
-            feet_stumble = 0.  # (0, -1., 1000, 3000)
-            foothold = 0.  # (0., -1., 1000, 3000)
-            feet_edge = 0.  # (0., -0.5, 1000, 3000)
+            feet_stumble = (0, -1., 1000, 3000)
+            foothold = (0., -1., 1000, 3000)
+            feet_edge = (0., -0.5, 1000, 3000)
 
             # base pos
             default_joint_pos = 2.0

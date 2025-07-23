@@ -3,8 +3,8 @@ import torch.nn as nn
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.algorithms.alg_base import BaseAlgorithm
-from rsl_rl.modules.odometer.actor import Actor
-from rsl_rl.modules.utils import UniversalCritic
+from rsl_rl.modules.odometer.actor import DepthEstimator, ActorROA
+from rsl_rl.modules.utils import UniversalCritic, gru_wrapper
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 
 try:
@@ -29,9 +29,8 @@ class Transition:
     def __init__(self):
         self.observations = None
         self.critic_observations = None
+        self.est_hidden_states = None
         self.actor_hidden_states = None
-        self.recon = None
-        self.priv = None
         self.actions = None
         self.rewards = None
         self.rewards_contact = None
@@ -51,7 +50,7 @@ class Transition:
             setattr(self, key, None)
 
 
-class PPO_Odom(BaseAlgorithm):
+class PPO_Odom_ROA(BaseAlgorithm):
     def __init__(self, task_cfg, device=torch.device('cpu'), env=None, **kwargs):
         self.env = env
 
@@ -64,14 +63,21 @@ class PPO_Odom(BaseAlgorithm):
         self.cur_it = 0
 
         # PPO components
-        self.actor = Actor(task_cfg).to(self.device)
+        self.depth_est = DepthEstimator(task_cfg).to(self.device)
+
+        self.actor = ActorROA(task_cfg).to(self.device)
         self.actor.reset_std(self.cfg.init_noise_std)
 
         self.critic = nn.ModuleDict({
             'default': UniversalCritic(task_cfg.env, task_cfg.policy),
             'contact': UniversalCritic(task_cfg.env, task_cfg.policy),
         }).to(self.device)
-        self.optimizer = torch.optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
+
+        self.optimizer = torch.optim.Adam([
+            *self.depth_est.parameters(),
+            *self.actor.parameters(),
+            *self.critic.parameters()
+        ], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
         # Rollout Storage
@@ -84,22 +90,22 @@ class PPO_Odom(BaseAlgorithm):
             obs,
             obs_critic,
             use_estimated_values: torch.Tensor = None,
-            recon: torch.Tensor = None,
-            priv_est: torch.Tensor = None,
             **kwargs):
         # act function should run within torch.inference_mode context
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             # store observations
-            self.transition.observations = obs.no_depth()
+            self.transition.observations = obs
             self.transition.critic_observations = obs_critic
-            self.transition.actor_hidden_states = self.actor.get_hidden_states()
 
-            self.transition.recon = recon
-            self.transition.priv = priv_est
-            actions = self.actor.act(obs, recon, priv_est, use_estimated_values=use_estimated_values)
+            self.transition.est_hidden_states = self.depth_est.get_hidden_states()
+            depth_enc, est = self.depth_est.inference_forward(obs.depth)
+
+            self.transition.actor_hidden_states = self.actor.get_hidden_states()
+            actions = self.actor.act(obs, depth_enc, est, use_estimated_values=use_estimated_values)
 
             if self.transition.actor_hidden_states is None:
                 # only for the first step where hidden_state is None
+                self.transition.est_hidden_states = 0 * self.depth_est.get_hidden_states()
                 self.transition.actor_hidden_states = 0 * self.actor.get_hidden_states()
 
             # store
@@ -140,7 +146,7 @@ class PPO_Odom(BaseAlgorithm):
         # Record the transition
         self.storage.add_transitions(self.transition)
         self.transition.clear()
-        self.actor.reset(dones)
+        self.reset(dones)
 
     def compute_returns(self, last_critic_obs):
         last_values_default = self.critic['default'].evaluate(last_critic_obs).detach()
@@ -156,43 +162,31 @@ class PPO_Odom(BaseAlgorithm):
         mean_entropy_loss = 0
         mean_kl = 0
         mean_symmetry_loss = 0
+        mean_roa_loss = 0
+        mean_priv_loss = 0
 
         kl_change = []
         num_updates = 0
 
         for batch in self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs):
             # ########################## policy loss ##########################
-            kl_mean, value_loss_default, value_loss_contact, surrogate_loss, entropy_loss, symmetry_loss = self._compute_policy_loss(batch)
-            loss = surrogate_loss + self.cfg.value_loss_coef * (value_loss_default + value_loss_contact) - entropy_loss + symmetry_loss
+            kl_mean, value_loss_default, value_loss_contact, surrogate_loss, entropy_loss, symmetry_loss = self._update_policy(batch)
 
             num_updates += 1
             # policy statistics
-            kl_change.append(kl_mean.item())
-            mean_kl += kl_mean.item()
-            mean_default_value_loss += value_loss_default.item()
-            mean_contact_value_loss += value_loss_contact.item()
+            kl_change.append(kl_mean)
+            mean_kl += kl_mean
+            mean_default_value_loss += value_loss_default
+            mean_contact_value_loss += value_loss_contact
             mean_value_loss = mean_default_value_loss + mean_contact_value_loss
-            mean_surrogate_loss += surrogate_loss.item()
-            mean_entropy_loss += entropy_loss.item()
-            mean_symmetry_loss += symmetry_loss.item()
+            mean_surrogate_loss += surrogate_loss
+            mean_entropy_loss += entropy_loss
+            mean_symmetry_loss += symmetry_loss
 
-            # Use KL to adaptively update learning rate
-            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-                if kl_mean > self.cfg.desired_kl * 2.0:
-                    self.learning_rate = max(1e-5, self.learning_rate / 1.5)
-                elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
-                    self.learning_rate = min(1e-3, self.learning_rate * 1.5)
-
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = self.learning_rate
-
-            # Gradient step
-            self.optimizer.zero_grad()
-            self.scaler.scale(loss).backward()
-            # self.scaler.unscale_(self.optimizer)
-            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+            # ########################## ROA update ##########################
+            roa_loss, priv_loss = self._update_roa(batch, cur_it)
+            mean_roa_loss += roa_loss
+            mean_priv_loss += priv_loss
 
         mean_kl /= num_updates
         mean_value_loss /= num_updates
@@ -201,6 +195,8 @@ class PPO_Odom(BaseAlgorithm):
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
         mean_symmetry_loss /= num_updates
+        mean_roa_loss /= num_updates
+        mean_priv_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -218,16 +214,17 @@ class PPO_Odom(BaseAlgorithm):
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
             'Loss/symmetry_loss': mean_symmetry_loss,
+            'Loss/roa_loss': mean_roa_loss,
+            'Loss/priv_loss': mean_priv_loss,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
         }
 
-    def _compute_policy_loss(self, batch: dict):
+    def _update_policy(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
             critic_obs_batch = batch['critic_observations']
+            est_hidden_states_batch = batch['est_hidden_states']
             actor_hidden_states_batch = batch['actor_hidden_states']
-            recon_batch = batch['recon'] if 'recon' in batch else None
-            priv_batch = batch['priv'] if 'priv' in batch else None
             mask_batch = batch['masks']
             actions_batch = batch['actions']
             default_values_batch = batch['values']
@@ -238,10 +235,12 @@ class PPO_Odom(BaseAlgorithm):
             old_actions_log_prob_batch = batch['actions_log_prob']
             use_estimated_values_batch = batch['use_estimated_values']
 
+            depth_enc, est = self.depth_est(obs_batch.depth, est_hidden_states_batch)
+
             self.actor.train_act(
                 obs_batch,
-                recon_batch,
-                priv_batch,
+                depth_enc,
+                est,
                 hidden_states=actor_hidden_states_batch,
                 use_estimated_values=use_estimated_values_batch
             )
@@ -283,30 +282,61 @@ class PPO_Odom(BaseAlgorithm):
             # Entropy loss
             entropy_loss = self.cfg.entropy_coef * masked_mean(self.actor.entropy, mask_batch)
 
-            # Symmetry loss
-            batch_size = 4
-            action_mean_original = self.actor.action_mean[:batch_size].detach()
+            # Use KL to adaptively update learning rate
+            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
+                if kl_mean > self.cfg.desired_kl * 2.0:
+                    self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+                elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
+                    self.learning_rate = min(1e-3, self.learning_rate * 1.5)
 
-            obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
-            if recon_batch is not None:
-                recon_batch = recon_batch[:batch_size]
-                priv_batch = priv_batch[:batch_size]
-                use_estimated_values_batch = use_estimated_values_batch[:batch_size]
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = self.learning_rate
 
-            self.actor.train_act(
-                obs_mirrored_batch,
-                recon_batch,
-                priv_batch,
-                hidden_states=actor_hidden_states_batch,
-                use_estimated_values=use_estimated_values_batch
-            )
+            # Gradient step
+            loss = surrogate_loss + self.cfg.value_loss_coef * (value_losses_default + value_losses_contact) - entropy_loss
+            self.optimizer.zero_grad()
+            self.scaler.scale(loss).backward()
+            # self.scaler.unscale_(self.optimizer)
+            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
-            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+            return kl_mean.item(), value_losses_default.item(), value_losses_contact.item(), surrogate_loss.item(), entropy_loss.item(), 0.
 
-            return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
+    def _update_roa(self, batch: dict, cur_it: int):
+        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+            obs_batch = batch['observations']
+            critic_obs_batch = batch['critic_observations']
+            est_hidden_states_batch = batch['est_hidden_states']
+            mask_batch = batch['masks']
 
-    def play_act(self, obs, use_estimated_values=True, recon=None, est=None, **kwargs):
+            # Get depth encoder output and velocity estimation from depth estimator
+            depth_enc, vel_est = self.depth_est(obs_batch.depth, est_hidden_states_batch)
+
+            # Get scan encoder output from actor's scan encoder
+            scan_enc = gru_wrapper(self.actor.scan_encoder, obs_batch.scan.flatten(2))
+
+            # Compute MSE loss between depth encoder and scan encoder outputs
+            if cur_it % 10 == 0:
+                roa_loss = masked_MSE(depth_enc.detach(), scan_enc, mask_batch)
+            else:
+                roa_loss = masked_MSE(depth_enc, scan_enc.detach(), mask_batch)
+
+            # Compute MSE loss between velocity estimation and ground truth privileged actor info
+            priv_loss = masked_MSE(vel_est, critic_obs_batch.priv_actor, mask_batch)
+
+            # Total loss for backward pass
+            total_loss = roa_loss + priv_loss
+
+            # Backward pass for ROA loss
+            self.optimizer.zero_grad()
+            self.scaler.scale(total_loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+
+            return roa_loss.item(), priv_loss.item()
+
+    def play_act(self, obs, use_estimated_values=True, **kwargs):
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):
 
             if isinstance(use_estimated_values, bool):
@@ -314,18 +344,29 @@ class PPO_Odom(BaseAlgorithm):
             else:
                 kwargs['use_estimated_values'] = use_estimated_values
 
-            return {'actions': self.actor.act(obs, recon, est, **kwargs)}
+            if use_estimated_values:
+                depth_enc, est = self.depth_est.inference_forward(obs.depth)
+
+                est = obs.priv_actor
+
+                return {'actions': self.actor.act(obs, depth_enc, est, **kwargs)}
+            else:
+                return {'actions': self.actor.act(obs, None, None, **kwargs)}
+
+    def reset(self, dones):
+        self.depth_est.reset(dones)
+        self.actor.reset(dones)
 
     def train(self):
         self.actor.train()
         self.critic.train()
 
-    def load(self, loaded_dict, load_optimizer=True):
+    def load(self, loaded_dict, load_optimizer=False):
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
         self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
-        if load_optimizer:
-            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+        # if load_optimizer:
+        #     self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std)

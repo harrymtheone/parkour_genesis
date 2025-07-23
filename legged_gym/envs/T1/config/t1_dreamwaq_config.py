@@ -19,6 +19,38 @@ class T1DreamWaqCfg(T1BaseCfg):
         num_actions = 13
         episode_length_s = 30  # episode length in seconds
 
+    class commands:
+        num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+        resampling_time = 4.  # time before command are changed[s]
+
+        lin_vel_clip = 0.2
+        ang_vel_clip = 0.2
+        parkour_vel_tolerance = 0.3
+
+        cycle_time = 0.7  # 0.64
+        target_joint_pos_scale = 0.2
+
+        sw_switch = True
+        phase_offset_l = 0.
+        phase_offset_r = 0.5
+        air_ratio = 0.5
+        delta_t = 0.02
+
+        class flat_ranges:
+            lin_vel_x = [-0.8, 1.2]
+            lin_vel_y = [-0.8, 0.8]
+            ang_vel_yaw = [-1., 1.]
+
+        class stair_ranges:
+            lin_vel_x = [-0.5, 0.8]
+            lin_vel_y = [-0.5, 0.5]
+            ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
+            heading = [-1.5, 1.5]
+
+        class parkour_ranges:
+            lin_vel_x = [0.3, 0.8]  # min value should be greater than lin_vel_clip
+            ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
+
     class terrain(T1BaseCfg.terrain):
         description_type = 'plane'
 
@@ -64,11 +96,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
         only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
-        soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
-
-        cycle_time = 0.7
-        target_joint_pos_scale = 0.3  # 0.19
 
         min_dist = 0.18
         max_dist = 0.50
