@@ -1,6 +1,6 @@
 import torch
 
-from .g1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
+from .g1_base_env import G1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase, HistoryBuffer, CircularBuffer
 from ...utils.math import torch_rand_float
 
@@ -50,7 +50,7 @@ class CriticObs(ObsBase):
         return torch.cat((self.priv_his.flatten(1), self.scan.flatten(1)), dim=1)
 
 
-class G1DreamWaqEnvironment(T1BaseEnv):
+class G1DreamWaqEnvironment(G1BaseEnv):
     def step(self, actions):
         self.last_action_output[:] = actions
         self.actions_his_buf.append(actions)

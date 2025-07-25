@@ -242,6 +242,9 @@ class Odometer:
                 'estimation': est,
             }
 
+    def reset(self, dones):
+        self.odom.reset(dones)
+
     def load(self, loaded_dict, load_optimizer=True):
         # if 'odometer_state_dict' in loaded_dict:
         #     self.odom.load_state_dict(loaded_dict['odometer_state_dict'])

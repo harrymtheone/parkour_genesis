@@ -235,7 +235,7 @@ class ParkourStair(GoalGuidedTerrain):
     centered_origin = False
 
     def make(self, difficulty):
-        stair_height_goal = 0.05 + 0.10 * difficulty
+        stair_height_goal = 0.05 + 0.07 * difficulty
 
         self.parkour_stair_terrain(
             step_height=stair_height_goal,

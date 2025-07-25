@@ -9,7 +9,8 @@ class G1BaseEnv(HumanoidEnv):
     def _init_buffers(self):
         super()._init_buffers()
         env_cfg = self.cfg.env
-        self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
+        if hasattr(env_cfg, 'len_prop_his'):
+            self.prop_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_prop_his, env_cfg.n_proprio, device=self.device)
         self.critic_his_buf = HistoryBuffer(self.num_envs, env_cfg.len_critic_his, env_cfg.num_critic_obs, device=self.device)
 
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)
@@ -37,26 +38,27 @@ class G1BaseEnv(HumanoidEnv):
         return self.sim.root_pos[:, 2:3] - hmap  # to relative height
 
     def _compute_ref_state(self):
-        clock_l, clock_r = self._get_clock_input()
-
         ref_dof_pos = self._zero_tensor(self.num_envs, self.num_actions)
         scale_1 = self.cfg.commands.target_joint_pos_scale
         scale_2 = 2 * scale_1
 
-        # left swing
-        clock_l[clock_l > 0] = 0
-        ref_dof_pos[:, 1] = clock_l * scale_1
-        ref_dof_pos[:, 4] = -clock_l * scale_2
-        ref_dof_pos[:, 5] = clock_l * scale_1
+        phase = torch.stack(self._get_clock_input(wrap_sin=False), dim=1)
+        swing_ratio = self.cfg.commands.air_ratio
+        delta_t = self.cfg.commands.delta_t
 
-        # right swing
-        clock_r[clock_r > 0] = 0
-        ref_dof_pos[:, 7] = clock_r * scale_1
-        ref_dof_pos[:, 10] = -clock_r * scale_2
-        ref_dof_pos[:, 11] = clock_r * scale_1
+        phase_swing = torch.clip((phase - delta_t / 2) / (swing_ratio - delta_t), min=0., max=1.)
+        clock = torch.sin(torch.pi * phase_swing)
 
-        # # Add double support phase
-        # ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0.
+        # left motion
+        num_waist = 1
+        ref_dof_pos[:, num_waist + 0] = -clock[:, 0] * scale_1
+        ref_dof_pos[:, num_waist + 3] = clock[:, 0] * scale_2
+        ref_dof_pos[:, num_waist + 4] = -clock[:, 0] * scale_1
+
+        # right motion
+        ref_dof_pos[:, num_waist + 6] = -clock[:, 1] * scale_1
+        ref_dof_pos[:, num_waist + 9] = clock[:, 1] * scale_2
+        ref_dof_pos[:, num_waist + 10] = -clock[:, 1] * scale_1
 
         self.ref_dof_pos[:] = self.init_state_dof_pos
         self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos

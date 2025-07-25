@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import torch
 
-from .g1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
+from .g1_base_env import G1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
 from ...utils.math import transform_by_trans_quat, transform_by_yaw, torch_rand_float
 
@@ -80,7 +80,7 @@ class CriticObs(ObsBase):
         self.edge_mask = edge_mask.clone()
 
 
-class G1ZJUEnvironment(T1BaseEnv):
+class G1ZJUEnvironment(G1BaseEnv):
     def _parse_cfg(self, args):
         super()._parse_cfg(args)
 

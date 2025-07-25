@@ -83,8 +83,8 @@ class BaseTask:
         self.reward_scales_variable = {}
 
         for rew_name, scale in class_to_dict(self.cfg.rewards.scales).items():
-            if isinstance(scale, float):
-                self.reward_scales[rew_name] = scale * self.cfg.rewards.rew_norm_factor
+            if isinstance(scale, float) or isinstance(scale, int):
+                self.reward_scales[rew_name] = float(scale) * self.cfg.rewards.rew_norm_factor
             elif isinstance(scale, tuple):
                 self.reward_scales_variable[rew_name] = scale
                 self.reward_scales[rew_name] = self.linear_change(*scale, cur_it=0) * self.cfg.rewards.rew_norm_factor

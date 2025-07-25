@@ -8,13 +8,12 @@ class G1BaseCfg(BaseConfig):
     seed = -1
 
     class play:
-        control = False  # manually control or automatically
+        control = False
 
     class env:
-        env_spacing = 3.  # not used with heightfields/trimeshes
-        send_timeouts = True  # send time out information to the algorithm
+        env_spacing = 3.
+        send_timeouts = True
 
-        # additional visual inputs
         next_goal_threshold = 0.4
         reach_goal_delay = 0.05
         num_future_goal_obs = 2
@@ -88,7 +87,7 @@ class G1BaseCfg(BaseConfig):
         num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 8.  # time before command are changed[s]
 
-        lin_vel_clip = 0.1
+        lin_vel_clip = 0.2
         ang_vel_clip = 0.2
         parkour_vel_tolerance = 0.3
 
@@ -96,17 +95,17 @@ class G1BaseCfg(BaseConfig):
 
         class flat_ranges:
             lin_vel_x = [-1.0, 1.0]
-            lin_vel_y = [-0.4, 0.4]
+            lin_vel_y = [-0.6, 0.6]
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [0.6, 1.5]
+            lin_vel_x = [-0.4, 1.2]
             lin_vel_y = [-0.5, 0.5]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.6, 1.5]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.3, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class noise:
@@ -170,8 +169,8 @@ class G1BaseCfg(BaseConfig):
         com_displacement_range = [-0.05, 0.05]
 
         randomize_friction = False
-        friction_range = [0.2, 1.3]
-        # compliance_range = [0.5, 1.5]
+        friction_range = [0.1, 1.25]
+        compliance_range = [0.5, 1.5]
         restitution_range = [0., 0.4]
 
         randomize_joint_stiffness = False
@@ -184,7 +183,10 @@ class G1BaseCfg(BaseConfig):
         joint_friction_range = [0.0, 2.]
 
         randomize_joint_armature = False
-        joint_armature_range = [0.0001, 0.05]
+        joint_armature_range = {
+            'default': dict(range=(0.01, 0.05), log_space=False),
+            'ankle': dict(dof_ids=(7, 8, 13, 14), range=(0.01, 0.05), log_space=False)
+        }
 
         randomize_coulomb_friction = False
         joint_coulomb_range = [0.1, 1.0]
@@ -201,85 +203,49 @@ class G1BaseCfg(BaseConfig):
         torque_multiplier_range = [0.8, 1.2]
 
     class init_state:
-        pos = [0.0, 0.0, 0.7]
+        pos = [0.0, 0.0, 0.85]  # x,y,z [m]
         rot = [0.0, 0.0, 0.0, 1.0]  # x,y,z,w [quat]
         lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
         ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
 
         default_joint_angles = {
-            'AAHead_yaw': 0.,
-            'Head_pitch': 0.5236,
+            'left_hip_yaw_joint': 0.,
+            'left_hip_roll_joint': 0.,
+            'left_hip_pitch_joint': -0.1,
+            'left_knee_joint': 0.3,
+            'left_ankle_pitch_joint': -0.2,
+            'left_ankle_roll_joint': 0.,
 
-            'Left_Shoulder_Pitch': 0.,
-            'Left_Shoulder_Roll': -1.3,
-            'Left_Elbow_Pitch': 0.,
-            'Left_Elbow_Yaw': -1.,
-            'Right_Shoulder_Pitch': 0.,
-            'Right_Shoulder_Roll': 1.3,
-            'Right_Elbow_Pitch': 0.,
-            'Right_Elbow_Yaw': 1.,
-            'Waist': 0.,
+            'right_hip_yaw_joint': 0.,
+            'right_hip_roll_joint': 0.,
+            'right_hip_pitch_joint': -0.1,
+            'right_knee_joint': 0.3,
+            'right_ankle_pitch_joint': -0.2,
+            'right_ankle_roll_joint': 0.,
 
-            # 'Left_Hip_Pitch': -0.2,
-            # 'Left_Hip_Roll': 0.,
-            # 'Left_Hip_Yaw': 0.,
-            # 'Left_Knee_Pitch': 0.4,
-            # 'Left_Ankle_Pitch': -0.25,
-            # 'Left_Ankle_Roll': 0.,
-            # 'Right_Hip_Pitch': -0.2,
-            # 'Right_Hip_Roll': 0.,
-            # 'Right_Hip_Yaw': 0.,
-            # 'Right_Knee_Pitch': 0.4,
-            # 'Right_Ankle_Pitch': -0.25,
-            # 'Right_Ankle_Roll': 0.,
-
-            'Left_Hip_Pitch': -0.2 - 0.1974,
-            'Left_Hip_Roll': 0.,
-            'Left_Hip_Yaw': 0.,
-            'Left_Knee_Pitch': 0.4 + 0.3948,
-            'Left_Ankle_Pitch': -0.25 - 0.1974,
-            'Left_Ankle_Roll': 0.,
-            'Right_Hip_Pitch': -0.2 - 0.1974,
-            'Right_Hip_Roll': 0.,
-            'Right_Hip_Yaw': 0.,
-            'Right_Knee_Pitch': 0.4 + 0.3948,
-            'Right_Ankle_Pitch': -0.25 - 0.1974,
-            'Right_Ankle_Roll': 0.,
+            'waist_yaw_joint': 0.,
+            # 'waist_roll_joint': 0.,
+            # 'waist_pitch_joint': 0.,
         }
 
     class control:
         # PD Drive parameters:
-        stiffness = {
-            'Head': 30,
-            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
-            'Waist': 100,
-            'Hip_Pitch': 150, 'Hip_Roll': 150, 'Hip_Yaw': 150, 'Knee_Pitch': 180, 'Ankle_Pitch': 50, 'Ankle_Roll': 50,
-        }
+        stiffness = {'hip': 100, 'knee': 150, 'ankle': 20, 'waist': 200}  # [N*m/rad]
+        damping = {'hip': 2, 'knee': 4, 'ankle': 0.2, 'waist': 4}  # [N*m*s/rad]
+        activated = ['hip', 'knee', 'ankle', 'waist']
 
-        damping = {
-            'Head': 1,
-            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
-            'Waist': 3.0,
-            'Hip_Pitch': 8, 'Hip_Roll': 8.0, 'Hip_Yaw': 4.0, 'Knee_Pitch': 8.0, 'Ankle_Pitch': 1.0, 'Ankle_Roll': 1.0,
-        }
-
-        # activated = ['Hip', 'Knee', 'Ankle']
-        activated = ['Hip', 'Knee', 'Ankle', 'Waist']
-
-        # action scale: target angle = actionScale * action + defaultAngle
-        action_scale = 0.5
-        # decimation: Number of control action updates @ sim DT per policy DT
+        action_scale = 0.25
         decimation = 10
 
     class asset:
-        file = LEGGED_GYM_ROOT_DIR + '/robots/g1/g1_23dof.urdf'
-        name = 'T1'
-        base_link_name = 'Trunk'
-        foot_name = 'foot_link'
-        knee_name = 'Ankle_Cross'
-        foot_dof_name = 'Ankle'
-        penalize_contacts_on = []
-        terminate_after_contacts_on = []
+        file = LEGGED_GYM_ROOT_DIR + '/robots/g1/g1_15dof.urdf'
+        name = "g1"
+        base_link_name = 'torso_link'
+        foot_name = "ankle_roll"
+        knee_name = 'knee'
+        foot_dof_name = 'ankle'
+        penalize_contacts_on = ["hip", "knee"]
+        terminate_after_contacts_on = ["torso", "arm", "pelvis"]
         disable_gravity = False
         collapse_fixed_joints = True  # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
         links_to_keep = ['']
@@ -296,6 +262,13 @@ class G1BaseCfg(BaseConfig):
         max_linear_velocity = 1000.
         armature = 0.
         thickness = 0.01
+
+        use_soft_limits = True
+        sim_dof_limit_mul = 10.  # if we are using soft limit, we can relax the simulation limit
+
+        soft_dof_pos_limit = 0.9
+        soft_dof_vel_limit = 0.9
+        soft_dof_torque_limit = 0.9
 
     class viewer:
         ref_env = 0
@@ -322,9 +295,13 @@ class G1BaseCfg(BaseConfig):
             contact_collection = 2  # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
     class runner:
-        num_steps_per_env = 24  # per iteration
+        num_steps_per_env = 24
+        inference_enabled = True
+
+        logger_backend = 'tensorboard'
+
         resume = False
         checkpoint = -1  # -1 = last saved model
 
         # logging
-        save_interval = 100  # check for potential saves every this many iterations
+        save_interval = 100

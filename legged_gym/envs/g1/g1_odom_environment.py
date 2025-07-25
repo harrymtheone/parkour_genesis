@@ -1,0 +1,356 @@
+import cv2
+import numpy as np
+import torch
+
+from .g1_base_env import G1BaseEnv
+from ..base.utils import ObsBase
+from ...utils.math import transform_by_yaw, torch_rand_float, inv_quat, transform_by_quat
+
+
+class ActorObs(ObsBase):
+    def __init__(self, proprio, depth, priv_actor, rough_scan, scan, env_class):
+        super().__init__()
+        self.proprio = proprio.clone()
+        self.depth = depth
+        self.priv_actor = priv_actor.clone()
+        self.rough_scan = rough_scan.clone()
+        self.scan = scan.clone()
+        self.env_class = env_class.clone()
+
+    def no_depth(self):
+        return ObsNoDepth(self.proprio, self.priv_actor, self.scan)
+
+
+class ObsNoDepth(ObsBase):
+    def __init__(self, proprio, priv_actor, scan):
+        super().__init__()
+        self.proprio = proprio.clone()
+        self.priv_actor = priv_actor.clone()
+        self.scan = scan.clone()
+
+    # @torch.compiler.disable
+    # def mirror(self):
+    #     return ObsNoDepth(
+    #         mirror_proprio_by_x(self.proprio),
+    #         mirror_priv_by_x(self.priv_actor),
+    #         torch.flip(self.scan, dims=[2]),
+    #     )
+    #
+    # @staticmethod
+    # def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
+    #     dof_prop_mirrored = dof_prop.clone()
+    #     mirror_dof_prop_by_x(dof_prop_mirrored, 0)
+    #     return dof_prop_mirrored
+
+
+class CriticObs(ObsBase):
+    def __init__(self, priv_actor, priv_his, scan, edge_mask):
+        super().__init__()
+        self.priv_actor = priv_actor.clone()
+        self.priv_his = priv_his.clone()
+        self.scan = scan.clone()
+        self.edge_mask = edge_mask.clone()
+
+
+class G1OdomEnvironment(G1BaseEnv):
+    def _init_buffers(self):
+        super()._init_buffers()
+        self.goal_distance = self._zero_tensor(self.num_envs)
+        self.last_goal_distance = self._zero_tensor(self.num_envs)
+
+        self.scan_dev_xy = self._zero_tensor(self.num_envs, 1, 2)
+        self.scan_dev_z = self._zero_tensor(self.num_envs, 1)
+
+    def _reset_idx(self, env_ids: torch.Tensor):
+        super()._reset_idx(env_ids)
+
+        self.scan_dev_xy[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 2), device=self.device).unsqueeze(1)
+        self.scan_dev_z[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 1), device=self.device)
+
+    def _post_physics_pre_step(self):
+        super()._post_physics_pre_step()
+
+        if self.sim.terrain is not None:
+            self.goal_distance[:] = torch.norm(self.cur_goals[:, :2] - self.sim.root_pos[:, :2], dim=1)
+
+    def _post_physics_post_step(self):
+        super()._post_physics_post_step()
+        self.last_goal_distance[:] = self.goal_distance
+
+    def get_scan(self, noisy=False):
+        # convert height points coordinate to world frame
+        points = transform_by_yaw(
+            self.scan_points,
+            self.base_euler[:, 2:3].repeat(1, self.num_scan)
+        ).unflatten(0, (self.num_envs, -1))
+
+        points[:] += self.sim.root_pos.unsqueeze(1) + self.cfg.terrain.border_size
+
+        if not noisy:
+            return self._get_heights(points)
+
+        z_gauss = 0.03 * torch.randn(self.num_envs, self.scan_points.size(1), device=self.device)
+
+        points[:, :, :2] += self.scan_dev_xy
+        heights = self._get_heights(points)
+        heights[:] += self.scan_dev_z + z_gauss
+        return heights
+
+    def _compute_observations(self):
+        """
+        Computes observations
+        """
+        # add lag to sensor observation
+        if self.cfg.domain_rand.add_dof_lag:
+            dof_data = self.dof_lag_buf.get()
+            dof_pos, dof_vel = dof_data[:, 0], dof_data[:, 1]
+        else:
+            dof_pos, dof_vel = self.sim.dof_pos, self.sim.dof_vel
+
+        if self.cfg.domain_rand.add_imu_lag:
+            imu_data = self.imu_lag_buf.get()
+            base_quat, base_lin_vel, base_ang_vel = imu_data[..., :4], imu_data[..., 4:7], imu_data[..., 7:]
+            projected_gravity = quat_rotate_inverse(base_quat, self.gravity_vec)
+        else:
+            base_lin_vel = self.base_lin_vel
+            base_ang_vel = self.base_ang_vel
+            projected_gravity = self.projected_gravity
+
+        # add noise to sensor observation
+        dof_pos = self._add_noise(dof_pos, self.cfg.noise.noise_scales.dof_pos)
+        dof_vel = self._add_noise(dof_vel, self.cfg.noise.noise_scales.dof_vel)
+        base_lin_vel = self._add_noise(base_lin_vel, self.cfg.noise.noise_scales.lin_vel)
+        base_ang_vel = self._add_noise(base_ang_vel, self.cfg.noise.noise_scales.ang_vel)
+        projected_gravity = self._add_noise(projected_gravity, self.cfg.noise.noise_scales.gravity)
+
+        self._compute_ref_state()
+
+        clock = torch.stack(self._get_clock_input(), dim=1)
+        command_input = torch.cat((clock, self.commands[:, :3] * self.commands_scale), dim=1)
+
+        # proprio observation
+        proprio = torch.cat((
+            base_ang_vel * self.obs_scales.ang_vel,  # 3
+            projected_gravity,  # 3
+            command_input,  # 5
+            (dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 15
+            dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 15
+            self.last_action_output,  # 15
+        ), dim=-1)
+
+        # explicit privileged information
+        priv_obs = torch.cat((
+            self.base_lin_vel * self.obs_scales.lin_vel,  # 3
+            self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
+            self.base_ang_vel * self.obs_scales.ang_vel,  # 3
+            self.base_euler * self.obs_scales.quat,  # 3
+            command_input,  # 5D
+            self.last_action_output,  # 15
+            (self.sim.dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 15
+            self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 15
+            self.ext_force[:, :2],  # 2
+            self.ext_torque,  # 3
+            self.sim.payload_masses / 10.,  # 1
+            self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
+            self.goal_distance.unsqueeze(1) / 10.,  # 1
+        ), dim=-1)
+
+        # compute height map
+        # rough_scan = torch.clip(self.get_body_hmap() - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        rough_scan = torch.clip(self.get_body_hmap() - self.base_height.unsqueeze(1), -1, 1.)
+        rough_scan = rough_scan.view(self.num_envs, *self.cfg.env.scan_shape)
+
+        # scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.base_height.unsqueeze(1), -1, 1.)
+        scan_noisy = scan_noisy.view(self.num_envs, *self.cfg.env.scan_shape)
+
+        base_edge_mask = -0.5 + self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
+        scan_edge = torch.stack([scan_noisy, base_edge_mask], dim=1)
+
+        if self.cfg.sensors.activated:
+            depth = self.sensors.get('depth_0').half()
+
+            if self.cfg.sensors.depth_0.data_format == 'hmap':
+                depth = depth.squeeze(1)
+                self.draw_hmap_from_depth(depth[self.lookat_id])
+        else:
+            depth = None
+
+        priv_actor = torch.cat([
+            base_lin_vel * self.obs_scales.lin_vel,  # 3
+            self.base_height.unsqueeze(1),  # 1
+        ], dim=-1)
+
+        self.actor_obs = ActorObs(proprio, depth, priv_actor, rough_scan, scan_edge, self.env_class)
+        self.actor_obs.clip(self.cfg.normalization.clip_observations)
+
+        # compose critic observation
+        priv_actor_clean = torch.cat([
+            self.base_lin_vel * self.obs_scales.lin_vel,  # 3
+            self.base_height.unsqueeze(1),  # 1
+        ], dim=-1)
+
+        # scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.base_height.unsqueeze(1), -1, 1.)
+        scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
+
+        reset_flag = self.episode_length_buf <= 1
+        self.critic_his_buf.append(priv_obs, reset_flag)
+
+        self.critic_obs = CriticObs(priv_actor_clean, self.critic_his_buf.get(), scan, base_edge_mask)
+        self.critic_obs.clip(self.cfg.normalization.clip_observations)
+
+    def render(self):
+        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+            # self._draw_body_hmap()
+            # self.draw_hmap_from_depth()
+            # self.draw_cloud_from_depth()
+            self._draw_goals()
+            # self._draw_camera()
+            # self._draw_link_COM(whole_body=False)
+            # self._draw_feet_at_edge()
+            self._draw_foothold()
+
+            # self._draw_height_field(draw_guidance=True)
+            # self._draw_edge()
+
+        if self.cfg.sensors.activated:
+            depth_img = self.sensors.get('depth_0', get_depth=True)[self.lookat_id].cpu().numpy()
+            depth_img = (depth_img - self.cfg.sensors.depth_0.near_clip) / self.cfg.sensors.depth_0.far_clip
+            img = np.clip(depth_img * 255, 0, 255).astype(np.uint8)
+
+            cv2.imshow("depth_processed", cv2.resize(img, (320, 320)))
+            cv2.waitKey(1)
+
+        super().render()
+
+    def _reward_default_dof_pos(self):
+        return (self.sim.dof_pos - self.init_state_dof_pos).abs().sum(dim=1)
+
+    def _reward_default_dof_pos_yr(self):
+        # For G1, yaw and roll joints are at indices 2 and 1 (waist_yaw_joint, waist_roll_joint)
+        yaw_roll_indices = torch.tensor([1, 2], device=self.device)  # waist_roll, waist_yaw
+        joint_diff = self.sim.dof_pos - self.init_state_dof_pos
+        yaw_roll = joint_diff[:, yaw_roll_indices].abs()
+        return (yaw_roll - 0.1).clip(min=0, max=50).sum(dim=1)
+
+    def _reward_feet_distance(self):
+        foot_pos = self.sim.link_pos[:, self.feet_indices, :2]
+        foot_dist = torch.norm(foot_pos[:, 0, :] - foot_pos[:, 1, :], dim=1)
+        penalty_min = torch.clamp(self.cfg.rewards.min_dist - foot_dist, 0., 0.5)
+        penalty_max = torch.clamp(foot_dist - self.cfg.rewards.max_dist, 0., 0.5)
+        return penalty_min + penalty_max
+
+    def _reward_knee_distance(self):
+        """
+        Calculates the reward based on the distance between the knee of the humanoid.
+        """
+        knee_pos = self.sim.link_pos[:, self.knee_indices, :2]
+        knee_dist = torch.norm(knee_pos[:, 0, :] - knee_pos[:, 1, :], dim=1)
+        penalty_min = torch.clamp(self.cfg.rewards.min_dist - knee_dist, 0., 0.5)
+        penalty_max = torch.clamp(knee_dist - self.cfg.rewards.max_dist / 2, 0., 0.5)
+        return penalty_min + penalty_max
+
+    def _reward_feet_rotation(self):
+        return self.feet_euler_xyz[:, :, :2].square().sum(dim=[1, 2])
+
+    def _reward_orientation(self):
+        return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+
+    def _reward_base_height(self):
+        return torch.abs(self.base_height - self.cfg.rewards.base_height_target)
+
+    def _reward_base_acc(self):
+        root_acc = self.last_root_vel - self.sim.root_lin_vel
+        return torch.norm(root_acc, dim=1)
+
+    def _reward_lin_vel_z(self):
+        # Penalize z axis base linear velocity
+        return torch.square(self.base_lin_vel[:, 2])
+
+    def _reward_ang_vel_xy(self):
+        # Penalize xy axes base angular velocity
+        return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
+
+    def _reward_penalize_vy(self):
+        rew = torch.abs(self.base_lin_vel[:, 1])
+        rew[self.env_class < 100] = 0.
+        return rew
+
+    def _reward_stall(self):
+        lin_vel_xy = torch.norm(self.base_lin_vel[:, :2], dim=1)
+        lin_vel_cmd_xy = torch.norm(self.commands[:, :2], dim=1)
+
+        lin_vel_stall = (lin_vel_xy < self.cfg.commands.lin_vel_clip) & (lin_vel_cmd_xy > 0)
+        ang_vel_stall = (torch.abs(self.base_ang_vel[:, 2]) < self.cfg.commands.ang_vel_clip) & (torch.abs(self.commands[:, 2]) > 0)
+
+        return (lin_vel_stall | ang_vel_stall).float()
+
+    @staticmethod
+    def _reward_alive():
+        return 1.
+
+
+@torch.jit.script
+def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):
+    # G1 has 15 DOFs: 3 waist + 6 left leg + 6 right leg
+    # Waist joints (0-2): waist_pitch, waist_roll, waist_yaw  
+    # Left leg (3-8): hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
+    # Right leg (9-14): hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
+    
+    # Waist joints - only waist_roll and waist_yaw need sign flip
+    waist_flip_idx = start_idx + torch.tensor([1, 2], dtype=torch.long, device=prop.device)  # waist_roll, waist_yaw
+    prop[:, waist_flip_idx] *= -1.
+    
+    # Leg joints - swap left and right legs
+    left_leg_idx = start_idx + torch.tensor([3, 4, 5, 6, 7, 8], dtype=torch.long, device=prop.device)
+    right_leg_idx = start_idx + torch.tensor([9, 10, 11, 12, 13, 14], dtype=torch.long, device=prop.device)
+
+    dof_left = prop[:, left_leg_idx].clone()
+    prop[:, left_leg_idx] = prop[:, right_leg_idx]
+    prop[:, right_leg_idx] = dof_left
+
+    # Flip signs for hip_yaw and hip_roll (indices 0 and 1 within each leg)
+    left_flip_idx = start_idx + torch.tensor([3, 4], dtype=torch.long, device=prop.device)  # left hip_yaw, hip_roll  
+    right_flip_idx = start_idx + torch.tensor([9, 10], dtype=torch.long, device=prop.device)  # right hip_yaw, hip_roll
+    prop[:, left_flip_idx] *= -1.
+    prop[:, right_flip_idx] *= -1.
+
+
+@torch.jit.script
+def mirror_proprio_by_x(prop: torch.Tensor) -> torch.Tensor:
+    prop = prop.clone()
+
+    # base angular velocity, [0:3], [-roll, pitch, -yaw]
+    prop[:, 0] *= -1.  # roll
+    prop[:, 2] *= -1.  # yaw
+
+    # projected gravity, [3:6], [x, -y, z]
+    prop[:, 4] *= -1.  # y component
+
+    # commands [6:11], [clock_l <--> clock_r, x, -y, -yaw]
+    clock_l = prop[:, 6].clone()
+    prop[:, 6] = prop[:, 7]
+    prop[:, 7] = clock_l
+    prop[:, 9:11] *= -1.  # y and yaw commands
+
+    # dof pos (15 DOFs starting at index 11)
+    mirror_dof_prop_by_x(prop, 11)
+
+    # dof vel (15 DOFs starting at index 11 + 15 = 26)
+    mirror_dof_prop_by_x(prop, 26)
+
+    # last actions (15 DOFs starting at index 11 + 15 + 15 = 41)
+    mirror_dof_prop_by_x(prop, 41)
+
+    return prop
+
+
+@torch.jit.script
+def mirror_priv_by_x(priv: torch.Tensor) -> torch.Tensor:
+    priv = priv.clone()
+
+    # linear velocity, [0:3], [x, -y, z]
+    priv[:, 1] *= -1.
+
+    return priv 

@@ -27,7 +27,7 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = True
+    task_cfg.play.control = False
     task_cfg.env.num_envs = 8
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
@@ -58,10 +58,10 @@ def play(args):
     task_cfg.rewards.only_positive_rewards = False
 
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 0,
+        'smooth_slope': 1,
         'rough_slope': 0,
         'stairs_up': 1,
-        'stairs_down': 1,
+        'stairs_down': 0,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -93,7 +93,7 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    # runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-21_19-46-11/latest.pth',
+    # runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-24_11-22-26/latest.pth',
     #                                             map_location=args.device,
     #                                             weights_only=True))
 
@@ -143,8 +143,8 @@ def play(args):
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.
-            # actions[env.lookat_id, 0] = env.joystick_handler.get_control_input()[0]
-            # actions[env.lookat_id, 0 + 5] = env.joystick_handler.get_control_input()[0]
+            # actions[env.lookat_id, 5] = env.joystick_handler.get_control_input()[0]
+            # actions[env.lookat_id, 5 + 6] = env.joystick_handler.get_control_input()[0]
 
             # # for testing reference motion
             # actions[:] = 0.

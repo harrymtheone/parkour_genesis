@@ -140,7 +140,7 @@ class PPO_Odom(BaseAlgorithm):
         # Record the transition
         self.storage.add_transitions(self.transition)
         self.transition.clear()
-        self.actor.reset(dones)
+        self.reset(dones)
 
     def compute_returns(self, last_critic_obs):
         last_values_default = self.critic['default'].evaluate(last_critic_obs).detach()
@@ -287,22 +287,25 @@ class PPO_Odom(BaseAlgorithm):
             batch_size = 4
             action_mean_original = self.actor.action_mean[:batch_size].detach()
 
-            obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
-            if recon_batch is not None:
-                recon_batch = recon_batch[:batch_size]
-                priv_batch = priv_batch[:batch_size]
-                use_estimated_values_batch = use_estimated_values_batch[:batch_size]
+            if hasattr(obs_batch, 'mirror'):
+                obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
+                if recon_batch is not None:
+                    recon_batch = recon_batch[:batch_size]
+                    priv_batch = priv_batch[:batch_size]
+                    use_estimated_values_batch = use_estimated_values_batch[:batch_size]
 
-            self.actor.train_act(
-                obs_mirrored_batch,
-                recon_batch,
-                priv_batch,
-                hidden_states=actor_hidden_states_batch,
-                use_estimated_values=use_estimated_values_batch
-            )
+                self.actor.train_act(
+                    obs_mirrored_batch,
+                    recon_batch,
+                    priv_batch,
+                    hidden_states=actor_hidden_states_batch,
+                    use_estimated_values=use_estimated_values_batch
+                )
 
-            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+                mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
+                symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+            else:
+                symmetry_loss = torch.zeros_like(surrogate_loss)
 
             return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
 
@@ -315,6 +318,9 @@ class PPO_Odom(BaseAlgorithm):
                 kwargs['use_estimated_values'] = use_estimated_values
 
             return {'actions': self.actor.act(obs, recon, est, **kwargs)}
+
+    def reset(self, dones):
+        self.actor.reset(dones)
 
     def train(self):
         self.actor.train()

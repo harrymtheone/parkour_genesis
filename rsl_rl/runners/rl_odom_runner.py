@@ -97,7 +97,7 @@ class RLOdomRunner(RunnerLogger):
                     else:
                         recon, priv_est = self.odom.reconstruct(obs)
                         # recon[:, 1] = torch.where(recon[:, 1] < 0., 0., 1.)
-                        recon[:, 1] = torch.sigmoid(recon[:, 1])
+                        # recon[:, 1] = torch.sigmoid(recon[:, 1])
 
                     actions = self.alg.act(
                         obs,
@@ -240,7 +240,11 @@ class RLOdomRunner(RunnerLogger):
         )
         print(log_string)
 
-    def play_act(self, obs, **kwargs):
+    def play_act(self, obs, dones=None, **kwargs):
+        if dones is not None:
+            self.odom.reset(dones)
+            self.alg.reset(dones)
+
         self.alg.actor.eval()
 
         if 'recon' in kwargs:

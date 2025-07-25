@@ -84,7 +84,7 @@ class BaseWrapper:
             else:
                 full_names.extend([s for s in self._dof_names if n in s])
 
-        assert len(full_names) > 0, "No names found!"
+        assert len(full_names) > 0, f"No names found! {names}, {is_link}"
         return full_names
 
     def create_indices(self, names, is_link):

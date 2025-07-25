@@ -602,7 +602,7 @@ class HumanoidEnv(ParkourTask):
         valid_foothold_perc = self.foothold_pts_contact.sum(dim=2) / self.foothold_pts_contact.size(2)
         rew = (1 - valid_foothold_perc) * self.contact_filt
 
-        rew[self.env_class < 2] = 0.
+        # rew[self.env_class < 2] = 0.
         return rew.sum(dim=1)
 
     # ----------------------------------------- Graphics -------------------------------------------

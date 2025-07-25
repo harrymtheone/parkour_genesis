@@ -43,7 +43,7 @@ def play(args):
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
     # task_cfg.depth.angle_range = [-1, 1]
-    task_cfg.domain_rand.push_robots = True
+    task_cfg.domain_rand.push_robots = False
     task_cfg.domain_rand.push_interval_s = 6
     task_cfg.domain_rand.push_duration = [0.1]
     task_cfg.domain_rand.action_delay = True
@@ -68,10 +68,10 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
-        'parkour_stair_down': 1,
-        'parkour_mini_stair': 1,
-        'parkour_mini_stair_down': 1,
+        'parkour_stair': 0,
+        'parkour_stair_down': 0,
+        'parkour_mini_stair': 0,
+        'parkour_mini_stair_down': 0,
         'parkour_go_back_stair': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())

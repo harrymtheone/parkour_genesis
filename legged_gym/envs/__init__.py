@@ -30,7 +30,9 @@
 
 from .T1 import t1_tasks
 from .pdd import pdd_tasks
+from .g1 import g1_tasks
 
 tasks = {}
 tasks.update(t1_tasks)
 tasks.update(pdd_tasks)
+tasks.update(g1_tasks)

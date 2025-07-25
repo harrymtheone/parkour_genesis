@@ -1,28 +1,27 @@
 import numpy as np
 
-from .pdd_base_config import PddBaseCfg
+from .g1_base_config import G1BaseCfg
 
 
-class PddOdomCfg(PddBaseCfg):
-    class env(PddBaseCfg.env):
+class G1OdomCfg(G1BaseCfg):
+    class env(G1BaseCfg.env):
         num_envs = 4096  # 6144
-        n_proprio = 41
-        len_prop_his = 50
+        n_proprio = 50
 
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 61
+        num_critic_obs = 70
         len_critic_his = 50
 
-        num_actions = 10
-        episode_length_s = 40  # episode length in seconds
+        num_actions = 13  # G1 has 15 DOFs (3 waist + 12 leg)
+        episode_length_s = 40
 
     class sensors:
         activated = False
 
         class depth_0:
-            link_attached_to = 'base_link'
+            link_attached_to = 'torso_link'  # G1 torso link
             position = [0.1, 0, -0.05]  # front camera
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch = 60  # positive is looking down
@@ -53,15 +52,15 @@ class PddOdomCfg(PddBaseCfg):
             hmap_shape = (16, 16)  # x dim, y dim
 
     class commands:
-        num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
-        resampling_time = 8.  # time before command are changed[s]
+        num_commands = 4
+        resampling_time = 8.
 
-        lin_vel_clip = 0.1
+        lin_vel_clip = 0.2
         ang_vel_clip = 0.2
         parkour_vel_tolerance = 0.3
 
-        cycle_time = 0.64  # 0.64
-        target_joint_pos_scale = 0.19  # 0.19
+        cycle_time = 0.7
+        target_joint_pos_scale = 0.3
 
         sw_switch = True
         phase_offset_l = 0.
@@ -70,21 +69,23 @@ class PddOdomCfg(PddBaseCfg):
         delta_t = 0.02
 
         class flat_ranges:
-            lin_vel_x = [-0.4, 0.6]
-            lin_vel_y = [-0.3, 0.3]
+            lin_vel_x = [-0.6, 0.8]
+            lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [-0.3, 0.6]
-            lin_vel_y = [-0.3, 0.3]
-            ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
+            lin_vel_x = [-0.4, 0.8]
+            lin_vel_y = [-0.4, 0.4]
+            ang_vel_yaw = [-1., 1.]
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.3, 0.8]  # min value should be greater than lin_vel_clip
-            ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
+            lin_vel_x = [0.3, 1.0]
+            ang_vel_yaw = [-1.0, 1.0]
 
-    class terrain(PddBaseCfg.terrain):
+    class terrain(G1BaseCfg.terrain):
+        description_type = 'plane'
+
         body_pts_x = np.linspace(-0.6, 1.2, 32)
         body_pts_y = np.linspace(-0.6, 0.6, 16)
 
@@ -92,17 +93,17 @@ class PddOdomCfg(PddBaseCfg):
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 1,
+            'smooth_slope': 2,
             'rough_slope': 1,
-            'stairs_up': 2,
-            'stairs_down': 2,
-            'parkour_stair': 2,
+            'stairs_up': 1,
+            'stairs_down': 1,
+            'parkour_stair': 1,
         }
 
-    class noise(PddBaseCfg.noise):
+    class noise(G1BaseCfg.noise):
         add_noise = True
 
-    class domain_rand(PddBaseCfg.domain_rand):
+    class domain_rand(G1BaseCfg.domain_rand):
         switch = True
 
         randomize_start_pos = switch
@@ -132,17 +133,17 @@ class PddOdomCfg(PddBaseCfg):
         randomize_joint_friction = False
         randomize_joint_armature = switch
         joint_armature_range = {
-            'default': dict(range=(0.005, 0.05), log_space=True),
-            'ankle': dict(dof_ids=(4, 9), range=(0.001, 0.05), log_space=True)
+            'default': dict(range=(0.01, 0.05), log_space=False),
+            # 'ankle': dict(dof_ids=(7, 8, 13, 14), range=(0.01, 0.05), log_space=True)
         }
         randomize_coulomb_friction = switch
 
     class rewards:
-        base_height_target = 0.6
-        feet_height_target = 0.04
-        feet_height_target_max = 0.05
+        base_height_target = 0.8  # G1 height
+        feet_height_target = 0.05
+        feet_height_target_max = 0.07
         use_guidance_terrain = True
-        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = True
         only_positive_rewards_until_epoch = 100
         tracking_sigma = 5
         EMA_update_alpha = 0.99
@@ -155,12 +156,12 @@ class PddOdomCfg(PddBaseCfg):
 
         class scales:
             # gait
-            joint_pos = 2.0
+            joint_pos = 2
             feet_contact_number = 1.2
             feet_clearance = 1.
             feet_distance = -1.
             knee_distance = -1.
-            feet_rotation = -0.3
+            # feet_rotation = -0.3
 
             # vel tracking
             tracking_lin_vel = 1.5
@@ -169,31 +170,31 @@ class PddOdomCfg(PddBaseCfg):
 
             # contact
             feet_slip = -0.1
-            feet_contact_forces = -1e-3
-            feet_stumble = -2.
+            # feet_contact_forces = -1e-3
+            # feet_stumble = -2.
             foothold = -0.1
             # feet_edge = -0.1
 
             # base pos
             default_dof_pos = -0.04
             default_dof_pos_yr = (0., -1., 10, 100)
-            orientation = -10.0
+            orientation = -1.0
             # base_height = -10.
             base_acc = -1.
             lin_vel_z = -1.
-            ang_vel_xy = (0., -0.05, 10, 100)
+            ang_vel_xy = -0.05
 
             # energy
-            action_smoothness = (0., -1e-3, 1, 100)
+            action_smoothness = -1e-3
             dof_vel_smoothness = (0, -1e-3, 1, 5000)
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1.e-7
-            collision = -1.
+            # collision = -1.
             dof_pos_limits = -10.
             dof_torque_limits = -0.01
 
-            alive = 0.01
+            alive = 0.2
 
     class policy:
         actor_gru_hidden_size = 128
@@ -232,7 +233,7 @@ class PddOdomCfg(PddBaseCfg):
         continue_from_last_std = True
         init_noise_std = 1.0
 
-    class runner(PddBaseCfg.runner):
+    class runner(G1BaseCfg.runner):
         runner_name = 'rl_odom'
         algorithm_name = 'ppo_odom'
 
@@ -249,8 +250,8 @@ class PddOdomCfg(PddBaseCfg):
 # ------------------------------------------- Stair -------------------------------------------
 # -----------------------------------------------------------------------------------------------
 
-class PddOdomStairCfg(PddOdomCfg):
-    class domain_rand(PddOdomCfg.domain_rand):
+class G1OdomStairCfg(G1OdomCfg):
+    class domain_rand(G1OdomCfg.domain_rand):
         push_robots = True
         push_duration = [0.2]
 
@@ -263,10 +264,10 @@ class PddOdomStairCfg(PddOdomCfg):
         randomize_joint_armature = True
         joint_armature_range = {
             'default': dict(range=(0.005, 0.05), log_space=True),
-            'ankle': dict(dof_ids=(4, 9), range=(0.001, 0.05), log_space=True)
+            'ankle': dict(dof_ids=(7, 8, 13, 14), range=(0.001, 0.05), log_space=True)  # G1 ankle indices
         }
 
-    class terrain(PddOdomCfg.terrain):
+    class terrain(G1OdomCfg.terrain):
         num_rows = 10  # number of terrain rows (levels)
         num_cols = 20  # number of terrain cols (types)
 
@@ -281,11 +282,11 @@ class PddOdomStairCfg(PddOdomCfg):
             'parkour_mini_stair_down': 1,
         }
 
-    class rewards(PddOdomCfg.rewards):
+    class rewards(G1OdomCfg.rewards):
         only_positive_rewards = True
         only_positive_rewards_until_epoch = 22000 + 200
 
-        class scales(PddOdomCfg.rewards.scales):  # start, end, span, start_it
+        class scales(G1OdomCfg.rewards.scales):  # start, end, span, start_it
             joint_pos = 2.
             feet_contact_number = 1.2
             feet_clearance = 1.
@@ -328,11 +329,11 @@ class PddOdomStairCfg(PddOdomCfg):
 
             alive = 0.01
 
-    class algorithm(PddOdomCfg.algorithm):
+    class algorithm(G1OdomCfg.algorithm):
         continue_from_last_std = False
         init_noise_std = 0.6
 
-    class runner(PddOdomCfg.runner):
+    class runner(G1OdomCfg.runner):
         max_iterations = 100000  # number of policy updates
 
 
@@ -340,22 +341,22 @@ class PddOdomStairCfg(PddOdomCfg):
 # ------------------------------------------- Finetune -------------------------------------------
 # -----------------------------------------------------------------------------------------------
 
-class PddOdomFinetuneCfg(PddOdomCfg):
-    class sensors(PddOdomCfg.sensors):
+class G1OdomFinetuneCfg(G1OdomCfg):
+    class sensors(G1OdomCfg.sensors):
         activated = True
 
-    class domain_rand(PddOdomCfg.domain_rand):
+    class domain_rand(G1OdomCfg.domain_rand):
         action_delay = True
         action_delay_range = [(0, 6)]
 
-    class algorithm(PddOdomCfg.algorithm):
+    class algorithm(G1OdomCfg.algorithm):
         continue_from_last_std = True
 
-    class runner(PddOdomCfg.runner):
+    class runner(G1OdomCfg.runner):
         max_iterations = 100000
 
         load_latest_interval = 100
         odometer_path = '/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-24_11-22-26/latest.pth'
 
         initial_smpl = 1.0
-        lock_smpl_until = 0
+        lock_smpl_until = 0 
