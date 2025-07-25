@@ -1,9 +1,8 @@
-import numpy as np
 import torch
 
 from legged_gym.envs.base.humanoid_env import HumanoidEnv
 from legged_gym.envs.base.utils import HistoryBuffer
-from legged_gym.utils.math import transform_by_yaw
+from legged_gym.utils.math import transform_by_yaw, density_weighted_sampling
 
 
 class T1BaseEnv(HumanoidEnv):
@@ -127,6 +126,16 @@ class T1BaseEnv(HumanoidEnv):
         self.ref_dof_pos[:] = self.init_state_dof_pos
         self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos
 
+    def draw_cloud_from_depth(self):
+        # draw points cloud
+        cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
+        cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
+        pts = cloud[cloud_valid].cpu().numpy()
+
+        if len(pts) > 0:
+            pts = density_weighted_sampling(pts, 500)
+            self.pending_vis_task.append(dict(points=pts))
+
 
 @torch.jit.script
 def mirror_dof_prop_by_x(prop: torch.Tensor, start_idx: int):
@@ -191,23 +200,3 @@ def mirror_priv_by_x(priv: torch.Tensor) -> torch.Tensor:
     priv[:, 19:35] = body_hmap.flatten(1)
 
     return priv
-
-
-def density_weighted_sampling(points, num_samples, k=10):
-    from sklearn.neighbors import NearestNeighbors
-    nbrs = NearestNeighbors(n_neighbors=k).fit(points)
-    distances, _ = nbrs.kneighbors(points)
-
-    # Estimate density as the mean distance to k-nearest neighbors
-    density = np.mean(distances, axis=1)
-
-    # Higher density -> lower probability of being sampled
-    probabilities = density / np.sum(density)
-    probabilities = 1 - probabilities  # Invert probabilities for uniformity
-    probabilities /= np.sum(probabilities)
-
-    # Sample points based on computed probabilities
-    num_samples = min(num_samples, len(points) - 1)
-    sampled_indices = np.random.choice(len(points), size=num_samples, replace=False, p=probabilities)
-
-    return points[sampled_indices]

@@ -23,13 +23,17 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         activated = False
 
         class depth_0:
-            link_attached_to = 'H2'
-            position = [0.07, 0, 0.09]  # front camera
+            # link_attached_to = 'H2'
+            # position = [0.07, 0, 0.09]  # front camera
+            # pitch = 0  # positive is looking down
+            link_attached_to = 'Trunk'
+            position = [0.17, 0, 0.0]  # front camera
+            pitch = 60  # positive is looking down
+
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-            pitch = 0  # positive is looking down
             pitch_range = [-3, 3]
 
-            data_format = 'depth'  # depth, cloud, hmap
+            data_format = 'cloud'  # depth, cloud, hmap
             update_interval = 1
             delay_prop = None  # Gaussian (mean, std), or None
             history_length = 1

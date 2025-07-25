@@ -560,7 +560,12 @@ class HumanoidEnv(ParkourTask):
 
     def _reward_termination(self):
         # Terminal reward / penalty
-        rew = self.reset_buf & ~self.timeout_cutoff & ~self.reach_goal_cutoff
+
+        rew = self.reset_buf & ~self.timeout_cutoff
+
+        if self.sim.terrain is not None:
+            rew &= ~self.reach_goal_cutoff
+
         return rew.float()
 
     def _reward_feet_rotation(self):

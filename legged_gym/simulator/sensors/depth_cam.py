@@ -195,7 +195,7 @@ class DepthCam(SensorBase):
 
     def post_process(self):
 
-        if self.data_format == 'depth':
+        if self.data_format in ['depth', 'cloud']:
             # These operations are replicated on the hardware
             depth_image = self.depth_raw.clone()
             if self.edge_noise:

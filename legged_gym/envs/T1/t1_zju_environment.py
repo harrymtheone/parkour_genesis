@@ -2,9 +2,9 @@ import cv2
 import numpy as np
 import torch
 
-from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x, density_weighted_sampling
+from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_trans_quat
+from ...utils.math import transform_by_trans_quat, density_weighted_sampling
 
 
 class ActorObs(ObsBase):

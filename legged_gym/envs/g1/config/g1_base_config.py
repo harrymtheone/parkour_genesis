@@ -301,6 +301,7 @@ class G1BaseCfg(BaseConfig):
         logger_backend = 'tensorboard'
 
         resume = False
+        resume_algorithm = None
         checkpoint = -1  # -1 = last saved model
 
         # logging

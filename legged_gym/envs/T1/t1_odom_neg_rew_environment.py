@@ -1,5 +1,3 @@
-import math
-
 import cv2
 import numpy as np
 import torch
@@ -222,9 +220,9 @@ class T1OdomNegEnvironment(T1BaseEnv):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
             # self._draw_body_hmap()
             # self.draw_hmap_from_depth()
-            # self.draw_cloud_from_depth()
+            self.draw_cloud_from_depth()
             self._draw_goals()
-            # self._draw_camera()
+            self._draw_camera()
             # self._draw_link_COM(whole_body=False)
             self._draw_feet_at_edge()
             # self._draw_foothold()
@@ -332,6 +330,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
         ang_vel_stall = (torch.abs(self.base_ang_vel[:, 2]) < self.cfg.commands.ang_vel_clip) & (torch.abs(self.commands[:, 2]) > 0)
 
         return (lin_vel_stall | ang_vel_stall).float()
+
 
 
 @torch.jit.script

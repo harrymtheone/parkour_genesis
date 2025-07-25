@@ -89,16 +89,16 @@ class G1OdomCfg(G1BaseCfg):
         body_pts_x = np.linspace(-0.6, 1.2, 32)
         body_pts_y = np.linspace(-0.6, 0.6, 16)
 
-        num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
-        num_cols = 20  # number of terrain cols (types)
-
-        terrain_dict = {
-            'smooth_slope': 2,
-            'rough_slope': 1,
-            'stairs_up': 1,
-            'stairs_down': 1,
-            'parkour_stair': 1,
-        }
+        # num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
+        # num_cols = 20  # number of terrain cols (types)
+        #
+        # terrain_dict = {
+        #     'smooth_slope': 2,
+        #     'rough_slope': 1,
+        #     'stairs_up': 1,
+        #     'stairs_down': 1,
+        #     'parkour_stair': 1,
+        # }
 
     class noise(G1BaseCfg.noise):
         add_noise = True
@@ -178,7 +178,7 @@ class G1OdomCfg(G1BaseCfg):
             # base pos
             default_dof_pos = -0.04
             default_dof_pos_yr = (0., -1., 10, 100)
-            orientation = -1.0
+            orientation = -10.0
             # base_height = -10.
             base_acc = -1.
             lin_vel_z = -1.
@@ -194,7 +194,7 @@ class G1OdomCfg(G1BaseCfg):
             dof_pos_limits = -10.
             dof_torque_limits = -0.01
 
-            alive = 0.2
+            alive = (1, 0.1, 1000, 0)
 
     class policy:
         actor_gru_hidden_size = 128

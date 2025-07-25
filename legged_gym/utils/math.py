@@ -1,5 +1,6 @@
 from typing import Tuple
 
+import numpy as np
 import torch
 
 
@@ -254,3 +255,23 @@ def transform_by_yaw(v, yaw):
 #
 #     cloud = cloud.clone()
 #     return [cloud[ins] for ins in inside]  # TODO: Bottleneck
+
+
+def density_weighted_sampling(points, num_samples, k=10):
+    from sklearn.neighbors import NearestNeighbors
+    nbrs = NearestNeighbors(n_neighbors=k).fit(points)
+    distances, _ = nbrs.kneighbors(points)
+
+    # Estimate density as the mean distance to k-nearest neighbors
+    density = np.mean(distances, axis=1)
+
+    # Higher density -> lower probability of being sampled
+    probabilities = density / np.sum(density)
+    probabilities = 1 - probabilities  # Invert probabilities for uniformity
+    probabilities /= np.sum(probabilities)
+
+    # Sample points based on computed probabilities
+    num_samples = min(num_samples, len(points) - 1)
+    sampled_indices = np.random.choice(len(points), size=num_samples, replace=False, p=probabilities)
+
+    return points[sampled_indices]
