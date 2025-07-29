@@ -92,6 +92,8 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
+        # description_type = 'plane'
+
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
@@ -190,7 +192,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             ang_vel_xy = (0., -0.05, 10, 100)
 
             # energy
-            action_smoothness = -1e-3
+            action_smoothness = (0., -1e-3, 10, 100)
             # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4

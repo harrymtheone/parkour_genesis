@@ -200,11 +200,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
         # base_height = root_height - scan.mean()
         # new_hmap = scan - scan.mean()
         # hmap = base_height - new_hmap
-
-        # scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.base_height.unsqueeze(1), -1, 1.)
-        # new_hmap = self.get_scan(noisy=False)
-        # scan = torch.clip(new_hmap - new_hmap.mean(dim=1, keepdim=True), -1, 1.)
         scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
 
         reset_flag = self.episode_length_buf <= 1

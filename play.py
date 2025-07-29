@@ -18,8 +18,8 @@ slowmo = 1
 
 def play(args):
     log_root = 'logs'
-    # args.simulator = SimulatorType.Genesis
-    args.simulator = SimulatorType.IsaacGym
+    args.simulator = SimulatorType.Genesis
+    # args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
 
@@ -33,7 +33,7 @@ def play(args):
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
     task_cfg.terrain.curriculum = True
-    # task_cfg.terrain.max_difficulty = True
+    task_cfg.terrain.max_difficulty = True
     # task_cfg.asset.disable_gravity = True
 
     task_cfg.commands.resampling_time = 8
@@ -60,8 +60,8 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
         'rough_slope': 0,
-        'stairs_up': 0,
-        'stairs_down': 0,
+        'stairs_up': 1,
+        'stairs_down': 1,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -72,10 +72,10 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
-        'parkour_stair_down': 1,
-        'parkour_mini_stair': 1,
-        'parkour_mini_stair_down': 1,
+        'parkour_stair': 0,
+        'parkour_stair_down': 0,
+        'parkour_mini_stair': 0,
+        'parkour_mini_stair_down': 0,
         'parkour_go_back_stair': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
@@ -101,7 +101,7 @@ def play(args):
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=False, dones=dones)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, dones=dones)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.9, eval_=True, dones=dones)
 
             actions = rtn['actions']
