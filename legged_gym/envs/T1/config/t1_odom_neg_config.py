@@ -13,6 +13,8 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
+        priv_actor_len = 3
+
         num_critic_obs = 70
         len_critic_his = 50
 
@@ -90,9 +92,6 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
-        body_pts_x = np.linspace(-0.6, 1.2, 32)
-        body_pts_y = np.linspace(-0.6, 0.6, 16)
-
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
@@ -139,7 +138,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         randomize_joint_armature = True
         joint_armature_range = {
             'default': dict(range=(0.01, 0.05), log_space=False),
-            'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.01, 0.05), log_space=False)
+            # 'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.01, 0.05), log_space=False)
         }
 
         randomize_coulomb_friction = True
@@ -191,7 +190,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             ang_vel_xy = (0., -0.05, 10, 100)
 
             # energy
-            action_smoothness = (0., -1e-3, 10, 100)
+            action_smoothness = -1e-3
             # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
@@ -209,13 +208,11 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         critic_hidden_dims = [512, 256, 128]
 
     class odometer:
-        odometer_type = 'recurrent'  # recurrent, auto-regression
-        # odometer_type = 'auto-regression'  # recurrent, auto-regression
+        odometer_type = 'priv_recon'  # recurrent, auto-regression, priv_recon
 
         # odometer parameters
         odom_transformer_embed_dim = 64
         odom_gru_hidden_size = 128
-        estimator_output_dim = 4
         update_since = 100000000
         batch_size = 258
         learning_rate = 1e-3
@@ -236,7 +233,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         max_grad_norm = 1.
 
         continue_from_last_std = True
-        init_noise_std = 1.0
+        init_noise_std = 0.6
 
         use_amp = True
 

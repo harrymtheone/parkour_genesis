@@ -39,6 +39,10 @@ def play(args):
     # task_cfg.terrain.max_difficulty = True
 
     task_cfg.commands.resampling_time = 1
+    task_cfg.commands.stair_ranges.lin_vel_x = [0.2, 0.8]
+    task_cfg.commands.stair_ranges.lin_vel_y = [-0.5, 0.5]
+    task_cfg.commands.stair_ranges.ang_vel_yaw = [-1., 1.]
+    task_cfg.commands.stair_ranges.heading = [-1.5, 1.5]
 
     # task_cfg.depth.position_range = [(-0.01, 0.01), (-0., 0.), (-0.0, 0.01)]  # front camera
     # task_cfg.depth.position_range = [(-0., 0.), (-0, 0), (-0., 0.)]  # front camera
@@ -104,10 +108,8 @@ def play(args):
         writer = SummaryWriter(log_dir)
         print(f"Logging to {log_dir}")
 
-    loss_recon_rough = 0.
-    loss_recon_refine = 0.
+    loss_recon = 0.
     loss_edge = 0.
-    loss_priv = 0.
     accumulation_steps = 4
     num_epoch = 0
 
@@ -117,23 +119,19 @@ def play(args):
 
         with torch.amp.autocast(enabled=use_amp, device_type=args.device):
             # rollout - use the training hidden state
-            recon_rough, recon_refine, priv_est = reconstructor.inference_forward(obs.proprio, obs.depth, obs.priv_actor, eval_=False)
+            recon = reconstructor.inference_forward(obs.proprio, obs.depth, obs.priv_actor * 0., obs.cam_rot, eval_=False)
 
             # Accumulate losses
-            loss_recon_rough += mse(recon_rough, obs.rough_scan.unsqueeze(1))
-            loss_recon_refine += l1(recon_refine[:, 0], obs_critic.scan)
-            loss_edge += mse(recon_refine[:, 1], obs_critic.edge_mask)
-            loss_priv += mse(priv_est, obs_critic.priv_actor)
+            loss_recon += l1(recon[:, 0], obs_critic.scan)
+            loss_edge += mse(recon[:, 1], obs_critic.edge_mask)
 
             # Perform an update every `accumulation_steps`
             if (step_i + 1) % accumulation_steps == 0:
                 num_epoch += 1
-                loss_recon_rough /= accumulation_steps
-                loss_recon_refine /= accumulation_steps
+                loss_recon /= accumulation_steps
                 loss_edge /= accumulation_steps
-                loss_priv /= accumulation_steps
 
-                total_loss = loss_recon_rough + loss_recon_refine + loss_edge + loss_priv
+                total_loss = loss_recon + loss_edge
 
                 optim.zero_grad()
                 scaler.scale(total_loss).backward()
@@ -142,30 +140,26 @@ def play(args):
 
                 if not args.debug:
                     # Log the averaged losses
-                    writer.add_scalar('Loss/recon_rough', loss_recon_rough.item(), num_epoch)
-                    writer.add_scalar('Loss/recon_refine', loss_recon_refine.item(), num_epoch)
+                    writer.add_scalar('Loss/recon', loss_recon.item(), num_epoch)
                     writer.add_scalar('Loss/edge', loss_edge.item(), num_epoch)
-                    writer.add_scalar('Loss/priv', loss_priv.item(), num_epoch)
                     writer.add_scalar('Loss/total', total_loss.item(), num_epoch)
 
                 # Detach the training hidden state to start a new BPTT trajectory
                 if reconstructor.is_recurrent:
                     reconstructor.detach_hidden_states()
-                loss_recon_rough = 0.
-                loss_recon_refine = 0.
+                loss_recon = 0.
                 loss_edge = 0.
-                loss_priv = 0.
 
         if not args.headless:
-            env.draw_recon(recon_refine[env.lookat_id].detach())
+            env.draw_recon(recon[env.lookat_id].detach())
 
         with torch.inference_mode():
             rtn = runner.play_act(
                 obs,
                 use_estimated_values=use_estimated_values.unsqueeze(1),
                 eval_=False,
-                recon=recon_refine.detach(),
-                est=priv_est.detach()
+                recon=recon.detach(),
+                est=obs.priv_actor
             )
         obs, obs_critic, rewards, dones, _ = env.step(rtn['actions'])
 

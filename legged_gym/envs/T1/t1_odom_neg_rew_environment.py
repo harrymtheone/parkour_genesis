@@ -4,18 +4,17 @@ import torch
 
 from .t1_base_env import T1BaseEnv
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_yaw, torch_rand_float
+from ...utils.math import transform_by_yaw, torch_rand_float, quat_to_mat
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, depth, priv_actor, rough_scan, scan, env_class):
+    def __init__(self, proprio, depth, priv_actor, scan, cam_rot):
         super().__init__()
         self.proprio = proprio.clone()
         self.depth = depth
         self.priv_actor = priv_actor.clone()
-        self.rough_scan = rough_scan.clone()
         self.scan = scan.clone()
-        self.env_class = env_class.clone()
+        self.cam_rot = cam_rot.clone()
 
     def no_depth(self):
         return ObsNoDepth(self.proprio, self.priv_actor, self.scan)
@@ -60,6 +59,9 @@ class T1OdomNegEnvironment(T1BaseEnv):
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
+        self.cam_link_indices = self.sim.create_indices(
+            self.sim.get_full_names('Trunk', True), True)
+
     def _init_buffers(self):
         super()._init_buffers()
         self.goal_distance = self._zero_tensor(self.num_envs)
@@ -76,7 +78,9 @@ class T1OdomNegEnvironment(T1BaseEnv):
 
     def _post_physics_pre_step(self):
         super()._post_physics_pre_step()
-        self.goal_distance[:] = torch.norm(self.cur_goals[:, :2] - self.sim.root_pos[:, :2], dim=1)
+
+        if self.sim.terrain is not None:
+            self.goal_distance[:] = torch.norm(self.cur_goals[:, :2] - self.sim.root_pos[:, :2], dim=1)
 
     def _post_physics_post_step(self):
         super()._post_physics_post_step()
@@ -161,16 +165,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
         ), dim=-1)
 
         # compute height map
-        # rough_scan = torch.clip(self.get_body_hmap() - self.cfg.normalization.scan_norm_bias, -1, 1.)
-        rough_scan = torch.clip(self.get_body_hmap() - self.base_height.unsqueeze(1), -1, 1.)
-        # rough_scan = self.get_body_hmap()
-        # rough_scan = torch.clip(rough_scan - rough_scan.mean(dim=1, keepdim=True), -1, 1.)
-        rough_scan = rough_scan.view(self.num_envs, *self.cfg.env.scan_shape)
-
-        # scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.base_height.unsqueeze(1), -1, 1.)
-        # scan_noisy = self.get_scan(noisy=True)
-        # scan_noisy = torch.clip(scan_noisy - scan_noisy.mean(dim=1, keepdim=True), -1, 1.)
         scan_noisy = scan_noisy.view(self.num_envs, *self.cfg.env.scan_shape)
 
         base_edge_mask = -0.5 + self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
@@ -185,18 +180,20 @@ class T1OdomNegEnvironment(T1BaseEnv):
         else:
             depth = None
 
+        cam_rot_mat = quat_to_mat(self.sim.link_quat[:, self.cam_link_indices]).flatten(1, 2)
+
         priv_actor = torch.cat([
             base_lin_vel * self.obs_scales.lin_vel,  # 3
-            self.base_height.unsqueeze(1),  # 1
+            # self.base_height.unsqueeze(1),  # 1
         ], dim=-1)
 
-        self.actor_obs = ActorObs(proprio, depth, priv_actor, rough_scan, scan_edge, self.env_class)
+        self.actor_obs = ActorObs(proprio, depth, priv_actor, scan_edge, cam_rot_mat)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation
         priv_actor_clean = torch.cat([
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
-            self.base_height.unsqueeze(1),  # 1
+            # self.base_height.unsqueeze(1),  # 1
         ], dim=-1)
 
         # hmap = root_height - scan
@@ -219,10 +216,10 @@ class T1OdomNegEnvironment(T1BaseEnv):
     def render(self):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
             # self._draw_body_hmap()
-            # self.draw_hmap_from_depth()
-            self.draw_cloud_from_depth()
+            # self._draw_hmap_from_depth()
+            # self.draw_cloud_from_depth()
             self._draw_goals()
-            self._draw_camera()
+            # self._draw_camera()
             # self._draw_link_COM(whole_body=False)
             self._draw_feet_at_edge()
             # self._draw_foothold()
@@ -330,7 +327,6 @@ class T1OdomNegEnvironment(T1BaseEnv):
         ang_vel_stall = (torch.abs(self.base_ang_vel[:, 2]) < self.cfg.commands.ang_vel_clip) & (torch.abs(self.commands[:, 2]) > 0)
 
         return (lin_vel_stall | ang_vel_stall).float()
-
 
 
 @torch.jit.script

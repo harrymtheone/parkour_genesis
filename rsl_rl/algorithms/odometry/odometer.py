@@ -3,6 +3,7 @@ import math
 import torch
 
 from rsl_rl.modules.odometer.auto_regression import OdomAutoRegressionTransformer
+from rsl_rl.modules.odometer.priv_recon import PrivReconstructor
 from rsl_rl.modules.odometer.recurrent import OdomRecurrentTransformer
 from rsl_rl.storage.odometer_storage import OdometerStorage
 
@@ -61,8 +62,13 @@ class Odometer:
                 task_cfg.odometer.odom_gru_hidden_size,
                 task_cfg.odometer.estimator_output_dim
             ).to(self.device)
-        else:
+        elif self.cfg.odometer_type == 'auto-regression':
             self.odom = OdomAutoRegressionTransformer(
+                task_cfg.env.n_proprio,
+                task_cfg.odometer.odom_transformer_embed_dim,
+            ).to(self.device)
+        else:
+            self.odom = PrivReconstructor(
                 task_cfg.env.n_proprio,
                 task_cfg.odometer.odom_transformer_embed_dim,
             ).to(self.device)
@@ -234,12 +240,14 @@ class Odometer:
             return {}
 
         with torch.autocast(self.device.type, torch.float16, enabled=self.use_amp):
-            recon_rough, recon_refine, est = self.odom.inference_forward(obs.proprio, obs.depth, eval_=True)
+            # recon_rough, recon_refine, est = self.odom.inference_forward(obs.proprio, obs.depth, obs.priv_actor, eval_=True)
+            recon_refine = self.odom.inference_forward(obs.proprio, obs.depth, obs.priv_actor, obs.cam_rot, eval_=True)
 
             return {
-                'recon_rough': recon_rough,
+                # 'recon_rough': recon_rough,
                 'recon_refine': recon_refine,
-                'estimation': est,
+                # 'estimation': est,
+                'estimation': obs.priv_actor,
             }
 
     def reset(self, dones):

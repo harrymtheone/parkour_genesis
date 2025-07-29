@@ -16,7 +16,7 @@ class Actor(nn.Module):
                                                activation_func=nn.ELU())
 
         # belief encoder
-        self.gru = nn.GRU(env_cfg.n_proprio + 128 + odom_cfg.estimator_output_dim, policy_cfg.actor_gru_hidden_size, num_layers=1)
+        self.gru = nn.GRU(env_cfg.n_proprio + 128 + env_cfg.priv_actor_len, policy_cfg.actor_gru_hidden_size, num_layers=1)
         self.hidden_states = None
 
         self.actor = make_linear_layers(policy_cfg.actor_gru_hidden_size,

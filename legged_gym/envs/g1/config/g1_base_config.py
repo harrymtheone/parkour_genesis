@@ -203,7 +203,7 @@ class G1BaseCfg(BaseConfig):
         torque_multiplier_range = [0.8, 1.2]
 
     class init_state:
-        pos = [0.0, 0.0, 0.85]  # x,y,z [m]
+        pos = [0.0, 0.0, 0.9]  # x,y,z [m]
         rot = [0.0, 0.0, 0.0, 1.0]  # x,y,z,w [quat]
         lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
         ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
@@ -239,6 +239,8 @@ class G1BaseCfg(BaseConfig):
 
     class asset:
         file = LEGGED_GYM_ROOT_DIR + '/robots/g1/g1_15dof.urdf'
+        # file = LEGGED_GYM_ROOT_DIR + '/robots/g1/g1_12dof.urdf'
+        # file = LEGGED_GYM_ROOT_DIR + '/robots/g1/unitree_G1_colli.urdf'
         name = "g1"
         base_link_name = 'torso_link'
         foot_name = "ankle_roll"
@@ -249,7 +251,7 @@ class G1BaseCfg(BaseConfig):
         disable_gravity = False
         collapse_fixed_joints = True  # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
         links_to_keep = ['']
-        fix_base_link = False  # fixe the base of the robot
+        fix_base_link = True  # fixe the base of the robot
         default_dof_drive_mode = 3  # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
         self_collisions = 0  # 1 to disable, 0 to enable...bitwise filter
         replace_cylinder_with_capsule = False  # replace collision cylinders with capsules, leads to faster/more stable simulation

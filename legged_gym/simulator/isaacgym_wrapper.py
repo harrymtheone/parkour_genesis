@@ -32,10 +32,97 @@ class IsaacGymWrapper(BaseWrapper):
         self.lookat_id = 0
         self.cam_handles = []
         if not self.headless:
+            # self._debug_robot_state("AFTER prepare_sim")
             self._create_viewer()
             self.clear_lines = True
 
         self.init_done = True
+
+
+    def _debug_robot_state(self, stage_name):
+        """Debug method to visualize robot state at different initialization stages"""
+        print(f"\n{'=' * 50}")
+        print(f"DEBUG CHECKPOINT: {stage_name}")
+        print(f"{'=' * 50}")
+
+        # Print robot info
+        print(f"Number of DOFs: {self.num_dof}")
+        print(f"Number of bodies: {self.num_bodies}")
+
+        # Print joint states if available
+        if len(self._envs) > 0 and len(self._actor_handles) > 0:
+            env_handle = self._envs[0]
+            actor_handle = self._actor_handles[0]
+
+            try:
+                # Get DOF states
+                dof_states = self.gym.get_actor_dof_states(env_handle, actor_handle, gymapi.STATE_ALL)
+                print("DOF positions:")
+                for i, state in enumerate(dof_states):
+                    dof_name = self.gym.get_asset_dof_name(self._robot_asset, i)
+                    print(f"  {dof_name}: pos={state[0]:.4f}, vel={state[1]:.4f}")
+
+                # Check specific ankle joints
+                ankle_roll_indices = [i for i in range(self.num_dof) if 'ankle_roll' in self.gym.get_asset_dof_name(self._robot_asset, i)]
+                for idx in ankle_roll_indices:
+                    dof_name = self.gym.get_asset_dof_name(self._robot_asset, idx)
+                    print(f"Ankle roll joint '{dof_name}' at index {idx}: pos={dof_states[idx][0]:.4f}")
+
+                # Try to get rigid body states for ankle orientation
+                try:
+                    self.gym.refresh_rigid_body_state_tensor(self.sim)
+                    rigid_body_states = self.gym.acquire_rigid_body_state_tensor(self.sim)
+                    print("Rigid body states acquired successfully")
+                except Exception as e:
+                    print(f"Could not get rigid body states: {e}")
+
+            except Exception as e:
+                print(f"Could not get DOF states: {e}")
+
+        # Create debug viewer
+        debug_viewer = self.gym.create_viewer(self.sim, gymapi.CameraProperties())
+        if debug_viewer is None:
+            print("*** Failed to create debug viewer")
+            return
+
+        # Set camera position
+        cam_pos = gymapi.Vec3(2.0, 2.0, 1.5)
+        cam_target = gymapi.Vec3(0.0, 0.0, 0.5)
+        self.gym.viewer_camera_look_at(debug_viewer, None, cam_pos, cam_target)
+
+        print(f"Debug visualization for '{stage_name}' active.")
+        print("Press ESC to continue to next checkpoint...")
+        while not self.gym.query_viewer_has_closed(debug_viewer):
+            # Only render, no physics
+            self.gym.step_graphics(self.sim)
+            self.gym.draw_viewer(debug_viewer, self.sim, True)
+            self.gym.sync_frame_time(self.sim)
+
+        print(f"Debug visualization for '{stage_name}' closed.")
+        self.gym.destroy_viewer(debug_viewer)
+
+        # Simulate
+        first_loop = True
+        while not self.gym.query_viewer_has_closed(self.viewer):
+            # # 1. Simulate physics
+            # self.gym.simulate(self.sim)
+            #
+            # # 2. Wait for simulation results
+            # self.gym.fetch_results(self.sim, True)
+
+            # 3. Step graphics and render viewer
+            self.gym.step_graphics(self.sim)
+            self.gym.draw_viewer(self.viewer, self.sim, True)
+
+            # 4. Sync to real-time
+            self.gym.sync_frame_time(self.sim)
+
+            # DEBUG CHECKPOINT 6: After first graphics step
+            if first_loop:
+                first_loop = False
+                self._debug_robot_state("AFTER first graphics step")
+                # After this point, continue normal loop without interruption
+                break  # Exit debug mode and continue normal operation
 
     # ---------------------------------------------- Sim Creation ----------------------------------------------
 
@@ -164,6 +251,7 @@ class IsaacGymWrapper(BaseWrapper):
 
         # save body names from the asset
         robot_asset = self.gym.load_asset(self.sim, asset_root, asset_file, asset_options)
+        self._robot_asset = robot_asset  # Store for debug access
         self.num_dof = self.gym.get_asset_dof_count(robot_asset)
         self.num_bodies = self.gym.get_asset_rigid_body_count(robot_asset)
         dof_props_asset = self.gym.get_asset_dof_properties(robot_asset)

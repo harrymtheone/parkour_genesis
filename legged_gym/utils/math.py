@@ -80,6 +80,29 @@ def quat_to_xyz(quat):
 
 
 @torch.jit.script
+def quat_to_mat(quat):
+    # type: (torch.Tensor) -> torch.Tensor
+    x, y, z, w = quat.reshape(-1, 4).unbind(-1)
+    xx = x * x
+    yy = y * y
+    zz = z * z
+    ww = w * w
+
+    xy = x * y
+    xz = x * z
+    yz = y * z
+    xw = x * w
+    yw = y * w
+    zw = z * w
+
+    row0 = torch.stack([1 - 2 * (yy + zz), 2 * (xy - zw), 2 * (xz + yw)], dim=-1)
+    row1 = torch.stack([2 * (xy + zw), 1 - 2 * (xx + zz), 2 * (yz - xw)], dim=-1)
+    row2 = torch.stack([2 * (xz - yw), 2 * (yz + xw), 1 - 2 * (xx + yy)], dim=-1)
+
+    rot_matrix = torch.stack([row0, row1, row2], dim=-2)  # shape (..., 3, 3)
+    return rot_matrix
+
+@torch.jit.script
 def transform_by_quat(v, quat):
     # type: (torch.Tensor, torch.Tensor) -> torch.Tensor
     v = v.reshape(-1, 3)

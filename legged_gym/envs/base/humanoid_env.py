@@ -610,6 +610,10 @@ class HumanoidEnv(ParkourTask):
         # rew[self.env_class < 2] = 0.
         return rew.sum(dim=1)
 
+    @staticmethod
+    def _reward_alive():
+        return 1.
+
     # ----------------------------------------- Graphics -------------------------------------------
 
     def _draw_foothold(self):

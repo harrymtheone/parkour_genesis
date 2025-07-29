@@ -65,7 +65,7 @@ class G1OdomCfg(G1BaseCfg):
         sw_switch = True
         phase_offset_l = 0.
         phase_offset_r = 0.5
-        air_ratio = 0.4
+        air_ratio = 0.5
         delta_t = 0.02
 
         class flat_ranges:

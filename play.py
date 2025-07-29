@@ -50,10 +50,9 @@ def play(args):
     task_cfg.domain_rand.dof_lag_range = (3, 3)
     task_cfg.domain_rand.randomize_torques = False
     task_cfg.domain_rand.randomize_gains = False
-    # task_cfg.domain_rand.joint_armature_range = {
-    #     'default': dict(range=(0.01, 0.05), log_space=False),
-    #     'ankle': dict(dof_ids=(4, 9), range=(0.01, 0.05), log_space=True)
-    # }
+    task_cfg.domain_rand.joint_armature_range = {
+        'default': dict(range=(0.01, 0.05), log_space=False),
+    }
 
     task_cfg.rewards.only_positive_rewards = False
 
@@ -74,9 +73,9 @@ def play(args):
         'parkour_box': 0,
         'parkour_step': 0,
         'parkour_stair': 1,
-        'parkour_stair_down': 0,
-        'parkour_mini_stair': 0,
-        'parkour_mini_stair_down': 0,
+        'parkour_stair_down': 1,
+        'parkour_mini_stair': 1,
+        'parkour_mini_stair_down': 1,
         'parkour_go_back_stair': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
@@ -94,15 +93,15 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    # runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-24_11-22-26/latest.pth',
-    #                                             map_location=args.device,
-    #                                             weights_only=True))
+    runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-29_10-10-09/latest.pth',
+                                                map_location=args.device,
+                                                weights_only=True))
 
     with Live(vis.gen_info_panel(args, env)) as live:
         for step_i in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
-            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=True, dones=dones)
+            rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=False, eval_=False, dones=dones)
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.9, eval_=True, dones=dones)
 
             actions = rtn['actions']
@@ -115,7 +114,7 @@ def play(args):
                 cv2.waitKey(1)
 
             if 'recon_refine' in rtn:
-                recon_rough = rtn['recon_rough']
+                # recon_rough = rtn['recon_rough']
                 recon_refine = rtn['recon_refine']
                 est = rtn['estimation']
 
@@ -136,11 +135,11 @@ def play(args):
                 recon_refine[1] += 0.5
                 env.draw_recon(recon_refine)
 
-            elif hasattr(obs, 'scan'):
-                noisy_scan = obs.scan[env.lookat_id].clone()
-                # noisy_scan[0] = - noisy_scan[0] - 0.7
-                noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
-                env.draw_recon(noisy_scan)
+            # elif hasattr(obs, 'scan'):
+            #     noisy_scan = obs.scan[env.lookat_id].clone()
+            #     # noisy_scan[0] = - noisy_scan[0] - 0.7
+            #     noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
+            #     env.draw_recon(noisy_scan)
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.

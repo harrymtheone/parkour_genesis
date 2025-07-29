@@ -54,11 +54,11 @@ class G1BaseEnv(HumanoidEnv):
         ref_dof_pos[:, num_waist + 0] = -clock[:, 0] * scale_1
         ref_dof_pos[:, num_waist + 3] = clock[:, 0] * scale_2
         ref_dof_pos[:, num_waist + 4] = -clock[:, 0] * scale_1
-
-        # right motion
-        ref_dof_pos[:, num_waist + 6] = -clock[:, 1] * scale_1
-        ref_dof_pos[:, num_waist + 9] = clock[:, 1] * scale_2
-        ref_dof_pos[:, num_waist + 10] = -clock[:, 1] * scale_1
+        #
+        # # right motion
+        # ref_dof_pos[:, num_waist + 6] = -clock[:, 1] * scale_1
+        # ref_dof_pos[:, num_waist + 9] = clock[:, 1] * scale_2
+        # ref_dof_pos[:, num_waist + 11] = -clock[:, 1] * scale_1
 
         self.ref_dof_pos[:] = self.init_state_dof_pos
         self.ref_dof_pos[:, self.dof_activated] += ref_dof_pos

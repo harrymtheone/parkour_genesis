@@ -7,7 +7,7 @@ import os
 
 from legged_gym.utils.task_registry import TaskRegistry
 from rsl_rl.modules.odometer.actor import Actor
-from rsl_rl.modules.odometer.recurrent import OdomRecurrentTransformer
+from rsl_rl.modules.odometer.priv_recon import PrivReconstructor
 from torch import nn
 
 
@@ -22,23 +22,15 @@ class ActorJIT(Actor):
         return self.actor(x), hidden_states_new
 
 
-class OdometerToJit(OdomRecurrentTransformer):
+class OdometerToJit(PrivReconstructor):
+    def forward(self, prop, depth, odom, cam_rot_mat, prev_recon):
+        # Get transformer embedding using depth, prop, odom, cam_rot_mat, and previous reconstruction
+        transformer_output = self.transformer_forward(prop, depth, odom, cam_rot_mat, prev_recon)
 
-    def forward(self, prop, depth, hidden_states):
-        enc = self.transformer_forward(prop, depth)
+        # Refine reconstruction using UNet with previous reconstruction encoder
+        recon_refine = self.recon_refine(prev_recon, transformer_output)
 
-        out, hidden_states_new = self.gru(enc.unsqueeze(0), hidden_states)
-
-        out = torch.cat([enc, out.squeeze(0)], dim=1)
-
-        # reconstructor
-        recon_rough = self.recon_rough(out)
-        recon_refine = self.recon_refine(recon_rough)
-
-        # estimator
-        est = self.estimator(out)
-
-        return recon_rough, recon_refine, est, hidden_states_new
+        return recon_refine
 
 
 def trace_actor(proj, cfg, exptid, checkpoint):
@@ -97,12 +89,10 @@ def trace_odom(proj, cfg, exptid, checkpoint):
     model = OdometerToJit(
         task_cfg.env.n_proprio,
         task_cfg.odometer.odom_transformer_embed_dim,
-        task_cfg.odometer.odom_gru_hidden_size,
-        task_cfg.odometer.estimator_output_dim
     ).to(device)
 
-    model.load_state_dict(state_dict['odometer_state_dict'])
-    model.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-24_11-22-26/latest.pth', weights_only=True))
+    # model.load_state_dict(state_dict['odometer_state_dict'])
+    model.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-28_22-45-38/latest.pth', weights_only=True))
     model.eval()
 
     # define the trace function
@@ -122,14 +112,16 @@ def trace_odom(proj, cfg, exptid, checkpoint):
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
         depth = torch.zeros(1, 1, 64, 64, device=device)
-        hidden_states = torch.zeros(2, 1, task_cfg.odometer.odom_gru_hidden_size, device=device)
+        odom = torch.zeros(1, 4, device=device)
+        cam_rot_mat = torch.zeros(1, 9, device=device)
+        prev_recon = torch.zeros(1, 2, 32, 16, device=device)
 
-        trace_and_save(model, (proprio, depth, hidden_states))
+        trace_and_save(model, (proprio, depth, odom, cam_rot_mat, prev_recon))
 
 
 if __name__ == '__main__':
-    # kwargs = dict(proj='t1', cfg='t1_odom_finetune', exptid='t1_odom_neg_014s3', checkpoint=121900)
-    kwargs = dict(proj='pdd', cfg='pdd_odom_finetune', exptid='pdd_odom_002', checkpoint=16800)
+    kwargs = dict(proj='t1', cfg='t1_odom_neg_finetune', exptid='t1_odom_neg_014s3', checkpoint=121900)
+    # kwargs = dict(proj='pdd', cfg='pdd_odom_finetune', exptid='pdd_odom_002', checkpoint=16800)
 
     trace_actor(**kwargs)
     trace_odom(**kwargs)
