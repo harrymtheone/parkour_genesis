@@ -119,7 +119,7 @@ def play(args):
 
         with torch.amp.autocast(enabled=use_amp, device_type=args.device):
             # rollout - use the training hidden state
-            recon = reconstructor.inference_forward(obs.proprio, obs.depth, obs.priv_actor * 0., obs.cam_rot, eval_=False)
+            recon = reconstructor.inference_forward(obs.proprio, obs.depth, obs.priv_actor, eval_=False)
 
             # Accumulate losses
             loss_recon += l1(recon[:, 0], obs_critic.scan)

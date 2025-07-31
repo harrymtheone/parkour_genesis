@@ -271,7 +271,7 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
         randomize_joint_armature = True
         joint_armature_range = {
             'default': dict(range=(0.01, 0.05), log_space=False),
-            'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.0001, 0.05), log_space=True)
+            'ankle': dict(dof_ids=(5, 6, 11, 12), range=(0.0001, 0.05), log_space=True)
         }
 
     class terrain(T1_Odom_Neg_Cfg.terrain):

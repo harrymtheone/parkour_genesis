@@ -240,15 +240,9 @@ class Odometer:
             return {}
 
         with torch.autocast(self.device.type, torch.float16, enabled=self.use_amp):
-            # recon_rough, recon_refine, est = self.odom.inference_forward(obs.proprio, obs.depth, obs.priv_actor, eval_=True)
-            recon_refine = self.odom.inference_forward(obs.proprio, obs.depth, obs.priv_actor, obs.cam_rot, eval_=True)
+            recon_refine = self.odom.inference_forward(obs.proprio, obs.depth, obs.priv_actor, eval_=True)
 
-            return {
-                # 'recon_rough': recon_rough,
-                'recon_refine': recon_refine,
-                # 'estimation': est,
-                'estimation': obs.priv_actor,
-            }
+            return {'recon': recon_refine}
 
     def reset(self, dones):
         self.odom.reset(dones)

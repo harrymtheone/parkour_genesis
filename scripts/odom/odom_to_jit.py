@@ -23,9 +23,9 @@ class ActorJIT(Actor):
 
 
 class OdometerToJit(PrivReconstructor):
-    def forward(self, prop, depth, odom, cam_rot_mat, prev_recon):
+    def forward(self, prop, depth, odom, prev_recon):
         # Get transformer embedding using depth, prop, odom, cam_rot_mat, and previous reconstruction
-        transformer_output = self.transformer_forward(prop, depth, odom, cam_rot_mat, prev_recon)
+        transformer_output = self.transformer_forward(prop, depth, odom, prev_recon)
 
         # Refine reconstruction using UNet with previous reconstruction encoder
         recon_refine = self.recon_refine(prev_recon, transformer_output)
@@ -67,7 +67,7 @@ def trace_actor(proj, cfg, exptid, checkpoint):
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
         recon = torch.zeros(1, 2, 32, 16, device=device)
-        priv_est = torch.zeros(1, task_cfg.odometer.estimator_output_dim, device=device)
+        priv_est = torch.zeros(1, 3, device=device)
         hidden_states = torch.zeros(1, 1, task_cfg.policy.actor_gru_hidden_size, device=device)
 
         trace_and_save(model, (proprio, recon, priv_est, hidden_states))
@@ -92,7 +92,7 @@ def trace_odom(proj, cfg, exptid, checkpoint):
     ).to(device)
 
     # model.load_state_dict(state_dict['odometer_state_dict'])
-    model.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-28_22-45-38/latest.pth', weights_only=True))
+    model.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-31_11-52-53/latest.pth', weights_only=True))
     model.eval()
 
     # define the trace function
@@ -112,15 +112,14 @@ def trace_odom(proj, cfg, exptid, checkpoint):
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
         depth = torch.zeros(1, 1, 64, 64, device=device)
-        odom = torch.zeros(1, 4, device=device)
-        cam_rot_mat = torch.zeros(1, 9, device=device)
+        odom = torch.zeros(1, 3, device=device)
         prev_recon = torch.zeros(1, 2, 32, 16, device=device)
 
-        trace_and_save(model, (proprio, depth, odom, cam_rot_mat, prev_recon))
+        trace_and_save(model, (proprio, depth, odom, prev_recon))
 
 
 if __name__ == '__main__':
-    kwargs = dict(proj='t1', cfg='t1_odom_neg_finetune', exptid='t1_odom_neg_014s3', checkpoint=121900)
+    kwargs = dict(proj='t1', cfg='t1_odom_neg_finetune', exptid='t1_odom_neg_016s1', checkpoint=38700)
     # kwargs = dict(proj='pdd', cfg='pdd_odom_finetune', exptid='pdd_odom_002', checkpoint=16800)
 
     trace_actor(**kwargs)

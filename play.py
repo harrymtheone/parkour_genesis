@@ -18,8 +18,8 @@ slowmo = 1
 
 def play(args):
     log_root = 'logs'
-    args.simulator = SimulatorType.Genesis
-    # args.simulator = SimulatorType.IsaacGym
+    # args.simulator = SimulatorType.Genesis
+    args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
 
@@ -60,8 +60,8 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
         'rough_slope': 0,
-        'stairs_up': 1,
-        'stairs_down': 1,
+        'stairs_up': 0,
+        'stairs_down': 0,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -72,10 +72,10 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 0,
-        'parkour_stair_down': 0,
-        'parkour_mini_stair': 0,
-        'parkour_mini_stair_down': 0,
+        'parkour_stair': 1,
+        'parkour_stair_down': 1,
+        'parkour_mini_stair': 1,
+        'parkour_mini_stair_down': 1,
         'parkour_go_back_stair': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
@@ -93,7 +93,7 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-29_10-10-09/latest.pth',
+    runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-31_11-52-53/latest.pth',
                                                 map_location=args.device,
                                                 weights_only=True))
 
@@ -113,33 +113,28 @@ def play(args):
                 cv2.imshow("wm_depth", cv2.resize(img.cpu().numpy(), (img.shape[0] * 5, img.shape[1] * 5)))
                 cv2.waitKey(1)
 
-            if 'recon_refine' in rtn:
-                # recon_rough = rtn['recon_rough']
-                recon_refine = rtn['recon_refine']
-                est = rtn['estimation']
-
-                args.est_vel = est[env.lookat_id, :3] / 2
-                args.est_height = est[env.lookat_id, 3]
-                args.recon_loss = torch.nn.functional.l1_loss(obs.scan[env.lookat_id, 1], recon_refine[env.lookat_id, 1])
+            if 'recon' in rtn:
+                recon = rtn['recon']
+                args.recon_loss = torch.nn.functional.l1_loss(obs.scan[env.lookat_id, 1], recon[env.lookat_id, 1])
 
                 # env._draw_body_hmap(recon_rough[env.lookat_id])
-                # env.draw_recon(recon_refine[env.lookat_id])
+                # env.draw_recon(recon[env.lookat_id])
                 # env.draw_est_hmap(est)
-                # env.draw_hmap(scan - recon_refine - 1.0, world_frame=False)
+                # env.draw_hmap(scan - recon - 1.0, world_frame=False)
                 # env.draw_recon(obs.scan[env.lookat_id])
 
-                recon_refine = recon_refine[env.lookat_id].clone()
-                # recon_refine[0] = - recon_refine[0] - 0.7
-                # recon_refine[0] = recon_refine[0] - task_cfg.normalization.scan_norm_bias + est[env.lookat_id, 3]
-                recon_refine[0] = recon_refine[0] - task_cfg.normalization.scan_norm_bias + obs_critic.priv_actor[env.lookat_id, 3]
-                recon_refine[1] += 0.5
-                env.draw_recon(recon_refine)
+                recon = recon[env.lookat_id].clone()
+                # recon[0] = - recon[0] - 0.7
+                # recon[0] = recon[0] - task_cfg.normalization.scan_norm_bias + est[env.lookat_id, 3]
+                recon[0] = recon[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
+                recon[1] += 0.5
+                env.draw_recon(recon)
 
-            # elif hasattr(obs, 'scan'):
-            #     noisy_scan = obs.scan[env.lookat_id].clone()
-            #     # noisy_scan[0] = - noisy_scan[0] - 0.7
-            #     noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
-            #     env.draw_recon(noisy_scan)
+            elif hasattr(obs, 'scan'):
+                noisy_scan = obs.scan[env.lookat_id].clone()
+                # noisy_scan[0] = - noisy_scan[0] - 0.7
+                noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
+                env.draw_recon(noisy_scan)
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.

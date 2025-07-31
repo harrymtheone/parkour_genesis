@@ -8,13 +8,12 @@ from ...utils.math import transform_by_yaw, torch_rand_float, quat_to_mat
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, depth, priv_actor, scan, cam_rot):
+    def __init__(self, proprio, depth, priv_actor, scan):
         super().__init__()
         self.proprio = proprio.clone()
         self.depth = depth
         self.priv_actor = priv_actor.clone()
         self.scan = scan.clone()
-        self.cam_rot = cam_rot.clone()
 
     def no_depth(self):
         return ObsNoDepth(self.proprio, self.priv_actor, self.scan)
@@ -180,20 +179,17 @@ class T1OdomNegEnvironment(T1BaseEnv):
         else:
             depth = None
 
-        cam_rot_mat = quat_to_mat(self.sim.link_quat[:, self.cam_link_indices]).flatten(1, 2)
-
         priv_actor = torch.cat([
             base_lin_vel * self.obs_scales.lin_vel,  # 3
             # self.base_height.unsqueeze(1),  # 1
         ], dim=-1)
 
-        self.actor_obs = ActorObs(proprio, depth, priv_actor, scan_edge, cam_rot_mat)
+        self.actor_obs = ActorObs(proprio, depth, priv_actor, scan_edge)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation
         priv_actor_clean = torch.cat([
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
-            # self.base_height.unsqueeze(1),  # 1
         ], dim=-1)
 
         # hmap = root_height - scan

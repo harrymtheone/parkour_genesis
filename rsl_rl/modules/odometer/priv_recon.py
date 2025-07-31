@@ -106,19 +106,16 @@ class PrivReconstructor(nn.Module):
         # proprio embedding
         self.mlp_prop = nn.Sequential(nn.Linear(n_proprio, embed_dim), activation)
 
-        # odometer embedding (now takes 4D input)
+        # odometer embedding (now takes 3D input)
         self.mlp_odom = nn.Sequential(nn.Linear(3, embed_dim), activation)
-
-        # camera rotation matrix embedding (9D input)
-        self.mlp_cam_rot = nn.Sequential(nn.Linear(9, embed_dim), activation)
 
         # depth embedding
         self.cnn_depth = nn.Conv2d(in_channels=1, out_channels=embed_dim, kernel_size=8, stride=8, bias=False)
         self.layer_norm = nn.LayerNorm(embed_dim)
 
-        # position embedding for transformer (prop + odom + cam_rot + depth tokens + prev_recon)
-        # prop(1) + odom(1) + cam_rot(1) + depth(8*8=64) + prev_recon(1) = 68 tokens
-        self.pos_embed = nn.Parameter(torch.zeros(1, 1 + 1 + 1 + 8 * 8 + 1, embed_dim))
+        # position embedding for transformer (prop + odom + depth tokens + prev_recon)
+        # prop(1) + odom(1) + depth(8*8=64) + prev_recon(1) = 67 tokens
+        self.pos_embed = nn.Parameter(torch.zeros(1, 1 + 1 + 8 * 8 + 1, embed_dim))
         nn.init.trunc_normal_(self.pos_embed, std=0.2)
 
         # previous reconstruction embedding
@@ -130,7 +127,7 @@ class PrivReconstructor(nn.Module):
 
         # transformer
         self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=128, batch_first=True, dropout=0.),
+            nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=128, batch_first=True, dropout=0.1),
             num_layers=num_layers
         )
 
@@ -140,9 +137,9 @@ class PrivReconstructor(nn.Module):
         # Store previous reconstruction
         self.prev_recon = None
 
-    def forward(self, prop, depth, odom, cam_rot_mat):
-        # Get transformer embedding using depth, prop, odom, cam_rot_mat, and previous reconstruction
-        transformer_output = self.transformer_forward(prop, depth, odom, cam_rot_mat, self.prev_recon)
+    def forward(self, prop, depth, odom):
+        # Get transformer embedding using depth, prop, odom, and previous reconstruction
+        transformer_output = self.transformer_forward(prop, depth, odom, self.prev_recon)
 
         # Refine reconstruction using UNet with previous reconstruction encoder
         recon_refine = self.recon_refine(self.prev_recon, transformer_output)
@@ -152,12 +149,12 @@ class PrivReconstructor(nn.Module):
 
         return recon_refine
 
-    def inference_forward(self, prop, depth, odom, cam_rot_mat, **kwargs):
+    def inference_forward(self, prop, depth, odom, **kwargs):
         if self.prev_recon is None:
             self.prev_recon = torch.zeros(prop.size(0), 2, 32, 16, device=prop.device)
 
-        # Get transformer embedding using depth, prop, odom, cam_rot_mat, and previous reconstruction
-        transformer_output = self.transformer_forward(prop, depth, odom, cam_rot_mat, self.prev_recon)
+        # Get transformer embedding using depth, prop, odom, and previous reconstruction
+        transformer_output = self.transformer_forward(prop, depth, odom, self.prev_recon)
 
         # Refine reconstruction using UNet with previous reconstruction encoder
         recon_refine = self.recon_refine(self.prev_recon, transformer_output)
@@ -167,17 +164,14 @@ class PrivReconstructor(nn.Module):
 
         return recon_refine
 
-    def transformer_forward(self, prop, depth, odom, cam_rot_mat, prev_recon):
+    def transformer_forward(self, prop, depth, odom, prev_recon):
         batch_size = prop.shape[0]
         
         # convert proprio to a token
         latent_prop = self.mlp_prop(prop).unsqueeze(1)
 
-        # convert odom (4D) to a token
-        latent_odom = self.mlp_odom(odom[:, :3]).unsqueeze(1)
-
-        # convert camera rotation matrix (9D) to a token
-        latent_cam_rot = self.mlp_cam_rot(cam_rot_mat).unsqueeze(1)
+        # convert odom (3D) to a token
+        latent_odom = self.mlp_odom(odom).unsqueeze(1)
 
         # convert depth to tokens
         latent_depth = self.cnn_depth(depth)  # (batch, embed_dim, 8, 8)
@@ -192,7 +186,7 @@ class PrivReconstructor(nn.Module):
         latent_prev_recon = latent_prev_recon.flatten(2).transpose(1, 2)  # -> (batch, 1, embed_dim)
 
         # concatenate all tokens
-        x = torch.cat([latent_prop, latent_odom, latent_cam_rot, latent_depth, latent_prev_recon], dim=1)
+        x = torch.cat([latent_prop, latent_odom, latent_depth, latent_prev_recon], dim=1)
         
         # Expand position embeddings to match batch size
         pos_embed = self.pos_embed.expand(batch_size, -1, -1)

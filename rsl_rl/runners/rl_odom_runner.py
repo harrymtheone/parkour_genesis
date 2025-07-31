@@ -257,7 +257,7 @@ class RLOdomRunner(RunnerLogger):
             # recon_refine = rtn['recon_refine']
             # recon_refine[:, 1] = torch.where(recon_refine[:, 1] < 0., 0., 1.)
             # recon_refine[:, 1] = torch.sigmoid(recon_refine[:, 1])
-            rtn.update(self.alg.play_act(obs, recon=rtn['recon_refine'], est=rtn['estimation'], **kwargs))
+            rtn.update(self.alg.play_act(obs, recon=rtn['recon_refine'], est=obs.priv_actor, **kwargs))
         else:
             rtn.update(self.alg.play_act(obs, recon=None, est=None, **kwargs))
 

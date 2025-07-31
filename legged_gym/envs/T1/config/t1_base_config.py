@@ -264,7 +264,7 @@ class T1BaseCfg(BaseConfig):
 
     class asset:
         file = LEGGED_GYM_ROOT_DIR + '/robots/T1/T1_legs.urdf'
-        name = 'T1'
+        name = 'T1_hzx'
         base_link_name = 'Trunk'
         foot_name = 'foot_link'
         knee_name = 'Ankle_Cross'
