@@ -13,7 +13,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        priv_actor_len = 3
+        priv_actor_len = 4
 
         num_critic_obs = 70
         len_critic_his = 50

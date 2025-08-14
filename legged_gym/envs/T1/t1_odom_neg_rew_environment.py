@@ -181,7 +181,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
 
         priv_actor = torch.cat([
             base_lin_vel * self.obs_scales.lin_vel,  # 3
-            # self.base_height.unsqueeze(1),  # 1
+            self.base_height.unsqueeze(1),  # 1
         ], dim=-1)
 
         self.actor_obs = ActorObs(proprio, depth, priv_actor, scan_edge)
