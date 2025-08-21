@@ -330,6 +330,6 @@ class RewVisualizer(BaseVisualizer):
     his_length = 50
 
     def plot(self, env):
-        # rew = env.extras['rew_elements']
+        # rew = env.extras['step_rew']
         rew = env.rew_buf[env.lookat_id].item()
         self._plot({'Rew': rew})

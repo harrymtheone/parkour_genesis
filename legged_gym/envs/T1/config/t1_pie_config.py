@@ -22,10 +22,51 @@ class T1_PIE_Cfg(T1BaseCfg):
         activated = True
 
         class depth_0:
-            link_attached_to = 'H2'
-            position = [0.07, 0, 0.09]  # front camera
+            # link_attached_to = 'H2'
+            # position = [0.07, 0, 0.09]  # front camera
+            # pitch = 0  # positive is looking down
+            link_attached_to = 'Trunk'
+            position = [0.17, 0, 0.0]  # front camera
+            pitch = 60  # positive is looking down
+            yaw = 0
+
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-            pitch = 0  # positive is looking down
+            pitch_range = [-3, 3]
+
+            data_format = 'depth'  # depth, cloud, hmap
+            update_interval = 1
+            delay_prop = None  # Gaussian (mean, std), or None
+            history_length = 2
+
+            resolution = (114, 64)  # width, height
+            crop = (0, 2, 4, 4)  # top, bottom, left, right
+
+            edge_process = True
+            edge_noise = dict(blank_ratio=0.2, repeat_ratio=0.2)
+            blank_ratio = 0.002
+
+            near_clip = 0
+            far_clip = 2
+            dis_noise_global = 0.01  # in meters
+            dis_noise_gaussian = 0.01  # in meters
+            noise_scale_perlin = 1  # 0-1
+
+            resized = (64, 64)
+            horizontal_fov = 87
+
+            bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
+            hmap_shape = (16, 16)  # x dim, y dim
+
+        class depth_1:
+            # link_attached_to = 'H2'
+            # position = [0.07, 0, 0.09]  # front camera
+            # pitch = 0  # positive is looking down
+            link_attached_to = 'Trunk'
+            position = [-0.06, 0, 0.17]  # front camera
+            pitch = 60  # positive is looking down
+            yaw = 180
+
+            position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch_range = [-3, 3]
 
             data_format = 'depth'  # depth, cloud, hmap
@@ -75,34 +116,24 @@ class T1_PIE_Cfg(T1BaseCfg):
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [-0.8, 1.2]
-            lin_vel_y = [-0.8, 0.8]
+            lin_vel_x = [-0.5, 0.8]
+            lin_vel_y = [-0.5, 0.5]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.3, 1.2]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.3, 0.8]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
+        description_type = 'plane'
+
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
             'smooth_slope': 2,
             'rough_slope': 1,
-            'stairs_up': 0,
-            'stairs_down': 0,
-            'discrete': 0,
-            'stepping_stone': 0,
-            'gap': 0,
-            'pit': 0,
-            'parkour': 0,
-            'parkour_gap': 0,
-            'parkour_box': 0,
-            'parkour_step': 0,
-            'parkour_stair': 0,
-            'parkour_flat': 0,
         }
 
     class noise(T1BaseCfg.noise):
@@ -141,64 +172,65 @@ class T1_PIE_Cfg(T1BaseCfg):
         randomize_joint_armature = True
         joint_armature_range = {
             'default': dict(range=(0.01, 0.05), log_space=False),
-            'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.01, 0.05), log_space=False)
         }
 
         randomize_coulomb_friction = True
 
     class rewards:
         base_height_target = 0.64
-        feet_height_target = 0.05
-        feet_height_target_max = 0.07
+        feet_height_target = 0.04
+        feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
-        only_positive_rewards_until_epoch = 1000  # after the epoch, turn off only_positive_reward
+        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards_until_epoch = 500  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
-        soft_dof_pos_limit = 0.9
         EMA_update_alpha = 0.99
 
-        min_dist = 0.2
-        max_dist = 0.5
+        min_dist = 0.25
+        max_dist = 0.50
         max_contact_force = 300
 
         rew_norm_factor = 1.0
 
-        class scales:
+        class scales:  # float or (start, end, span, start_it)
             # gait
-            joint_pos = 2.
-            feet_contact_number = 1.2
-            feet_clearance = 1.
-            feet_distance = 0.2
-            knee_distance = 0.2
-            feet_rotation = 0.5
+            joint_pos = (2.0, 0.3, 10, 200)
+            feet_contact_number = (1.2, 0.6, 10, 200)
+            feet_clearance = (1., 0.5, 10, 200)
+            feet_distance = -1.
+            knee_distance = -1.
+            feet_rotation = -0.3
 
             # vel tracking
-            tracking_lin_vel = 2.5
-            tracking_goal_vel = 3.0
-            tracking_ang_vel = 2.5
+            tracking_lin_vel = 1.5
+            tracking_goal_vel = 2.5
+            tracking_ang_vel = 1.0
 
             # contact
-            feet_slip = -1.
+            feet_slip = -0.1
             feet_contact_forces = -1e-3
-            feet_stumble = -1.
-            foothold = -1.
+            feet_stumble = -2.
+            foothold = -0.1
+            # feet_edge = -0.1
 
             # base pos
-            default_joint_pos = 1.0
-            orientation = 1.
-            base_height = 0.2
-            base_acc = 0.2
-            vel_mismatch_exp = 0.5
+            default_dof_pos = -0.04
+            default_dof_pos_yr = (0., -1., 10, 100)
+            orientation = -10.0
+            # base_height = -10.
+            base_acc = -1.
+            lin_vel_z = -1.
+            ang_vel_xy = (0., -0.05, 10, 100)
 
             # energy
-            action_smoothness = -3e-3
+            action_smoothness = (0., -1e-3, 10, 100)
+            # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
-            dof_acc = -1e-7
+            dof_acc = -1.e-7
             collision = -1.
-
-            dof_torque_limits = -0.01
             dof_pos_limits = -10.
+            dof_torque_limits = -0.01
 
     class policy:
         # actor parameters

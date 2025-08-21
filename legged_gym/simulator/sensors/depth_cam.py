@@ -243,7 +243,7 @@ class DepthCam(SensorBase):
 
         self.sensor_offset_pos_design[:] = torch.tensor(cfg['position'], dtype=torch.float, device=self.device).unsqueeze(0)
         self.sensor_offset_quat_design[:] = xyz_to_quat(  # for point cloud computation
-            torch.deg2rad(torch.tensor([[0, cfg['pitch'], 0]], dtype=torch.float, device=self.device)))
+            torch.deg2rad(torch.tensor([[0, cfg['pitch'], cfg['yaw']]], dtype=torch.float, device=self.device)))
 
         # camera randomization
         self.sensor_offset_pos[:] = self.sensor_offset_pos_design
@@ -253,6 +253,7 @@ class DepthCam(SensorBase):
 
         camera_xyz_angle = torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device)
         camera_xyz_angle[:, 1:2] = cfg['pitch'] + torch_rand_float(*cfg['pitch_range'], shape=(self.num_envs, 1), device=self.device)
+        camera_xyz_angle[:, 2:3] = cfg['yaw']
         self.sensor_offset_quat[:] = xyz_to_quat(torch.deg2rad(camera_xyz_angle))
 
         u_0, v_0 = width / 2, height / 2

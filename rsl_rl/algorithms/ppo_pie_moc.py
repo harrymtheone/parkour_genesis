@@ -4,8 +4,8 @@ import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.model_pie import Policy
-from rsl_rl.modules.utils import UniversalCritic
-from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
+from rsl_rl.modules.utils import MixtureOfCritic
+from rsl_rl.storage import RolloutStorageMixtureOfCritic as RolloutStorage
 from .alg_base import BaseAlgorithm
 
 try:
@@ -36,7 +36,7 @@ class Transition:
             setattr(self, key, None)
 
 
-class PPO_PIE(BaseAlgorithm):
+class PPO_PIE_MOC(BaseAlgorithm):
     def __init__(self, task_cfg, device=torch.device('cpu'), env=None, **kwargs):
         self.env = env
 
@@ -49,7 +49,7 @@ class PPO_PIE(BaseAlgorithm):
         self.actor = Policy(task_cfg.env, task_cfg.policy).to(self.device)
         self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
 
-        self.critic = UniversalCritic(task_cfg.env, task_cfg.policy).to(self.device)
+        self.critic = MixtureOfCritic(task_cfg).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
@@ -86,7 +86,7 @@ class PPO_PIE(BaseAlgorithm):
 
     def process_env_step(self, rewards, dones, infos, *args):
         self.transition.observations_next = args[0].as_obs_next()
-        self.transition.rewards = rewards.clone().unsqueeze(1)
+        self.transition.rewards = {rew_name: rew.clone().unsqueeze(1) for rew_name, rew in infos['step_rew'].items()}
         self.transition.dones = dones.unsqueeze(1)
 
         # Bootstrapping on time-outs
@@ -96,7 +96,8 @@ class PPO_PIE(BaseAlgorithm):
             else:
                 bootstrapping = (infos['time_outs']).unsqueeze(1).to(self.device)
 
-            self.transition.rewards += self.cfg.gamma * self.transition.values * bootstrapping
+            for rew_name in self.transition.rewards:
+                self.transition.rewards[rew_name] += self.cfg.gamma * self.transition.values[rew_name] * bootstrapping
 
         # Record the transition
         self.storage.add_transitions(self.transition)
@@ -150,8 +151,6 @@ class PPO_PIE(BaseAlgorithm):
             # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
             self.scaler.step(self.optimizer)
             self.scaler.update()
-
-            self.actor.clip_std(0.4, 1.0)
 
             num_updates += 1
             # policy statistics
@@ -227,6 +226,7 @@ class PPO_PIE(BaseAlgorithm):
 
             actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
             evaluation = self.critic.evaluate(critic_obs_batch)
+            evaluation = torch.cat(tuple(evaluation.values()), dim=2)
 
             # Surrogate loss
             ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
@@ -239,9 +239,9 @@ class PPO_PIE(BaseAlgorithm):
                 value_clipped = target_values_batch + (evaluation - target_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
                 value_losses = (evaluation - returns_batch).pow(2)
                 value_losses_clipped = (value_clipped - returns_batch).pow(2)
-                value_loss = torch.max(value_losses, value_losses_clipped)[mask_batch].mean() * self.cfg.value_loss_coef
+                value_loss = torch.max(value_losses, value_losses_clipped)[mask_batch].sum(-1).mean() * self.cfg.value_loss_coef
             else:
-                value_loss = (evaluation - returns_batch)[mask_batch].pow(2).mean() * self.cfg.value_loss_coef
+                value_loss = (evaluation - returns_batch)[mask_batch].pow(2).sum(-1).mean() * self.cfg.value_loss_coef
 
             entropy_loss = -self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 

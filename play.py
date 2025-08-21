@@ -46,7 +46,7 @@ def play(args):
     task_cfg.domain_rand.push_duration = [0.3]
     task_cfg.domain_rand.action_delay = True
     task_cfg.domain_rand.action_delay_range = [(2, 2)]
-    task_cfg.domain_rand.add_dof_lag = True
+    task_cfg.domain_rand.add_dof_lag = False
     task_cfg.domain_rand.dof_lag_range = (3, 3)
     task_cfg.domain_rand.randomize_torques = False
     task_cfg.domain_rand.randomize_gains = False
@@ -56,10 +56,10 @@ def play(args):
 
     task_cfg.rewards.only_positive_rewards = False
 
-    task_cfg.terrain.description_type = 'trimesh'
+    task_cfg.terrain.description_type = 'plane'
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 0,
-        'rough_slope': 0,
+        'smooth_slope': 1,
+        'rough_slope': 1,
         'stairs_up': 0,
         'stairs_down': 0,
         'huge_stair': 0,
@@ -72,10 +72,10 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
-        'parkour_stair_down': 1,
-        'parkour_mini_stair': 1,
-        'parkour_mini_stair_down': 1,
+        'parkour_stair': 0,
+        'parkour_stair_down': 0,
+        'parkour_mini_stair': 0,
+        'parkour_mini_stair_down': 0,
         'parkour_go_back_stair': 0,
     }
     task_cfg.terrain.num_cols = sum(task_cfg.terrain.terrain_dict.values())
@@ -93,9 +93,9 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-07-31_11-52-53/latest.pth',
-                                                map_location=args.device,
-                                                weights_only=True))
+    # runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-08-21_15-10-03/latest.pth',
+    #                                             map_location=args.device,
+    #                                             weights_only=True))
 
     with Live(vis.gen_info_panel(args, env)) as live:
         for step_i in range(10 * int(env.max_episode_length)):

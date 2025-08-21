@@ -90,8 +90,8 @@ class GenesisWrapper(BaseWrapper):
         else:
             raise ValueError("Terrain description type not specified!")
 
-        terrain_desc_type = 'plane'
-        # terrain_desc_type = 'heightfield'
+        # terrain_desc_type = 'plane'
+        terrain_desc_type = 'heightfield'
 
         if terrain_desc_type in ['heightfield', 'trimesh']:
             # TODO: maybe remove this in later release of Genesis?
@@ -135,6 +135,7 @@ class GenesisWrapper(BaseWrapper):
             horizontal_scale=horizontal_scale,
             vertical_scale=self.cfg.terrain.vertical_scale,
             height_field=self.terrain.height_field_raw_downsample,
+
         ))
 
         # terrain = self._scene.add_entity(gs.morphs.Terrain(

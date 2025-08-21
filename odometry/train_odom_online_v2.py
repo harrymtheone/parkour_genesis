@@ -110,6 +110,7 @@ def play(args):
 
     loss_recon = 0.
     loss_edge = 0.
+    loss_est = 0.
     accumulation_steps = 4
     num_epoch = 0
 
@@ -119,19 +120,21 @@ def play(args):
 
         with torch.amp.autocast(enabled=use_amp, device_type=args.device):
             # rollout - use the training hidden state
-            recon = reconstructor.inference_forward(obs.proprio, obs.depth, obs.priv_actor, eval_=False)
+            recon, est = reconstructor.inference_forward(obs.proprio, obs.depth, eval_=False)
 
             # Accumulate losses
             loss_recon += l1(recon[:, 0], obs_critic.scan)
             loss_edge += mse(recon[:, 1], obs_critic.edge_mask)
+            loss_est += mse(est, obs_critic.priv_actor)
 
             # Perform an update every `accumulation_steps`
             if (step_i + 1) % accumulation_steps == 0:
                 num_epoch += 1
                 loss_recon /= accumulation_steps
                 loss_edge /= accumulation_steps
+                loss_est /= accumulation_steps
 
-                total_loss = loss_recon + loss_edge
+                total_loss = loss_recon + loss_edge + loss_est
 
                 optim.zero_grad()
                 scaler.scale(total_loss).backward()
@@ -142,6 +145,7 @@ def play(args):
                     # Log the averaged losses
                     writer.add_scalar('Loss/recon', loss_recon.item(), num_epoch)
                     writer.add_scalar('Loss/edge', loss_edge.item(), num_epoch)
+                    writer.add_scalar('Loss/priv', loss_est.item(), num_epoch)
                     writer.add_scalar('Loss/total', total_loss.item(), num_epoch)
 
                 # Detach the training hidden state to start a new BPTT trajectory
@@ -149,6 +153,7 @@ def play(args):
                     reconstructor.detach_hidden_states()
                 loss_recon = 0.
                 loss_edge = 0.
+                loss_est = 0.
 
         if not args.headless:
             env.draw_recon(recon[env.lookat_id].detach())
@@ -159,7 +164,7 @@ def play(args):
                 use_estimated_values=use_estimated_values.unsqueeze(1),
                 eval_=False,
                 recon=recon.detach(),
-                est=obs.priv_actor
+                est=est
             )
         obs, obs_critic, rewards, dones, _ = env.step(rtn['actions'])
 

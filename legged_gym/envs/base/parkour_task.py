@@ -571,8 +571,9 @@ class ParkourTask(BaseTask):
         if self.device.type == 'cpu':
             return
 
-        cam_pos = self.sensors.get('depth_0', get_pos=True)
-        self.pending_vis_task.append(dict(points=cam_pos, radius=0.02, color=(1, 0, 0), sphere_lines=16, z_shift=0.))
+        for name in self.sensors.depth_sensors:
+            cam_pos = self.sensors.get(name, get_pos=True)
+            self.pending_vis_task.append(dict(points=cam_pos, radius=0.02, color=(1, 0, 0), sphere_lines=16, z_shift=0.))
 
     def _draw_link_COM(self, whole_body=True):
         if whole_body:

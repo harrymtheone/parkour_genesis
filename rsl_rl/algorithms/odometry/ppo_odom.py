@@ -116,12 +116,12 @@ class PPO_Odom(BaseAlgorithm):
         self.transition.dones = dones.unsqueeze(1)
 
         # from Logan
-        rew_elements: dict = infos['rew_elements']
+        step_rew: dict = infos['step_rew']
 
-        rew_contact = rew_elements.get('feet_edge', 0.)
-        rew_contact += rew_elements.get('feet_contact_forces', 0.)
-        rew_contact += rew_elements.get('feet_stumble', 0.)
-        rew_contact += rew_elements.get('foothold', 0.)
+        rew_contact = step_rew.get('feet_edge', 0.)
+        rew_contact += step_rew.get('feet_contact_forces', 0.)
+        rew_contact += step_rew.get('feet_stumble', 0.)
+        rew_contact += step_rew.get('foothold', 0.)
 
         rew_default = rewards - rew_contact
         self.transition.rewards = rew_default.unsqueeze(1)

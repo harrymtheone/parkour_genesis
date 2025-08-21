@@ -4,7 +4,7 @@ import torch
 
 from .t1_base_env import T1BaseEnv
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_yaw, torch_rand_float, quat_to_mat
+from ...utils.math import transform_by_yaw, torch_rand_float
 
 
 class ActorObs(ObsBase):
@@ -171,7 +171,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
         scan_edge = torch.stack([scan_noisy, base_edge_mask], dim=1)
 
         if self.cfg.sensors.activated:
-            depth = self.sensors.get('depth_0').half()
+            depth = torch.cat([self.sensors.get('depth_0'), self.sensors.get('depth_1')], dim=1).half()
 
             if self.cfg.sensors.depth_0.data_format == 'hmap':
                 depth = depth.squeeze(1)
@@ -190,6 +190,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
         # compose critic observation
         priv_actor_clean = torch.cat([
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
+            self.base_height.unsqueeze(1),  # 1
         ], dim=-1)
 
         # hmap = root_height - scan
@@ -211,9 +212,9 @@ class T1OdomNegEnvironment(T1BaseEnv):
             # self._draw_hmap_from_depth()
             # self.draw_cloud_from_depth()
             self._draw_goals()
-            # self._draw_camera()
+            self._draw_camera()
             # self._draw_link_COM(whole_body=False)
-            self._draw_feet_at_edge()
+            # self._draw_feet_at_edge()
             # self._draw_foothold()
 
             # self._draw_height_field(draw_guidance=True)
@@ -224,7 +225,15 @@ class T1OdomNegEnvironment(T1BaseEnv):
             depth_img = (depth_img - self.cfg.sensors.depth_0.near_clip) / self.cfg.sensors.depth_0.far_clip
             img = np.clip(depth_img * 255, 0, 255).astype(np.uint8)
 
-            cv2.imshow("depth_processed", cv2.resize(img, (320, 320)))
+            cv2.imshow("depth_front", cv2.resize(img, (320, 320)))
+            cv2.waitKey(1)
+
+        if self.cfg.sensors.activated:
+            depth_img = self.sensors.get('depth_1', get_depth=True)[self.lookat_id].cpu().numpy()
+            depth_img = (depth_img - self.cfg.sensors.depth_0.near_clip) / self.cfg.sensors.depth_0.far_clip
+            img = np.clip(depth_img * 255, 0, 255).astype(np.uint8)
+
+            cv2.imshow("depth_back", cv2.resize(img, (320, 320)))
             cv2.waitKey(1)
 
         super().render()

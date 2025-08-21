@@ -105,3 +105,45 @@ class UniversalCritic(nn.Module):
             scan_enc = gru_wrapper(self.scan_enc, obs.scan.flatten(2))
             edge_enc = gru_wrapper(self.edge_mask_enc, obs.edge_mask.flatten(2))
             return gru_wrapper(self.critic, torch.cat([priv_latent, scan_enc, edge_enc], dim=2))
+
+
+class MixtureOfCritic(nn.Module):
+    def __init__(self, task_cfg):
+        super().__init__()
+        activation = nn.ELU()
+
+        self.priv_enc = nn.Sequential(
+            nn.Conv1d(in_channels=task_cfg.env.num_critic_obs, out_channels=64, kernel_size=6, stride=4),
+            activation,
+            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=6, stride=2),
+            activation,
+            nn.Conv1d(in_channels=128, out_channels=128, kernel_size=4, stride=1),
+            activation,
+            nn.Flatten()
+        )
+        self.scan_enc = make_linear_layers(task_cfg.env.n_scan, 256, 64,
+                                           activation_func=activation)
+        self.edge_mask_enc = make_linear_layers(task_cfg.env.n_scan, 256, 64,
+                                                activation_func=activation)
+
+        self.critic = nn.ModuleDict()
+
+        for rew_name in dir(task_cfg.rewards.scales):
+            if rew_name.startswith('__'):
+                continue
+
+            self.critic[rew_name] = make_linear_layers(128 + 64 + 64, *task_cfg.policy.critic_hidden_dims, 1,
+                                                       activation_func=nn.ELU(),
+                                                       output_activation=False)
+
+    def evaluate(self, obs):
+        if obs.priv_his.ndim == 3:
+            priv_latent = self.priv_enc(obs.priv_his.transpose(1, 2))
+            scan_enc = self.scan_enc(obs.scan.flatten(1))
+            edge_enc = self.edge_mask_enc(obs.edge_mask.flatten(1))
+            return {rew_name: critic(torch.cat([priv_latent, scan_enc, edge_enc], dim=1)) for rew_name, critic in self.critic.items()}
+        else:
+            priv_latent = gru_wrapper(self.priv_enc, obs.priv_his.transpose(2, 3))
+            scan_enc = gru_wrapper(self.scan_enc, obs.scan.flatten(2))
+            edge_enc = gru_wrapper(self.edge_mask_enc, obs.edge_mask.flatten(2))
+            return {rew_name: gru_wrapper(critic, torch.cat([priv_latent, scan_enc, edge_enc], dim=2)) for rew_name, critic in self.critic.items()}

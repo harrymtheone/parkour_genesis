@@ -38,7 +38,6 @@ class IsaacGymWrapper(BaseWrapper):
 
         self.init_done = True
 
-
     def _debug_robot_state(self, stage_name):
         """Debug method to visualize robot state at different initialization stages"""
         print(f"\n{'=' * 50}")
@@ -368,7 +367,17 @@ class IsaacGymWrapper(BaseWrapper):
     # ---------------------------------------------- IO Interface ----------------------------------------------
     def get_trimesh(self):
         if self.terrain is None:
-            raise NotImplementedError
+            vertices = np.array([
+                [-500.0, -500.0, 0.0],  # v0 bottom-left
+                [500.0, -500.0, 0.0],  # v1 bottom-right
+                [500.0, 500.0, 0.0],  # v2 top-right
+                [-500.0, 500.0, 0.0],  # v3 top-left
+            ]) - np.array([[self.cfg.terrain.border_size, self.cfg.terrain.border_size, 0]])
+
+            triangles = np.array([
+                [0, 1, 2],  # triangle 1 (v0, v1, v2)
+                [0, 2, 3],  # triangle 2 (v0, v2, v3)
+            ])
         else:
             vertices = self.terrain.vertices - np.array([[self.cfg.terrain.border_size, self.cfg.terrain.border_size, 0]])
             triangles = self.terrain.triangles

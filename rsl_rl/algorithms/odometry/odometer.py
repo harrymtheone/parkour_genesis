@@ -240,9 +240,9 @@ class Odometer:
             return {}
 
         with torch.autocast(self.device.type, torch.float16, enabled=self.use_amp):
-            recon_refine = self.odom.inference_forward(obs.proprio, obs.depth, obs.priv_actor, eval_=True)
+            recon_refine, est = self.odom.inference_forward(obs.proprio, obs.depth, eval_=True)
 
-            return {'recon': recon_refine}
+            return {'recon': recon_refine, 'est': est}
 
     def reset(self, dones):
         self.odom.reset(dones)

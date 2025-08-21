@@ -136,9 +136,9 @@ class PPO_ZJU_Multi_Critic(BaseAlgorithm):
         self.transition.dones = dones.unsqueeze(1)
 
         # from Logan
-        rew_elements = infos['rew_elements']
-        # rew_contact = rew_elements['feet_edge'].clone().unsqueeze(1)
-        rew_contact = (rew_elements['feet_contact_forces'] + rew_elements['feet_stumble'] + rew_elements['foothold']).clone().unsqueeze(1)
+        step_rew = infos['step_rew']
+        # rew_contact = step_rew['feet_edge'].clone().unsqueeze(1)
+        rew_contact = (step_rew['feet_contact_forces'] + step_rew['feet_stumble'] + step_rew['foothold']).clone().unsqueeze(1)
         rew_default = rewards.clone().unsqueeze(1) - rew_contact
         self.transition.rewards = rew_default
         self.transition.rewards_contact = rew_contact

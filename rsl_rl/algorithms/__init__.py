@@ -2,6 +2,7 @@ from .alg_base import BaseAlgorithm
 from .ppo_dream_waq import PPODreamWaQ
 from .ppo_phase import PPO_Phase
 from .ppo_pie import PPO_PIE
+from .ppo_pie_moc import PPO_PIE_MOC
 from .ppo_priv import PPO_Priv
 from .ppo_wmp import PPO_WMP
 from .ppo_dreamer import PPO_Dreamer
@@ -20,6 +21,7 @@ algorithm_dict = {
     'ppo_priv': PPO_Priv,
     'ppo_dreamwaq': PPODreamWaQ,
     'ppo_pie': PPO_PIE,
+    'ppo_pie_moc': PPO_PIE_MOC,
     'ppo_zju': PPO_ZJU,
     'ppo_zju_mc': PPO_ZJU_Multi_Critic,
     'ppo_wmp': PPO_WMP,

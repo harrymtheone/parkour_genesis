@@ -332,8 +332,8 @@ class BaseTask:
         self.projected_gravity[:] = transform_by_quat(self.gravity_vec, inv_base_quat)
 
         # update COM
-        self.base_COM[:] = (self.sim.link_mass.unsqueeze(2) * self.sim.link_COM).sum(dim=1)
-        self.base_COM[:] /= self.sim.link_mass.sum(dim=1, keepdim=True)
+        # self.base_COM[:] = (self.sim.link_mass.unsqueeze(2) * self.sim.link_COM).sum(dim=1)
+        # self.base_COM[:] /= self.sim.link_mass.sum(dim=1, keepdim=True)
 
     def _post_physics_pre_step(self):
         self.episode_length_buf[:] += 1
@@ -665,16 +665,19 @@ class BaseTask:
 
     def _compute_reward(self):
         self.rew_buf[:] = 0.
-        self.extras['rew_elements'] = {}
+        self.extras['step_rew'] = {}
 
         for i, name in enumerate(self._reward_names):
             rew = self._reward_functions[i]() * self.reward_scales[name] * self.dt
             self.rew_buf[:] += rew
             self.episode_sums[name][:] += rew
-            self.extras['rew_elements'][name] = rew
+            self.extras['step_rew'][name] = rew
 
         if self.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf, min=0.)
+
+            for name in self._reward_names:
+                self.extras['step_rew'][name] = torch.clip(self.extras['step_rew'][name], min=0.)
 
         # add termination reward after clipping
         if 'termination' in self.reward_scales:
