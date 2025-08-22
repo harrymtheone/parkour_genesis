@@ -266,7 +266,8 @@ class T1_PIE_Cfg(T1BaseCfg):
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'  # rl, distil, mixed
-        algorithm_name = 'ppo_pie'
+        # algorithm_name = 'ppo_pie'
+        algorithm_name = 'ppo_pie_moc'
 
         lock_smpl_until = 6000
         max_iterations = 6000  # number of policy updates

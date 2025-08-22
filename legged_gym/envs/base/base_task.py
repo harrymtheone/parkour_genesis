@@ -676,8 +676,27 @@ class BaseTask:
         if self.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf, min=0.)
 
-            for name in self._reward_names:
-                self.extras['step_rew'][name] = torch.clip(self.extras['step_rew'][name], min=0.)
+            # scale negative reward so that positive and negative reward sums to 0.
+            all_rew_elements = torch.stack(tuple(self.extras['step_rew'].values()), dim=0)
+            positive_mask = all_rew_elements >= 0
+            negative_mask = ~positive_mask
+            positive_rew_sum = torch.sum(all_rew_elements * positive_mask, dim=0)
+            negative_rew_sum = torch.sum(all_rew_elements * negative_mask, dim=0)
+
+            rew_scale = torch.where(
+                negative_mask,
+                positive_rew_sum / torch.abs(negative_rew_sum),
+                1.
+            )
+
+            rew_elements_scaled = torch.where(
+                positive_rew_sum + negative_rew_sum > 0,
+                all_rew_elements,
+                all_rew_elements * rew_scale,
+            )
+
+            for i, name in enumerate(self._reward_names):
+                self.extras['step_rew'][name] = rew_elements_scaled[i]
 
         # add termination reward after clipping
         if 'termination' in self.reward_scales:
