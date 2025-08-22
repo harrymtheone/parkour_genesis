@@ -534,12 +534,6 @@ class IsaacGymWrapper(BaseWrapper):
         self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_LEFT_BRACKET, "prev_id")
         self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_RIGHT_BRACKET, "next_id")
 
-    def create_camera_sensor(self, env_i: int, name_link_attached_to, cam_props, cam_trans):
-        camera_handle = self.gym.create_camera_sensor(self._envs[env_i], cam_props)
-        root_handle = self.gym.find_actor_rigid_body_handle(self._envs[env_i], self._actor_handles[env_i], name_link_attached_to)
-        self.gym.attach_camera_to_body(camera_handle, self._envs[env_i], root_handle, cam_trans, gymapi.FOLLOW_TRANSFORM)
-        self.cam_handles.append(camera_handle)
-
     def _handle_key_event(self, event):
         for evt in event:
             if evt.action == "QUIT" and evt.value > 0:
@@ -623,6 +617,12 @@ class IsaacGymWrapper(BaseWrapper):
         for pt in points:
             sphere_pose = gymapi.Transform(gymapi.Vec3(pt[0], pt[1], pt[2] + z_shift), r=None)
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self._envs[self.lookat_id], sphere_pose)
+
+    def create_camera_sensor(self, env_i: int, name_link_attached_to, cam_props, cam_trans):
+        camera_handle = self.gym.create_camera_sensor(self._envs[env_i], cam_props)
+        root_handle = self.gym.find_actor_rigid_body_handle(self._envs[env_i], self._actor_handles[env_i], name_link_attached_to)
+        self.gym.attach_camera_to_body(camera_handle, self._envs[env_i], root_handle, cam_trans, gymapi.FOLLOW_TRANSFORM)
+        self.cam_handles.append(camera_handle)
 
     def render_camera(self, depth_tensor):
         self.gym.step_graphics(self.sim)

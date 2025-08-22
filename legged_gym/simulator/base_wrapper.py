@@ -156,9 +156,6 @@ class BaseWrapper:
     def draw_points(self, points, radius=0.02, color=(0, 1, 0), sphere_lines=4, z_shift=0.02):
         raise NotImplementedError
 
-    def render_camera(self, depth_tensor):
-        raise NotImplementedError
-
     # ------------------------------------------------- Utils -------------------------------------------------
 
     def _zero_tensor(self, *shape, dtype=torch.float, requires_grad=False):

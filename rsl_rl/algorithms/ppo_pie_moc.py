@@ -152,6 +152,8 @@ class PPO_PIE_MOC(BaseAlgorithm):
             self.scaler.step(self.optimizer)
             self.scaler.update()
 
+            self.actor.clip_std(0.4, 1.0)
+
             num_updates += 1
             # policy statistics
             kl_change.append(loss_tuple[0])

@@ -152,19 +152,15 @@ class T1PIEEnvironment(T1BaseEnv):
             # self._draw_feet_at_edge()
 
         if self.cfg.sensors.activated:
-            depth_img = self.sensors.get('depth_0', get_depth=True)[self.lookat_id].cpu().numpy()
-            depth_img = (depth_img - self.cfg.sensors.depth_0.near_clip) / self.cfg.sensors.depth_0.far_clip
-            img = np.clip(depth_img * 255, 0, 255).astype(np.uint8)
+            depth_img_f = self.sensors.get('depth_0', get_depth=True)[self.lookat_id].cpu().numpy()
+            depth_img_f = (depth_img_f - self.cfg.sensors.depth_0.near_clip) / self.cfg.sensors.depth_0.far_clip
+            img_f = np.clip(depth_img_f * 255, 0, 255).astype(np.uint8)
+            cv2.imshow("depth_front", cv2.resize(img_f, (320, 320)))
 
-            cv2.imshow("depth_front", cv2.resize(img, (320, 320)))
-            cv2.waitKey(1)
-
-        if self.cfg.sensors.activated:
-            depth_img = self.sensors.get('depth_1', get_depth=True)[self.lookat_id].cpu().numpy()
-            depth_img = (depth_img - self.cfg.sensors.depth_0.near_clip) / self.cfg.sensors.depth_0.far_clip
-            img = np.clip(depth_img * 255, 0, 255).astype(np.uint8)
-
-            cv2.imshow("depth_back", cv2.resize(img, (320, 320)))
+            depth_img_r = self.sensors.get('depth_1', get_depth=True)[self.lookat_id].cpu().numpy()
+            depth_img_r = (depth_img_r - self.cfg.sensors.depth_1.near_clip) / self.cfg.sensors.depth_1.far_clip
+            img_r = np.clip(depth_img_r * 255, 0, 255).astype(np.uint8)
+            cv2.imshow("depth_back", cv2.resize(img_r, (320, 320)))
             cv2.waitKey(1)
 
             # # draw points cloud
