@@ -208,7 +208,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
 
     def render(self):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
-            # self._draw_body_hmap()
+            self._draw_body_hmap()
             # self._draw_hmap_from_depth()
             # self.draw_cloud_from_depth()
             self._draw_goals()

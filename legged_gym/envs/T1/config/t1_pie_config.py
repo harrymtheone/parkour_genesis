@@ -126,14 +126,16 @@ class T1_PIE_Cfg(T1BaseCfg):
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
-        description_type = 'plane'
+        # description_type = 'plane'
 
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
-            'smooth_slope': 2,
+            'smooth_slope': 1,
             'rough_slope': 1,
+            'stairs_up': 1,
+            'stairs_down': 1,
         }
 
     class noise(T1BaseCfg.noise):
@@ -194,9 +196,9 @@ class T1_PIE_Cfg(T1BaseCfg):
 
         class scales:  # float or (start, end, span, start_it)
             # gait
-            joint_pos = (2.0, 0.3, 10, 200)
-            feet_contact_number = (1.2, 0.6, 10, 200)
-            feet_clearance = (1., 0.5, 10, 200)
+            joint_pos = 2.0
+            feet_contact_number = 1.2
+            feet_clearance = 1.
             feet_distance = -1.
             knee_distance = -1.
             feet_rotation = -0.3
@@ -210,7 +212,7 @@ class T1_PIE_Cfg(T1BaseCfg):
             feet_slip = -0.1
             feet_contact_forces = -1e-3
             feet_stumble = -2.
-            foothold = -0.1
+            foothold = -0.5
             # feet_edge = -0.1
 
             # base pos
@@ -263,14 +265,15 @@ class T1_PIE_Cfg(T1BaseCfg):
         use_amp = True
         continue_from_last_std = True
         init_noise_std = 1.0
+        noise_range = (0.4, 1.0)
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'  # rl, distil, mixed
         # algorithm_name = 'ppo_pie'
         algorithm_name = 'ppo_pie_moc'
 
-        lock_smpl_until = 6000
-        max_iterations = 6000  # number of policy updates
+        lock_smpl_until = 20000
+        max_iterations = 20000  # number of policy updates
 
 
 # -----------------------------------------------------------------------------------------------

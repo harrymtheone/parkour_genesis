@@ -150,7 +150,7 @@ class Policy(nn.Module):
             return mean
 
         # sample action from distribution
-        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+        self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
         return self.distribution.sample()
 
     def train_act(
@@ -165,7 +165,7 @@ class Policy(nn.Module):
         mean = gru_wrapper(self.actor, obs.proprio, vae_mu)
 
         # sample action from distribution
-        self.distribution = torch.distributions.Normal(mean, mean * 0. + self.log_std.exp())
+        self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
         return vae_mu, vae_logvar, est, ot1, recon
 
     def get_actions_log_prob(self, actions):

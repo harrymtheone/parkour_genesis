@@ -152,7 +152,7 @@ class PPO_PIE_MOC(BaseAlgorithm):
             self.scaler.step(self.optimizer)
             self.scaler.update()
 
-            self.actor.clip_std(0.4, 1.0)
+            self.actor.clip_std(self.cfg.noise_range[0], self.cfg.noise_range[1])
 
             num_updates += 1
             # policy statistics
@@ -253,7 +253,7 @@ class PPO_PIE_MOC(BaseAlgorithm):
             mask_batch[batch_size:] = False
 
             # privileged information estimation loss
-            estimation_loss = self.mse_loss(est[mask_batch], obs_batch.priv_actor[mask_batch])
+            estimation_loss = self.mse_loss(est[mask_batch], critic_obs_batch.est_gt[mask_batch])
 
             # Ot+1 prediction and VAE loss
             prediction_loss = self.mse_loss(ot1[mask_batch], obs_next_batch.proprio[mask_batch])

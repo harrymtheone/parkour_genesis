@@ -14,12 +14,11 @@ def linear_change(start, end, span, start_it, cur_it):
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, depth, priv_actor):
+    def __init__(self, proprio, prop_his, depth):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
         self.depth = depth.clone()
-        self.priv_actor = priv_actor.clone()
 
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
@@ -47,12 +46,13 @@ class ObsNext(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv, priv_his, scan, edge_mask):
+    def __init__(self, priv, priv_his, scan, edge_mask, est_gt):
         super().__init__()
         self.priv = priv.clone()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
         self.edge_mask = edge_mask.clone()
+        self.est_gt = est_gt.clone()
 
 
 class T1PIEEnvironment(T1BaseEnv):
@@ -119,7 +119,7 @@ class T1PIEEnvironment(T1BaseEnv):
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
-        priv_actor = torch.cat((
+        est_gt = torch.cat((
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
         ), dim=-1)
 
@@ -131,7 +131,7 @@ class T1PIEEnvironment(T1BaseEnv):
         depth = torch.cat([self.sensors.get('depth_0'), self.sensors.get('depth_1')], dim=1).half()
 
         # compose actor observation
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth, priv_actor)
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer
@@ -140,7 +140,7 @@ class T1PIEEnvironment(T1BaseEnv):
 
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(priv_obs, self.critic_his_buf.get(), scan, edge_mask)
+        self.critic_obs = CriticObs(priv_obs, self.critic_his_buf.get(), scan, edge_mask, est_gt)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):

@@ -28,7 +28,7 @@ def play(args):
 
     # override some parameters for testing
     task_cfg.play.control = False
-    task_cfg.env.num_envs = 8
+    task_cfg.env.num_envs = 16
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
@@ -56,12 +56,12 @@ def play(args):
 
     task_cfg.rewards.only_positive_rewards = False
 
-    task_cfg.terrain.description_type = 'plane'
+    task_cfg.terrain.description_type = 'trimesh'
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
-        'rough_slope': 1,
-        'stairs_up': 0,
-        'stairs_down': 0,
+        'rough_slope': 0,
+        'stairs_up': 1,
+        'stairs_down': 1,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -130,8 +130,8 @@ def play(args):
                 recon[1] += 0.5
                 env.draw_recon(recon)
 
-            elif hasattr(obs, 'scan'):
-                noisy_scan = obs.scan[env.lookat_id].clone()
+            elif hasattr(obs_critic, 'scan'):
+                noisy_scan = torch.stack([obs_critic.scan[env.lookat_id], obs_critic.edge_mask[env.lookat_id]], dim=0)
                 # noisy_scan[0] = - noisy_scan[0] - 0.7
                 noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
                 env.draw_recon(noisy_scan)
