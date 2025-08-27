@@ -2,7 +2,7 @@ import torch
 
 from legged_gym.envs.base.humanoid_env import HumanoidEnv
 from legged_gym.envs.base.utils import HistoryBuffer
-from legged_gym.utils.math import transform_by_yaw, density_weighted_sampling
+from legged_gym.utils.math import transform_by_yaw, density_weighted_sampling, torch_rand_float
 
 
 class T1BaseEnv(HumanoidEnv):
@@ -15,6 +15,15 @@ class T1BaseEnv(HumanoidEnv):
 
         self.body_hmap_points = self._init_height_points(self.cfg.terrain.body_pts_x, self.cfg.terrain.body_pts_y)
         self.feet_hmap_points = self._init_height_points(self.cfg.terrain.feet_pts_x, self.cfg.terrain.feet_pts_y)
+
+        self.scan_dev_xy = self._zero_tensor(self.num_envs, 1, 2)
+        self.scan_dev_z = self._zero_tensor(self.num_envs, 1)
+
+    def _reset_idx(self, env_ids: torch.Tensor):
+        super()._reset_idx(env_ids)
+
+        self.scan_dev_xy[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 2), device=self.device).unsqueeze(1)
+        self.scan_dev_z[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 1), device=self.device)
 
     def get_feet_hmap(self):
         feet_pos = self.sim.link_pos[:, self.feet_indices]
@@ -36,6 +45,25 @@ class T1BaseEnv(HumanoidEnv):
 
         hmap = self._get_heights(points + self.cfg.terrain.border_size)
         return self.sim.root_pos[:, 2:3] - hmap  # to relative height
+
+    def get_scan(self, noisy=False):
+        # convert height points coordinate to world frame
+        points = transform_by_yaw(
+            self.scan_points,
+            self.base_euler[:, 2:3].repeat(1, self.num_scan)
+        ).unflatten(0, (self.num_envs, -1))
+
+        points[:] += self.sim.root_pos.unsqueeze(1) + self.cfg.terrain.border_size
+
+        if not noisy:
+            return self._get_heights(points)
+
+        z_gauss = 0.03 * torch.randn(self.num_envs, self.scan_points.size(1), device=self.device)
+
+        points[:, :, :2] += self.scan_dev_xy
+        heights = self._get_heights(points)
+        heights[:] += self.scan_dev_z + z_gauss
+        return heights
 
     def _draw_feet_hmap(self, estimation=None):
         num_feet = len(self.feet_indices)

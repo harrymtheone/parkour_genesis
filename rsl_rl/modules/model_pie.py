@@ -32,29 +32,45 @@ class EstimatorGRU(nn.Module):
             nn.Flatten()
         )
 
+        self.scan_enc = make_linear_layers(2 * 32 * 16, 256, 128,
+                                           activation_func=nn.ELU())
+
         hidden_size = policy_cfg.estimator_gru_hidden_size
         self.gru = nn.GRU(input_size=256, hidden_size=hidden_size, num_layers=1)
         self.hidden_states = None
 
-    def inference_forward(self, prop_his, depth_his):
+    def inference_forward(self, prop_his, depth_his, scan_edge, use_estimated_values):
         # inference forward
         prop_latent = self.prop_his_enc(prop_his.transpose(1, 2))
         depth_latent = self.depth_enc(depth_his)
+        scan_enc = self.scan_enc(scan_edge.flatten(1))
+
+        gru_input = torch.where(
+            use_estimated_values,
+            torch.cat((prop_latent, depth_latent), dim=1),
+            torch.cat((prop_latent, scan_enc), dim=1),
+        )
 
         # TODO: transformer here?
-        gru_input = torch.cat((prop_latent, depth_latent), dim=1)
         gru_out, self.hidden_states = self.gru(gru_input.unsqueeze(0), self.hidden_states)
         return gru_out.squeeze(0)
 
-    def forward(self, prop_his, depth_his, hidden_states):
+    def forward(self, prop_his, depth_his, scan_edge, hidden_states, use_estimated_values):
         # update forward
         prop_latent = gru_wrapper(self.prop_his_enc.forward, prop_his.transpose(2, 3))
 
         depth_latent = gru_wrapper(self.depth_enc.forward, depth_his)
 
-        gru_input = torch.cat((prop_latent, depth_latent), dim=2)
+        scan_enc = gru_wrapper(self.scan_enc, scan_edge.flatten(2))
+
+        gru_input = torch.where(
+            use_estimated_values,
+            torch.cat((prop_latent, depth_latent), dim=2),
+            torch.cat((prop_latent, scan_enc), dim=2),
+        )
+
         gru_out, _ = self.gru(gru_input, hidden_states)
-        return gru_out
+        return gru_out, depth_latent, scan_enc
 
     def get_hidden_states(self):
         if self.hidden_states is None:
@@ -133,10 +149,11 @@ class Policy(nn.Module):
 
     def act(self,
             obs: ActorObs,
+            use_estimated_values: torch.Tensor,
             eval_=False,
             **kwargs):  # <-- my mood be like
         # encode history proprio
-        gru_out = self.estimator.inference_forward(obs.prop_his, obs.depth)
+        gru_out = self.estimator.inference_forward(obs.prop_his, obs.depth, obs.scan_edge, use_estimated_values)
         vae_mu = self.vae(gru_out)
 
         # compute action
@@ -157,8 +174,9 @@ class Policy(nn.Module):
             self,
             obs: ActorObs,
             hidden_states,
+            use_estimated_values,
     ):  # <-- my mood be like
-        gru_out = self.estimator(obs.prop_his, obs.depth, hidden_states)
+        gru_out, depth_latent, scan_enc = self.estimator(obs.prop_his, obs.depth, obs.scan_edge, hidden_states, use_estimated_values)
         vae_mu, vae_logvar, est, ot1, recon = self.vae.estimate(gru_out)
 
         # compute action
@@ -166,7 +184,7 @@ class Policy(nn.Module):
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
-        return vae_mu, vae_logvar, est, ot1, recon
+        return vae_mu, vae_logvar, est, ot1, recon, depth_latent, scan_enc
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)

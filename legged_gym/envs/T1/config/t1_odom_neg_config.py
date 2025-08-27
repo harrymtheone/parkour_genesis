@@ -127,16 +127,15 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
-        # description_type = 'plane'
-
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 2,
-            'stairs_down': 2,
+            # 'stairs_up': 1,
+            # 'stairs_down': 1,
+            'parkour_flat': 1,
         }
 
     class noise(T1BaseCfg.noise):
@@ -208,7 +207,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             # vel tracking
             tracking_lin_vel = 1.5
             tracking_goal_vel = 2.5
-            tracking_ang_vel = 1.0
+            tracking_ang_vel = 2.0
 
             # contact
             feet_slip = -0.1
@@ -239,10 +238,10 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
     class policy:
         # actor parameters
         actor_gru_hidden_size = 128
-        actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
+        actor_hidden_dims = [512, 256, 128]
 
         # critic parameters
-        critic_hidden_dims = [512, 256, 128]
+        critic_hidden_dims = [128, 64]
 
     class odometer:
         odometer_type = 'priv_recon'  # recurrent, auto-regression, priv_recon

@@ -102,7 +102,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         parkour_vel_tolerance = 0.3
 
         cycle_time = 0.7  # 0.64
-        target_joint_pos_scale = 0.2
+        target_joint_pos_scale = 0.3
 
         sw_switch = True
         phase_offset_l = 0.
@@ -126,16 +126,16 @@ class T1_PIE_Cfg(T1BaseCfg):
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
-        # description_type = 'plane'
-
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
 
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 1,
-            'stairs_up': 1,
-            'stairs_down': 1,
+            # 'rough_slope': 1,
+            # 'stairs_up': 1,
+            # 'stairs_down': 1,
+            # 'parkour_stair': 1,
+            'parkour_flat': 1,
         }
 
     class noise(T1BaseCfg.noise):
@@ -239,7 +239,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
 
         # critic parameters
-        critic_hidden_dims = [512, 256, 128]
+        critic_hidden_dims = [128, 64]
 
         use_recurrent_policy = True
         estimator_gru_hidden_size = 256
@@ -272,7 +272,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         # algorithm_name = 'ppo_pie'
         algorithm_name = 'ppo_pie_moc'
 
-        lock_smpl_until = 20000
+        lock_smpl_until = 10000
         max_iterations = 20000  # number of policy updates
 
 

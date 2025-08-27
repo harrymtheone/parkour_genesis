@@ -14,11 +14,12 @@ def linear_change(start, end, span, start_it, cur_it):
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, depth):
+    def __init__(self, proprio, prop_his, depth, scan_edge):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
         self.depth = depth.clone()
+        self.scan_edge = scan_edge.clone()
 
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
@@ -29,8 +30,7 @@ class ActorObs(ObsBase):
             mirror_proprio_by_x(self.proprio),
             mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
             torch.flip(self.depth, dims=[3]),
-            torch.flip(self.scan, dims=[2]),
-            torch.flip(self.edge_mask, dims=[2]),
+            torch.flip(self.scan_edge, dims=[3]),
         )
 
     @staticmethod
@@ -46,9 +46,8 @@ class ObsNext(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv, priv_his, scan, edge_mask, est_gt):
+    def __init__(self, priv_his, scan, edge_mask, est_gt):
         super().__init__()
-        self.priv = priv.clone()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
         self.edge_mask = edge_mask.clone()
@@ -124,28 +123,34 @@ class T1PIEEnvironment(T1BaseEnv):
         ), dim=-1)
 
         # compute height map
-        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.scan_hmap - self.base_height.unsqueeze(1), -1, 1.)
-        scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
-        edge_mask = -0.5 + self.get_edge_mask().float()
+        scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.base_height.unsqueeze(1), -1, 1.)
+        scan_noisy = scan_noisy.view(self.num_envs, *self.cfg.env.scan_shape)
+
+        edge_mask = -0.5 + self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
+        scan_edge = torch.stack([scan_noisy, edge_mask], dim=1)
 
         depth = torch.cat([self.sensors.get('depth_0'), self.sensors.get('depth_1')], dim=1).half()
 
         # compose actor observation
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth)
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth, scan_edge)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer
         reset_flag = self.episode_length_buf <= 1
         self.prop_his_buf.append(proprio, reset_flag)
 
+        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.base_height.unsqueeze(1), -1, 1.)
+        scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
+
         # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-        self.critic_obs = CriticObs(priv_obs, self.critic_his_buf.get(), scan, edge_mask, est_gt)
+        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, edge_mask, est_gt)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
             self._draw_goals()
+            self._draw_feet_hmap()
             # self._draw_height_field()
             # self._draw_edge()
             # self._draw_camera()

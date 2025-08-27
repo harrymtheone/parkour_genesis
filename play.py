@@ -33,7 +33,7 @@ def play(args):
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
     task_cfg.terrain.curriculum = True
-    task_cfg.terrain.max_difficulty = True
+    # task_cfg.terrain.max_difficulty = True
     # task_cfg.asset.disable_gravity = True
 
     task_cfg.commands.resampling_time = 8
@@ -60,14 +60,14 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
         'rough_slope': 0,
-        'stairs_up': 1,
-        'stairs_down': 1,
+        'stairs_up': 0,
+        'stairs_down': 0,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
         'pit': 0,
-        'parkour_flat': 0,
+        'parkour_flat': 1,
         'parkour': 0,
         'parkour_gap': 0,
         'parkour_box': 0,
@@ -130,11 +130,11 @@ def play(args):
                 recon[1] += 0.5
                 env.draw_recon(recon)
 
-            elif hasattr(obs_critic, 'scan'):
-                noisy_scan = torch.stack([obs_critic.scan[env.lookat_id], obs_critic.edge_mask[env.lookat_id]], dim=0)
-                # noisy_scan[0] = - noisy_scan[0] - 0.7
-                noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
-                env.draw_recon(noisy_scan)
+            # elif hasattr(obs_critic, 'scan'):
+            #     noisy_scan = torch.stack([obs_critic.scan[env.lookat_id], obs_critic.edge_mask[env.lookat_id]], dim=0)
+            #     # noisy_scan[0] = - noisy_scan[0] - 0.7
+            #     noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
+            #     env.draw_recon(noisy_scan)
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.

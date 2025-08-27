@@ -8,29 +8,26 @@ from ...utils.math import transform_by_yaw, torch_rand_float
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, depth, priv_actor, scan):
+    def __init__(self, proprio, depth, scan):
         super().__init__()
         self.proprio = proprio.clone()
         self.depth = depth
-        self.priv_actor = priv_actor.clone()
         self.scan = scan.clone()
 
     def no_depth(self):
-        return ObsNoDepth(self.proprio, self.priv_actor, self.scan)
+        return ObsNoDepth(self.proprio, self.scan)
 
 
 class ObsNoDepth(ObsBase):
-    def __init__(self, proprio, priv_actor, scan):
+    def __init__(self, proprio, scan):
         super().__init__()
         self.proprio = proprio.clone()
-        self.priv_actor = priv_actor.clone()
         self.scan = scan.clone()
 
     @torch.compiler.disable
     def mirror(self):
         return ObsNoDepth(
             mirror_proprio_by_x(self.proprio),
-            mirror_priv_by_x(self.priv_actor),
             torch.flip(self.scan, dims=[2]),
         )
 
@@ -42,9 +39,9 @@ class ObsNoDepth(ObsBase):
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_actor, priv_his, scan, edge_mask):
+    def __init__(self, est_gt, priv_his, scan, edge_mask):
         super().__init__()
-        self.priv_actor = priv_actor.clone()
+        self.est_gt = est_gt.clone()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
         self.edge_mask = edge_mask.clone()
@@ -84,25 +81,6 @@ class T1OdomNegEnvironment(T1BaseEnv):
     def _post_physics_post_step(self):
         super()._post_physics_post_step()
         self.last_goal_distance[:] = self.goal_distance
-
-    def get_scan(self, noisy=False):
-        # convert height points coordinate to world frame
-        points = transform_by_yaw(
-            self.scan_points,
-            self.base_euler[:, 2:3].repeat(1, self.num_scan)
-        ).unflatten(0, (self.num_envs, -1))
-
-        points[:] += self.sim.root_pos.unsqueeze(1) + self.cfg.terrain.border_size
-
-        if not noisy:
-            return self._get_heights(points)
-
-        z_gauss = 0.03 * torch.randn(self.num_envs, self.scan_points.size(1), device=self.device)
-
-        points[:, :, :2] += self.scan_dev_xy
-        heights = self._get_heights(points)
-        heights[:] += self.scan_dev_z + z_gauss
-        return heights
 
     def _compute_observations(self):
         """
@@ -179,18 +157,12 @@ class T1OdomNegEnvironment(T1BaseEnv):
         else:
             depth = None
 
-        priv_actor = torch.cat([
-            base_lin_vel * self.obs_scales.lin_vel,  # 3
-            self.base_height.unsqueeze(1),  # 1
-        ], dim=-1)
-
-        self.actor_obs = ActorObs(proprio, depth, priv_actor, scan_edge)
+        self.actor_obs = ActorObs(proprio, depth, scan_edge)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation
-        priv_actor_clean = torch.cat([
+        est_gt = torch.cat([
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
-            self.base_height.unsqueeze(1),  # 1
         ], dim=-1)
 
         # hmap = root_height - scan
@@ -203,7 +175,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
         reset_flag = self.episode_length_buf <= 1
         self.critic_his_buf.append(priv_obs, reset_flag)
 
-        self.critic_obs = CriticObs(priv_actor_clean, self.critic_his_buf.get(), scan, base_edge_mask)
+        self.critic_obs = CriticObs(est_gt, self.critic_his_buf.get(), scan, base_edge_mask)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
     def render(self):
@@ -212,7 +184,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
             # self._draw_hmap_from_depth()
             # self.draw_cloud_from_depth()
             self._draw_goals()
-            self._draw_camera()
+            # self._draw_camera()
             # self._draw_link_COM(whole_body=False)
             # self._draw_feet_at_edge()
             # self._draw_foothold()

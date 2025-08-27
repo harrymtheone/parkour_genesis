@@ -147,3 +147,24 @@ class MixtureOfCritic(nn.Module):
             scan_enc = gru_wrapper(self.scan_enc, obs.scan.flatten(2))
             edge_enc = gru_wrapper(self.edge_mask_enc, obs.edge_mask.flatten(2))
             return {rew_name: gru_wrapper(critic, torch.cat([priv_latent, scan_enc, edge_enc], dim=2)) for rew_name, critic in self.critic.items()}
+
+    def load(self, state_dict: dict):
+        try:
+            self.load_state_dict(state_dict)
+        except RuntimeError:
+            # Handle ModuleDict mismatch by loading only matching keys
+            model_state_dict = self.state_dict()
+            filtered_state_dict = {}
+
+            for key, value in state_dict.items():
+                if key not in model_state_dict:
+                    continue
+
+                if model_state_dict[key].shape != value.shape:
+                    raise ValueError(f"Shape mismatch for key '{key}': "
+                                     f"model expects {model_state_dict[key].shape}, "
+                                     f"but state_dict has {value.shape}")
+                filtered_state_dict[key] = value
+
+            # Load only the matching keys, ignore missing and unexpected keys
+            self.load_state_dict(filtered_state_dict, strict=False)

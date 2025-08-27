@@ -31,7 +31,6 @@ class Transition:
         self.critic_observations = None
         self.actor_hidden_states = None
         self.recon = None
-        self.priv = None
         self.actions = None
         self.rewards = None
         self.rewards_contact = None
@@ -85,7 +84,6 @@ class PPO_Odom(BaseAlgorithm):
             obs_critic,
             use_estimated_values: torch.Tensor = None,
             recon: torch.Tensor = None,
-            priv_est: torch.Tensor = None,
             **kwargs):
         # act function should run within torch.inference_mode context
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
@@ -95,8 +93,7 @@ class PPO_Odom(BaseAlgorithm):
             self.transition.actor_hidden_states = self.actor.get_hidden_states()
 
             self.transition.recon = recon
-            self.transition.priv = priv_est
-            actions = self.actor.act(obs, recon, priv_est, use_estimated_values=use_estimated_values)
+            actions = self.actor.act(obs, recon, use_estimated_values=use_estimated_values)
 
             if self.transition.actor_hidden_states is None:
                 # only for the first step where hidden_state is None
@@ -241,7 +238,6 @@ class PPO_Odom(BaseAlgorithm):
             self.actor.train_act(
                 obs_batch,
                 recon_batch,
-                priv_batch,
                 hidden_states=actor_hidden_states_batch,
                 use_estimated_values=use_estimated_values_batch
             )
@@ -297,7 +293,6 @@ class PPO_Odom(BaseAlgorithm):
                 self.actor.train_act(
                     obs_mirrored_batch,
                     recon_batch,
-                    priv_batch,
                     hidden_states=actor_hidden_states_batch,
                     use_estimated_values=use_estimated_values_batch
                 )
@@ -309,7 +304,7 @@ class PPO_Odom(BaseAlgorithm):
 
             return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
 
-    def play_act(self, obs, use_estimated_values=True, recon=None, est=None, **kwargs):
+    def play_act(self, obs, use_estimated_values=True, recon=None, **kwargs):
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):
 
             if isinstance(use_estimated_values, bool):
@@ -317,7 +312,7 @@ class PPO_Odom(BaseAlgorithm):
             else:
                 kwargs['use_estimated_values'] = use_estimated_values
 
-            return {'actions': self.actor.act(obs, recon, est, **kwargs)}
+            return {'actions': self.actor.act(obs, recon, **kwargs)}
 
     def reset(self, dones):
         self.actor.reset(dones)
