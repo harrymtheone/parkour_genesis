@@ -283,7 +283,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         load_latest_interval = -1
         odometer_path = ''
 
-        max_iterations = 20000  # number of policy updates
+        max_iterations = 4000  # number of policy updates
 
 
 # -----------------------------------------------------------------------------------------------
@@ -325,7 +325,7 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
 
     class rewards(T1_Odom_Neg_Cfg.rewards):
         only_positive_rewards = True
-        only_positive_rewards_until_epoch = 22000 + 200
+        only_positive_rewards_until_epoch = 2000 + 200
 
         class scales(T1_Odom_Neg_Cfg.rewards.scales):  # start, end, span, start_it
             joint_pos = 0.3
@@ -350,14 +350,14 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
             # base pos
             default_dof_pos = -0.04
             default_dof_pos_yr = -1.
-            orientation = -10.
+            orientation = -5.
             # base_height = -10.
             base_acc = -1.
             lin_vel_z = -1.
             ang_vel_xy = -0.05
 
             # energy
-            action_smoothness = -1e-3
+            action_smoothness = -3e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1.e-7

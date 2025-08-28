@@ -6,6 +6,8 @@ from rsl_rl.modules.utils import make_linear_layers, gru_wrapper
 
 
 class Actor(nn.Module):
+    is_recurrent = True
+
     def __init__(self, task_cfg):
         super().__init__()
         env_cfg = task_cfg.env
