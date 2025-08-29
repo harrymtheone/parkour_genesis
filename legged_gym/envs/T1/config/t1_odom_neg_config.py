@@ -103,12 +103,12 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         parkour_vel_tolerance = 0.3
 
         cycle_time = 0.7  # 0.64
-        target_joint_pos_scale = 0.2
+        target_joint_pos_scale = 0.3
 
         sw_switch = True
         phase_offset_l = 0.
         phase_offset_r = 0.5
-        air_ratio = 0.4
+        air_ratio = 0.5
         delta_t = 0.02
 
         class flat_ranges:
@@ -305,7 +305,7 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
         randomize_joint_armature = True
         joint_armature_range = {
             'default': dict(range=(0.01, 0.05), log_space=False),
-            'ankle': dict(dof_ids=(5, 6, 11, 12), range=(0.0001, 0.05), log_space=True)
+            'ankle': dict(dof_ids=(5, 6, 11, 12), range=(0.001, 0.05), log_space=True)
         }
 
     class terrain(T1_Odom_Neg_Cfg.terrain):
@@ -348,9 +348,9 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
             feet_edge = -0.1
 
             # base pos
-            default_dof_pos = -0.04
+            default_dof_pos = -0.08
             default_dof_pos_yr = -1.
-            orientation = -5.
+            orientation = -10.
             # base_height = -10.
             base_acc = -1.
             lin_vel_z = -1.

@@ -58,7 +58,7 @@ def play(args):
 
     task_cfg.terrain.description_type = 'trimesh'
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 1,
+        'smooth_slope': 0,
         'rough_slope': 0,
         'stairs_up': 1,
         'stairs_down': 0,
@@ -67,13 +67,13 @@ def play(args):
         'stepping_stone': 0,
         'gap': 0,
         'pit': 0,
-        'parkour_flat': 1,
+        'parkour_flat': 0,
         'parkour': 0,
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
         'parkour_stair': 1,
-        'parkour_stair_down': 0,
+        'parkour_stair_down': 1,
         'parkour_mini_stair': 0,
         'parkour_mini_stair_down': 0,
         'parkour_go_back_stair': 0,

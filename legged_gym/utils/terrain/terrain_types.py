@@ -115,7 +115,7 @@ class PyramidStairsUp(SubTerrain):
 
         self.pyramid_stairs_terrain(
             step_height=stair_up_height,
-            step_depth=random.uniform(0.23, 0.35),  # 0.31
+            step_depth=random.uniform(0.28, 0.34),  # 0.31
             platform_size=3.
         )
         # self.add_roughness(terrain, difficulty)
@@ -151,7 +151,7 @@ class PyramidStairsDown(PyramidStairsUp):
 
         self.pyramid_stairs_terrain(
             step_height=-stair_up_height,
-            step_depth=random.uniform(0.23, 0.35),  # 0.31
+            step_depth=random.uniform(0.28, 0.34),  # 0.31
             platform_size=3.
         )
         # self.add_roughness(terrain, difficulty)
@@ -241,7 +241,7 @@ class ParkourStair(GoalGuidedTerrain):
             step_height=stair_height_goal,
             # step_width=random.uniform(0.5, 2.0),
             step_width=4.0,
-            step_depth=random.uniform(0.23, 0.35)  # 0.31
+            step_depth=random.uniform(0.28, 0.34)  # 0.31
         )
         # self.add_roughness(terrain, 0.5)
 
@@ -302,7 +302,7 @@ class ParkourStairDown(ParkourStair):
             step_height=-stair_height_goal,
             # step_width=random.uniform(0.5, 2.0),
             step_width=4.0,
-            step_depth=random.uniform(0.23, 0.35)  # 0.31
+            step_depth=random.uniform(0.28, 0.34)  # 0.31
         )
         # self.add_roughness(terrain, 0.5)
 
@@ -390,7 +390,7 @@ class ParkourMiniStairDown(GoalGuidedTerrain):
         self.parkour_stair_terrain(
             step_height=stair_height_goal,
             step_width_range=(0.5, 2.0),
-            step_depth=random.uniform(0.23, 0.35)
+            step_depth=random.uniform(0.28, 0.34)
         )
         self.add_roughness(0.5)
 
@@ -466,7 +466,7 @@ class ParkourGoBackStair(GoalGuidedTerrain):
         self.parkour_stair_terrain(
             step_height=stair_height_goal,
             step_width=random.uniform(0.5, 2.0),
-            step_depth=random.uniform(0.23, 0.35)
+            step_depth=random.uniform(0.28, 0.34)
         )
         # self.add_roughness(terrain, 0.5)
 
