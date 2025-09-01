@@ -61,7 +61,7 @@ def play(args):
         'smooth_slope': 0,
         'rough_slope': 0,
         'stairs_up': 1,
-        'stairs_down': 0,
+        'stairs_down': 1,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -93,9 +93,9 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    # runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-08-21_15-10-03/latest.pth',
-    #                                             map_location=args.device,
-    #                                             weights_only=True))
+    runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-09-01_12-16-58/latest.pth',
+                                                map_location=args.device,
+                                                weights_only=True))
 
     with Live(vis.gen_info_panel(args, env)) as live:
         for step_i in range(10 * int(env.max_episode_length)):

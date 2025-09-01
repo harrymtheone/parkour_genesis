@@ -135,7 +135,7 @@ class PrivReconstructor(nn.Module):
         self.mlp_est = nn.Sequential(
             nn.Linear(embed_dim, embed_dim // 2),
             activation,
-            nn.Linear(embed_dim // 2, 4)
+            nn.Linear(embed_dim // 2, 3)
         )
 
         # Store previous reconstruction

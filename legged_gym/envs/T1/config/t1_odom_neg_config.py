@@ -103,12 +103,12 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         parkour_vel_tolerance = 0.3
 
         cycle_time = 0.7  # 0.64
-        target_joint_pos_scale = 0.3
+        target_joint_pos_scale = 0.2
 
         sw_switch = True
         phase_offset_l = 0.
         phase_offset_r = 0.5
-        air_ratio = 0.5
+        air_ratio = 0.4
         delta_t = 0.02
 
         class flat_ranges:
@@ -133,8 +133,6 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            # 'stairs_up': 1,
-            # 'stairs_down': 1,
             'parkour_flat': 1,
         }
 
@@ -241,7 +239,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         actor_hidden_dims = [512, 256, 128]
 
         # critic parameters
-        critic_hidden_dims = [128, 64]
+        critic_hidden_dims = [512, 256, 128]
 
     class odometer:
         odometer_type = 'priv_recon'  # recurrent, auto-regression, priv_recon
@@ -348,7 +346,7 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
             feet_edge = -0.1
 
             # base pos
-            default_dof_pos = -0.08
+            default_dof_pos = -0.04
             default_dof_pos_yr = -1.
             orientation = -10.
             # base_height = -10.
@@ -357,7 +355,7 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
             ang_vel_xy = -0.05
 
             # energy
-            action_smoothness = -3e-3
+            action_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1.e-7

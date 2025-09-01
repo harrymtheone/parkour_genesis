@@ -125,7 +125,7 @@ def play(args):
             # Accumulate losses
             loss_recon += l1(recon[:, 0], obs_critic.scan)
             loss_edge += mse(recon[:, 1], obs_critic.edge_mask)
-            loss_est += mse(est, obs_critic.priv_actor)
+            loss_est += mse(est, obs_critic.est_gt)
 
             # Perform an update every `accumulation_steps`
             if (step_i + 1) % accumulation_steps == 0:
