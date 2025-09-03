@@ -95,7 +95,7 @@ class Odometer:
             if self.odom.is_recurrent:
                 self.transition.hidden_states = self.odom.hidden_states
 
-            _, recon_refine, priv_est = self.odom.inference_forward(obs.proprio, obs.depth, eval_=True)
+            recon_refine, priv_est = self.odom.inference_forward(obs.proprio, obs.depth, eval_=True)
 
             if self.odom.is_recurrent and self.transition.hidden_states is None:
                 self.transition.hidden_states = torch.zeros_like(self.odom.hidden_states)

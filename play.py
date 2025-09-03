@@ -58,16 +58,16 @@ def play(args):
 
     task_cfg.terrain.description_type = 'trimesh'
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 0,
-        'rough_slope': 0,
-        'stairs_up': 1,
-        'stairs_down': 1,
+        'smooth_slope': 1,
+        'rough_slope': 1,
+        'stairs_up': 0,
+        'stairs_down': 0,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
         'pit': 0,
-        'parkour_flat': 0,
+        'parkour_flat': 1,
         'parkour': 0,
         'parkour_gap': 0,
         'parkour_box': 0,
@@ -93,9 +93,9 @@ def play(args):
     task_cfg.runner.logger_backend = None
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-09-01_12-16-58/latest.pth',
-                                                map_location=args.device,
-                                                weights_only=True))
+    # runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/back_high3/latest.pth',
+    #                                             map_location=args.device,
+    #                                             weights_only=True))
 
     with Live(vis.gen_info_panel(args, env)) as live:
         for step_i in range(10 * int(env.max_episode_length)):
@@ -130,11 +130,11 @@ def play(args):
                 recon[1] += 0.5
                 env.draw_recon(recon)
 
-            # elif hasattr(obs_critic, 'scan'):
-            #     noisy_scan = torch.stack([obs_critic.scan[env.lookat_id], obs_critic.edge_mask[env.lookat_id]], dim=0)
-            #     # noisy_scan[0] = - noisy_scan[0] - 0.7
-            #     noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
-            #     env.draw_recon(noisy_scan)
+            elif hasattr(obs_critic, 'scan'):
+                noisy_scan = torch.stack([obs_critic.scan[env.lookat_id], obs_critic.edge_mask[env.lookat_id]], dim=0)
+                # noisy_scan[0] = - noisy_scan[0] - 0.7
+                noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
+                env.draw_recon(noisy_scan)
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.

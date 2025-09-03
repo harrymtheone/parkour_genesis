@@ -109,6 +109,11 @@ def edge_repeat(depth_image, edge_mask, repeat_ratio=0.3):
     return processed_depth
 
 
+def simulate_feet_mask(depth_image):
+    depth_image[:, -15:, :30] = 0.
+    depth_image[:, -15:, 40:] = 0.
+
+
 class DepthCam(SensorBase):
     def __init__(self, cfg_dict, device, mesh_id, sim):
         super().__init__(cfg_dict, device, mesh_id, sim)
@@ -223,6 +228,8 @@ class DepthCam(SensorBase):
 
             # normalize the depth image to range (-0.5, 0.5)
             depth_image[:] = (depth_image - self.near_clip) / (self.far_clip - self.near_clip) - 0.5
+
+            simulate_feet_mask(depth_image)
 
             self.depth_processed[:] = depth_image
             self.buf.append(depth_image)

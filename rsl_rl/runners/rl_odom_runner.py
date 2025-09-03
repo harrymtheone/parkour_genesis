@@ -253,11 +253,11 @@ class RLOdomRunner(RunnerLogger):
         self.odom.odom.eval()
         rtn = self.odom.play_reconstruct(obs)
 
-        if 'recon_refine' in rtn:
+        if 'recon' in rtn:
             # recon_refine = rtn['recon_refine']
             # recon_refine[:, 1] = torch.where(recon_refine[:, 1] < 0., 0., 1.)
             # recon_refine[:, 1] = torch.sigmoid(recon_refine[:, 1])
-            rtn.update(self.alg.play_act(obs, recon=rtn['recon_refine'], **kwargs))
+            rtn.update(self.alg.play_act(obs, recon=rtn['recon'], **kwargs))
         else:
             rtn.update(self.alg.play_act(obs, recon=None, **kwargs))
 

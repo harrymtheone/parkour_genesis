@@ -4,7 +4,7 @@ import torch
 
 from .t1_base_env import T1BaseEnv
 from ..base.utils import ObsBase
-from ...utils.math import transform_by_yaw, torch_rand_float
+from ...utils.math import torch_rand_float
 
 
 class ActorObs(ObsBase):
@@ -180,7 +180,7 @@ class T1OdomNegEnvironment(T1BaseEnv):
 
     def render(self):
         if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
-            self._draw_body_hmap()
+            # self._draw_body_hmap()
             # self._draw_hmap_from_depth()
             # self.draw_cloud_from_depth()
             self._draw_goals()
@@ -210,35 +210,53 @@ class T1OdomNegEnvironment(T1BaseEnv):
 
         super().render()
 
-    # def _reward_tracking_lin_vel(self):
-    #     lin_vel_error_square = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
-    #     rew = torch.exp(-lin_vel_error_square * self.cfg.rewards.tracking_sigma)
-    #     rew[self.env_class >= 100] = 0.
-    #     return rew
-    #
-    # def _reward_tracking_goal_vel(self):
-    #     if self.sim.terrain is None:
-    #         return self._zero_tensor(self.num_envs)
-    #
-    #     cmd_vel_norm = torch.norm(self.commands[:, :2], dim=1)
-    #     target_unit_vec = self.target_pos_rel / (torch.norm(self.target_pos_rel, dim=1, keepdim=True) + 1e-5)
-    #     root_lin_vel_projection = torch.sum(self.sim.root_lin_vel[:, :2] * target_unit_vec, dim=1)
-    #
-    #     lin_vel_error = torch.abs(cmd_vel_norm - root_lin_vel_projection)  # parkour terrain
-    #
-    #     rew = torch.where(
-    #         lin_vel_error < self.cfg.commands.parkour_vel_tolerance,
-    #         torch.exp(-lin_vel_error * 0.3),
-    #         torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma) - 1 + math.exp(-self.cfg.commands.parkour_vel_tolerance * 0.3)
-    #     )
-    #
-    #     rew[self.env_class < 100] = 0.
-    #     return rew
-    #
-    # def _reward_tracking_ang_vel(self):
-    #     ang_vel_error_square = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
-    #     rew = torch.exp(-ang_vel_error_square * self.cfg.rewards.tracking_sigma)
-    #     return rew
+    def _reward_joint_pos_flat(self):
+        diff = self.sim.dof_pos - torch.where(
+            self.is_zero_command.unsqueeze(1),
+            self.init_state_dof_pos,
+            self.ref_dof_pos
+        )
+        diff = torch.norm(diff[:, self.dof_activated], dim=1)
+
+        rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
+        rew[self.env_class >= 2] = 0.
+        return rew
+
+    def _reward_joint_pos_parkour(self):
+        diff = self.sim.dof_pos - torch.where(
+            self.is_zero_command.unsqueeze(1),
+            self.init_state_dof_pos,
+            self.ref_dof_pos
+        )
+        diff = torch.norm(diff[:, self.dof_activated], dim=1)
+
+        rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
+        rew[self.env_class < 2] = 0.
+        return rew
+
+    def _reward_feet_contact_number_flat(self):
+        swing = self._get_swing_mask()
+        stance = self._get_stance_mask()
+        contact = self.contact_filt
+
+        rew = self._zero_tensor(self.num_envs, len(self.feet_indices))
+        rew[swing] = torch.where(contact[swing], -0.3, 1.0)
+        rew[stance] = torch.where(contact[stance], 1.0, -0.3)
+
+        rew[self.env_class >= 2] = 0.
+        return torch.mean(rew, dim=1)
+
+    def _reward_feet_contact_number_parkour(self):
+        swing = self._get_swing_mask()
+        stance = self._get_stance_mask()
+        contact = self.contact_filt
+
+        rew = self._zero_tensor(self.num_envs, len(self.feet_indices))
+        rew[swing] = torch.where(contact[swing], -0.3, 1.0)
+        rew[stance] = torch.where(contact[stance], 1.0, -0.3)
+
+        rew[self.env_class < 2] = 0.
+        return torch.mean(rew, dim=1)
 
     def _reward_default_dof_pos(self):
         return (self.sim.dof_pos - self.init_state_dof_pos).abs().sum(dim=1)

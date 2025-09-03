@@ -64,7 +64,10 @@ class T1BaseCfg(BaseConfig):
 
         base_pts_x = np.linspace(-0.2, 0.2, 8)
         base_pts_y = np.linspace(-0.2, 0.2, 8)
-        scan_pts_x = np.linspace(-0.5, 1.1, 32)
+
+        # scan_pts_x = np.linspace(-0.5, 1.1, 32)
+        scan_pts_x = np.linspace(-0.7, 0.7, 32)
+
         scan_pts_y = np.linspace(-0.4, 0.4, 16)
         body_pts_x = np.linspace(-0.1, 0.3, 4)
         body_pts_y = np.linspace(-0.2, 0.2, 4)
@@ -223,6 +226,19 @@ class T1BaseCfg(BaseConfig):
             # 'Right_Elbow_Pitch': 0.,
             # 'Right_Elbow_Yaw': 1.,
             'Waist': 0.,
+
+            # 'Left_Hip_Pitch': -0.2,
+            # 'Left_Hip_Roll': 0.,
+            # 'Left_Hip_Yaw': 0.,
+            # 'Left_Knee_Pitch': 0.4,
+            # 'Left_Ankle_Pitch': -0.25,
+            # 'Left_Ankle_Roll': 0.,
+            # 'Right_Hip_Pitch': -0.2,
+            # 'Right_Hip_Roll': 0.,
+            # 'Right_Hip_Yaw': 0.,
+            # 'Right_Knee_Pitch': 0.4,
+            # 'Right_Ankle_Pitch': -0.25,
+            # 'Right_Ankle_Roll': 0.,
 
             'Left_Hip_Pitch': -0.2 - 0.1974,
             'Left_Hip_Roll': 0.,

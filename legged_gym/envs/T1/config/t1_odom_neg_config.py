@@ -11,8 +11,6 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        priv_actor_len = 4
-
         num_critic_obs = 70
         len_critic_his = 50
 
@@ -27,7 +25,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             # position = [0.07, 0, 0.09]  # front camera
             # pitch = 0  # positive is looking down
             link_attached_to = 'Trunk'
-            position = [0.17, 0, 0.0]  # front camera
+            position = [0.17, 0, 0.01]  # front camera
             pitch = 60  # positive is looking down
             yaw = 0
 
@@ -59,9 +57,6 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             hmap_shape = (16, 16)  # x dim, y dim
 
         class depth_1:
-            # link_attached_to = 'H2'
-            # position = [0.07, 0, 0.09]  # front camera
-            # pitch = 0  # positive is looking down
             link_attached_to = 'Trunk'
             position = [-0.06, 0, 0.17]  # front camera
             pitch = 60  # positive is looking down
@@ -326,8 +321,10 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
         only_positive_rewards_until_epoch = 2000 + 200
 
         class scales(T1_Odom_Neg_Cfg.rewards.scales):  # start, end, span, start_it
-            joint_pos = 0.3
-            feet_contact_number = 0.3
+            joint_pos_flat = 0.6
+            joint_pos_parkour = (0.6, 0., 6000, 4000)
+            feet_contact_number_flat = 0.6
+            feet_contact_number_parkour = (0.6, 0., 6000, 4000)
             feet_clearance = 1.
             feet_distance = -1.
             knee_distance = -1.
@@ -410,7 +407,7 @@ class T1_Odom_Neg_Finetune_Cfg(T1_Odom_Stair_Neg_Cfg):
         max_iterations = 100000
 
         load_latest_interval = 100
-        odometer_path = ''
+        odometer_path = '/home/harry/projects/parkour_genesis/logs/odom_online/back_high3/latest.pth'
 
         initial_smpl = 1.0
         lock_smpl_until = 0
