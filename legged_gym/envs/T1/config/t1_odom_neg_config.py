@@ -8,7 +8,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         n_proprio = 50
         len_prop_his = 10
 
-        scan_shape = (32, 16)
+        scan_shape = (64, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
         num_critic_obs = 70
@@ -98,7 +98,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         parkour_vel_tolerance = 0.3
 
         cycle_time = 0.7  # 0.64
-        target_joint_pos_scale = 0.2
+        target_joint_pos_scale = 0.3
 
         sw_switch = True
         phase_offset_l = 0.
@@ -190,7 +190,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
 
         class scales:  # float or (start, end, span, start_it)
             # gait
-            joint_pos = (2.0, 0.3, 10, 200)
+            joint_pos = (2.0, 0.6, 10, 200)
             feet_contact_number = (1.2, 0.6, 10, 200)
             feet_clearance = (1., 0.5, 10, 200)
             feet_distance = -1.

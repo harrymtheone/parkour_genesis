@@ -12,9 +12,9 @@ class Actor(nn.Module):
         super().__init__()
         env_cfg = task_cfg.env
         policy_cfg = task_cfg.policy
-        odom_cfg = task_cfg.odometer
+        scan_shape = task_cfg.env.scan_shape
 
-        self.scan_encoder = make_linear_layers(2 * 32 * 16, 256, 128,
+        self.scan_encoder = make_linear_layers(2 * scan_shape[0] * scan_shape[1], 256, 128,
                                                activation_func=nn.ELU())
 
         # belief encoder

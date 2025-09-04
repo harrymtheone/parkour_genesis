@@ -61,36 +61,37 @@ def convert_heightfield_to_trimesh(height_field_raw, horizontal_scale, vertical_
     return vertices, triangles
 
 
-def edge_detection(height_field_raw, horizontal_scale, vertical_scale, slope_threshold=None):
+def edge_detection(
+        height_map: np.ndarray,
+        horizontal_scale: float,
+        vertical_scale: float,
+        slope_threshold: float = None
+) -> np.ndarray:
     if slope_threshold is None:
         raise ValueError('slope threshold cannot be None!!!')
 
-    hf = height_field_raw
-    num_rows = hf.shape[0]
-    num_cols = hf.shape[1]
+    hf = height_map
+    num_rows, num_cols = hf.shape
 
-    slope_threshold *= horizontal_scale / vertical_scale
-    move_x = np.zeros((num_rows, num_cols))
-    move_y = np.zeros((num_rows, num_cols))
-    move_x[:num_rows - 1, :] += hf[1:num_rows, :] - hf[:num_rows - 1, :] > slope_threshold
-    move_x[1:num_rows, :] -= hf[:num_rows - 1, :] - hf[1:num_rows, :] > slope_threshold
-    move_y[:, :num_cols - 1] += hf[:, 1:num_cols] - hf[:, :num_cols - 1] > slope_threshold
-    move_y[:, 1:num_cols] -= hf[:, :num_cols - 1] - hf[:, 1:num_cols] > slope_threshold
+    # Scale threshold by horizontal distance
+    height_threshold = slope_threshold * horizontal_scale / vertical_scale
 
-    # compute edge (fixed by hzx)
-    move_x[:num_rows - 1, :] += hf[1:num_rows, :] - hf[:num_rows - 1, :] > slope_threshold
-    move_x[1:num_rows, :] += hf[1:num_rows, :] - hf[:num_rows - 1, :] > slope_threshold
-    move_x[1:num_rows, :] -= hf[:num_rows - 1, :] - hf[1:num_rows, :] > slope_threshold
-    move_x[:num_rows - 1, :] -= hf[:num_rows - 1, :] - hf[1:num_rows, :] > slope_threshold
-    move_y[:, :num_cols - 1] += hf[:, 1:num_cols] - hf[:, :num_cols - 1] > slope_threshold
-    move_y[:, 1:num_cols] += hf[:, 1:num_cols] - hf[:, :num_cols - 1] > slope_threshold
-    move_y[:, 1:num_cols] -= hf[:, :num_cols - 1] - hf[:, 1:num_cols] > slope_threshold
-    move_y[:, :num_cols - 1] -= hf[:, :num_cols - 1] - hf[:, 1:num_cols] > slope_threshold
+    # Initialize edge map
+    edges = np.zeros((num_rows, num_cols), dtype=bool)
 
-    edge_x = move_x != 0
-    edge_y = move_y != 0
+    # Check x direction: if there's a large height difference between adjacent points,
+    # mark BOTH points as edges
+    x_diff = np.abs(hf[1:, :] - hf[:-1, :]) > height_threshold
+    edges[:-1, :] |= x_diff  # Mark left points of edge pairs
+    edges[1:, :] |= x_diff  # Mark right points of edge pairs
 
-    return edge_x + edge_y
+    # Check y direction: if there's a large height difference between adjacent points,
+    # mark BOTH points as edges
+    y_diff = np.abs(hf[:, 1:] - hf[:, :-1]) > height_threshold
+    edges[:, :-1] |= y_diff  # Mark top points of edge pairs
+    edges[:, 1:] |= y_diff  # Mark bottom points of edge pairs
+
+    return edges
 
 
 def convert_heightfield_to_trimesh_delatin(height_field_raw, horizontal_scale, vertical_scale, max_error=0.01):

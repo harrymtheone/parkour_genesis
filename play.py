@@ -27,7 +27,7 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = False
+    task_cfg.play.control = True
     task_cfg.env.num_envs = 16
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
@@ -58,16 +58,16 @@ def play(args):
 
     task_cfg.terrain.description_type = 'trimesh'
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 1,
-        'rough_slope': 1,
-        'stairs_up': 0,
-        'stairs_down': 0,
+        'smooth_slope': 0,
+        'rough_slope': 0,
+        'stairs_up': 1,
+        'stairs_down': 1,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
         'gap': 0,
         'pit': 0,
-        'parkour_flat': 1,
+        'parkour_flat': 0,
         'parkour': 0,
         'parkour_gap': 0,
         'parkour_box': 0,
