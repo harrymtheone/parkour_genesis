@@ -118,7 +118,7 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.3, 0.8]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.2, 0.5]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
@@ -318,9 +318,11 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
 
     class rewards(T1_Odom_Neg_Cfg.rewards):
         only_positive_rewards = True
-        only_positive_rewards_until_epoch = 2000 + 200
+        only_positive_rewards_until_epoch = 4000 + 200
 
         class scales(T1_Odom_Neg_Cfg.rewards.scales):  # start, end, span, start_it
+            # joint_pos = 0.6
+            # feet_contact_number = 0.6
             joint_pos_flat = 0.6
             joint_pos_parkour = (0.6, 0., 6000, 4000)
             feet_contact_number_flat = 0.6
@@ -358,7 +360,7 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
             dof_acc = -1.e-7
             collision = -1.
 
-            # dof_vel_smoothness = -1e-4
+            dof_vel_smoothness = -1e-4
             dof_pos_limits = -10.
             # dof_vel_limits = -0.5
             dof_torque_limits = -0.1

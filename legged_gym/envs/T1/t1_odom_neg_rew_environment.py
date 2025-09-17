@@ -55,6 +55,9 @@ class T1OdomNegEnvironment(T1BaseEnv):
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
+        self.ankle_indices = self.sim.create_indices(
+            self.sim.get_full_names("Ankle", False), False)
+
         self.cam_link_indices = self.sim.create_indices(
             self.sim.get_full_names('Trunk', True), True)
 
@@ -318,6 +321,11 @@ class T1OdomNegEnvironment(T1BaseEnv):
         ang_vel_stall = (torch.abs(self.base_ang_vel[:, 2]) < self.cfg.commands.ang_vel_clip) & (torch.abs(self.commands[:, 2]) > 0)
 
         return (lin_vel_stall | ang_vel_stall).float()
+
+    def _reward_torques_ankle(self):
+        rew = torch.sum(torch.square(self.torques[:, self.ankle_indices]), dim=1)
+        rew[self.is_zero_command] = 0.
+        return rew
 
 
 @torch.jit.script

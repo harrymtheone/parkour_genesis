@@ -173,7 +173,7 @@ class T1BaseCfg(BaseConfig):
         com_displacement_range = [-0.05, 0.05]
 
         randomize_friction = False
-        friction_range = [0.2, 2.0]
+        friction_range = [0.1, 1.0]
         compliance_range = [0.5, 1.5]
         restitution_range = [0.1, 0.9]
 
@@ -276,7 +276,7 @@ class T1BaseCfg(BaseConfig):
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
-        decimation = 4
+        decimation = 10
 
     class asset:
         file = LEGGED_GYM_ROOT_DIR + '/robots/T1/T1_legs.urdf'
@@ -317,7 +317,7 @@ class T1BaseCfg(BaseConfig):
         lookat = [11., 5, 3.]  # [m]
 
     class sim:
-        dt = 0.005
+        dt = 0.002
         substeps = 1
         gravity = [0., 0., -9.81]  # [m/s^2]
         up_axis = 1  # 0 is y, 1 is z

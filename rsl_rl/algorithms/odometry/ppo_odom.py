@@ -159,8 +159,8 @@ class PPO_Odom(BaseAlgorithm):
 
         for batch in self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs):
             # ########################## policy loss ##########################
-            kl_mean, value_loss_default, value_loss_contact, surrogate_loss, entropy_loss, symmetry_loss = self._compute_policy_loss(batch)
-            loss = surrogate_loss + self.cfg.value_loss_coef * (value_loss_default + value_loss_contact) - entropy_loss + symmetry_loss
+            kl_mean, value_loss_default, value_loss_contact, surrogate_loss, entropy_loss = self._compute_policy_loss(batch)
+            loss = surrogate_loss + self.cfg.value_loss_coef * (value_loss_default + value_loss_contact) - entropy_loss
 
             num_updates += 1
             # policy statistics
@@ -171,7 +171,6 @@ class PPO_Odom(BaseAlgorithm):
             mean_value_loss = mean_default_value_loss + mean_contact_value_loss
             mean_surrogate_loss += surrogate_loss.item()
             mean_entropy_loss += entropy_loss.item()
-            mean_symmetry_loss += symmetry_loss.item()
 
             # Use KL to adaptively update learning rate
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
@@ -186,6 +185,22 @@ class PPO_Odom(BaseAlgorithm):
             # Gradient step
             self.optimizer.zero_grad()
             self.scaler.scale(loss).backward()
+            # self.scaler.unscale_(self.optimizer)
+            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+
+            # ########################## symmetry loss ##########################
+            symmetry_loss = self._compute_symmetry_loss(batch)
+
+            if symmetry_loss is None:
+                symmetry_loss = torch.zeros_like(surrogate_loss)
+
+            mean_symmetry_loss += symmetry_loss.item()
+
+            # Gradient step
+            self.optimizer.zero_grad()
+            self.scaler.scale(symmetry_loss).backward()
             # self.scaler.unscale_(self.optimizer)
             # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
             self.scaler.step(self.optimizer)
@@ -278,6 +293,15 @@ class PPO_Odom(BaseAlgorithm):
             # Entropy loss
             entropy_loss = self.cfg.entropy_coef * masked_mean(self.actor.entropy, mask_batch)
 
+            return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss
+
+    def _compute_symmetry_loss(self, batch):
+        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+            obs_batch = batch['observations']
+            actor_hidden_states_batch = batch['actor_hidden_states']
+            recon_batch = batch['recon'] if 'recon' in batch else None
+            use_estimated_values_batch = batch['use_estimated_values']
+
             # Symmetry loss
             batch_size = 4
             action_mean_original = self.actor.action_mean[:batch_size].detach()
@@ -296,11 +320,9 @@ class PPO_Odom(BaseAlgorithm):
                 )
 
                 mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-                symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+                return 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
             else:
-                symmetry_loss = torch.zeros_like(surrogate_loss)
-
-            return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss, symmetry_loss
+                return None
 
     def play_act(self, obs, use_estimated_values=True, recon=None, **kwargs):
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):

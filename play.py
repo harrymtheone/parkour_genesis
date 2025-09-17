@@ -27,8 +27,8 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = True
-    task_cfg.env.num_envs = 16
+    task_cfg.play.control = False
+    task_cfg.env.num_envs = 8
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
@@ -48,6 +48,8 @@ def play(args):
     task_cfg.domain_rand.action_delay_range = [(2, 2)]
     task_cfg.domain_rand.add_dof_lag = False
     task_cfg.domain_rand.dof_lag_range = (3, 3)
+    task_cfg.domain_rand.randomize_friction = True
+    task_cfg.domain_rand.friction_range = [0.7, 0.7]
     task_cfg.domain_rand.randomize_torques = False
     task_cfg.domain_rand.randomize_gains = False
     task_cfg.domain_rand.joint_armature_range = {
@@ -72,8 +74,8 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
-        'parkour_stair_down': 1,
+        'parkour_stair': 0,
+        'parkour_stair_down': 0,
         'parkour_mini_stair': 0,
         'parkour_mini_stair_down': 0,
         'parkour_go_back_stair': 0,
@@ -91,9 +93,10 @@ def play(args):
     env.sim.clear_lines = True
     task_cfg.runner.resume = True
     task_cfg.runner.logger_backend = None
+    task_cfg.algorithm.continue_from_last_std = True
     runner = task_registry.make_alg_runner(task_cfg, args, log_root)
 
-    # runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/back_high3/latest.pth',
+    # runner.odom.odom.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-09-09_14-51-46/latest.pth',
     #                                             map_location=args.device,
     #                                             weights_only=True))
 
@@ -155,12 +158,12 @@ def play(args):
                 env.refresh_graphics(clear_lines=False)
             env.refresh_graphics(clear_lines=True)
 
-            # t1_vis.plot(env)
+            t1_vis.plot(env)
 
 
 if __name__ == '__main__':
     # t1_vis = vis.RewVisualizer()
-    # t1_vis = vis.T1ActionsVisualizer()
+    t1_vis = vis.T1ActionsVisualizer()
     # t1_vis = vis.T1DofPosVisualizer()
     # t1_vis = vis.T1DofVelVisualizer()
     # t1_vis = vis.T1TorqueVisualizer()

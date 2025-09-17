@@ -60,8 +60,8 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
         'rough_slope': 1,
-        'stairs_up': 1,
-        'stairs_down': 1,
+        'stairs_up': 0,
+        'stairs_down': 0,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -101,7 +101,7 @@ def play(args):
     l1 = torch.nn.L1Loss()
     bce = torch.nn.BCEWithLogitsLoss()
 
-    # reconstructor.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/best2/latest.pth', weights_only=True))
+    reconstructor.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-09-09_14-51-46/latest.pth', weights_only=True))
 
     if not args.debug:
         log_dir = os.path.join(log_root, 'odom_online', datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))

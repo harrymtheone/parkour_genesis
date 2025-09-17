@@ -7,8 +7,14 @@ class UNetWithEncoder(nn.Module):
         super().__init__()
 
         # Encoder for previous reconstruction
+        self.encoder_conv0 = nn.Sequential(
+            nn.Conv2d(in_channel, 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+
+        self.encoder_pool0 = nn.MaxPool2d((2, 1))  # Downsample (64x16 -> 32x16)
         self.encoder_conv1 = nn.Sequential(
-            nn.Conv2d(in_channel, 16, kernel_size=3, padding=1),
+            nn.Conv2d(8, 16, kernel_size=3, padding=1),
             nn.ReLU(),
         )
 
@@ -57,12 +63,22 @@ class UNetWithEncoder(nn.Module):
             nn.ReLU(),
         )
 
+        # Additional upsampling layer to reach (64, 16)
+        self.upconv0 = nn.ConvTranspose2d(16, 8, kernel_size=(2, 1), stride=(2, 1))  # Upsample (32x16 -> 64x16)
+        self.decoder_conv0 = nn.Sequential(
+            nn.Conv2d(8, 8, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+
         # Final output layer
-        self.output_conv = nn.Conv2d(16, out_channel, kernel_size=1)
+        self.output_conv = nn.Conv2d(8, out_channel, kernel_size=1)
 
     def forward(self, prev_recon, transformer_output):
         # Encoder path - store features for skip connections
-        e1 = self.encoder_conv1(prev_recon)  # (batch, 16, 32, 16)
+        e0 = self.encoder_conv0(prev_recon)  # (batch, 8, 64, 16)
+
+        e0_pooled = self.encoder_pool0(e0)  # (batch, 8, 32, 16)
+        e1 = self.encoder_conv1(e0_pooled)  # (batch, 16, 32, 16)
 
         e1_pooled = self.encoder_pool1(e1)  # (batch, 16, 16, 8)
         e2 = self.encoder_conv2(e1_pooled)  # (batch, 32, 16, 8)
@@ -90,8 +106,12 @@ class UNetWithEncoder(nn.Module):
         d1 = torch.cat([u1, e1], dim=1)  # (batch, 32, 32, 16) - Skip connection
         d1 = self.decoder_conv1(d1)  # (batch, 16, 32, 16)
 
+        # Additional upsampling to reach (64, 16)
+        u0 = self.upconv0(d1)  # (batch, 8, 64, 16)
+        d0 = self.decoder_conv0(u0)  # (batch, 8, 64, 16)
+
         # Final output
-        return self.output_conv(d1)  # (batch, out_channel, 32, 16)
+        return self.output_conv(d0)  # (batch, out_channel, 64, 16)
 
 
 class PrivReconstructor(nn.Module):
@@ -158,7 +178,7 @@ class PrivReconstructor(nn.Module):
 
     def inference_forward(self, prop, depth, **kwargs):
         if self.prev_recon is None:
-            self.prev_recon = torch.zeros(prop.size(0), 2, 32, 16, device=prop.device)
+            self.prev_recon = torch.zeros(prop.size(0), 2, 64, 16, device=prop.device)
 
         # Get transformer embedding using depth, prop, and previous reconstruction
         transformer_output = self.transformer_forward(prop, depth, self.prev_recon)

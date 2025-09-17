@@ -248,13 +248,20 @@ class Odometer:
         self.odom.reset(dones)
 
     def load(self, loaded_dict, load_optimizer=True):
-        # if 'odometer_state_dict' in loaded_dict:
-        #     self.odom.load_state_dict(loaded_dict['odometer_state_dict'])
+        if 'odometer_state_dict' in loaded_dict:
+            try:
+                self.odom.load_state_dict(loaded_dict['odometer_state_dict'])
+                print('Odometer state dict loaded from state dict')
+            except RuntimeError as e:
+                print(f'Error loading odometer state dict: {e}')
 
-        if self.task_cfg.runner.odometer_path:
+        elif self.task_cfg.runner.odometer_path:
             odom_path = self.task_cfg.runner.odometer_path
-            print(f'No odometer state dict, loading from {odom_path}')
             self.odom.load_state_dict(torch.load(odom_path, weights_only=True))
+            print(f'No odometer state dict, loading from {odom_path}')
+
+        else:
+            print('Odometer state dict not loaded, starting from scratch')
 
     def save(self):
         return {'odometer_state_dict': self.odom.state_dict()}

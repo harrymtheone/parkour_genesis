@@ -302,20 +302,21 @@ class T1TorqueVisualizer(BaseVisualizer):
     def plot(self, env):
         torques = env.torques.cpu().numpy()
         feet_contact_forces = torch.norm(env.sim.contact_forces[:, env.feet_indices], dim=-1).cpu().numpy()
+        offset = 0
         self._plot({
-            'Waist': torques[env.lookat_id, 10],
-            'Left_Hip_Pitch': torques[env.lookat_id, 11],
-            'Left_Hip_Roll': torques[env.lookat_id, 12],
-            'Left_Hip_Yaw': torques[env.lookat_id, 13],
-            'Left_Knee_Pitch': torques[env.lookat_id, 14],
-            'Left_Ankle_Pitch': torques[env.lookat_id, 15],
-            'Left_Ankle_Roll': torques[env.lookat_id, 16],
-            'Right_Hip_Pitch': torques[env.lookat_id, 17],
-            'Right_Hip_Roll': torques[env.lookat_id, 18],
-            'Right_Hip_Yaw': torques[env.lookat_id, 19],
-            'Right_Knee_Pitch': torques[env.lookat_id, 20],
-            'Right_Ankle_Pitch': torques[env.lookat_id, 21],
-            'Right_Ankle_Roll': torques[env.lookat_id, 22],
+            'Waist': torques[env.lookat_id, offset + 0],
+            'Left_Hip_Pitch': torques[env.lookat_id, offset + 1],
+            'Left_Hip_Roll': torques[env.lookat_id, offset + 2],
+            'Left_Hip_Yaw': torques[env.lookat_id, offset + 3],
+            'Left_Knee_Pitch': torques[env.lookat_id, offset + 4],
+            'Left_Ankle_Pitch': torques[env.lookat_id, offset + 5],
+            'Left_Ankle_Roll': torques[env.lookat_id, offset + 6],
+            'Right_Hip_Pitch': torques[env.lookat_id, offset + 7],
+            'Right_Hip_Roll': torques[env.lookat_id, offset + 8],
+            'Right_Hip_Yaw': torques[env.lookat_id, offset + 9],
+            'Right_Knee_Pitch': torques[env.lookat_id, offset + 10],
+            'Right_Ankle_Pitch': torques[env.lookat_id, offset + 11],
+            'Right_Ankle_Roll': torques[env.lookat_id, offset + 12],
             'Left_Contact_Forces': feet_contact_forces[env.lookat_id, 0],
             'Right_Contact_Forces': feet_contact_forces[env.lookat_id, 1],
         })

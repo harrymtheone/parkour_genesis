@@ -66,7 +66,7 @@ def trace_actor(proj, cfg, exptid, checkpoint):
     with torch.no_grad():
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
-        recon = torch.zeros(1, 2, 32, 16, device=device)
+        recon = torch.zeros(1, 2, 64, 16, device=device)
         hidden_states = torch.zeros(2, 1, task_cfg.policy.actor_gru_hidden_size, device=device)
 
         trace_and_save(model, (proprio, recon, hidden_states))
@@ -91,7 +91,7 @@ def trace_odom(proj, cfg, exptid, checkpoint):
     ).to(device)
 
     # model.load_state_dict(state_dict['odometer_state_dict'])
-    model.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-09-02_21-44-22/latest.pth', weights_only=True))
+    model.load_state_dict(torch.load('/home/harry/projects/parkour_genesis/logs/odom_online/2025-09-09_14-51-46/latest.pth', weights_only=True))
     model.eval()
 
     # define the trace function
@@ -111,13 +111,13 @@ def trace_odom(proj, cfg, exptid, checkpoint):
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
         depth = torch.zeros(1, 2, 64, 64, device=device)
-        prev_recon = torch.zeros(1, 2, 32, 16, device=device)
+        prev_recon = torch.zeros(1, 2, 64, 16, device=device)
 
         trace_and_save(model, (proprio, depth, prev_recon))
 
 
 if __name__ == '__main__':
-    kwargs = dict(proj='t1', cfg='t1_odom_neg_finetune', exptid='t1_odom_neg_004', checkpoint=18900)
+    kwargs = dict(proj='t1', cfg='t1_odom_neg_finetune', exptid='t1_odom_neg_x_014r1', checkpoint=57400)
     # kwargs = dict(proj='pdd', cfg='pdd_odom_finetune', exptid='pdd_odom_002', checkpoint=16800)
 
     trace_actor(**kwargs)
