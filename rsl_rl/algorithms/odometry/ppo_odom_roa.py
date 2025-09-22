@@ -322,8 +322,8 @@ class PPO_Odom_ROA(BaseAlgorithm):
             else:
                 roa_loss = masked_MSE(depth_enc, scan_enc.detach(), mask_batch)
 
-            # Compute MSE loss between velocity estimation and ground truth privileged actor info
-            priv_loss = masked_MSE(vel_est, critic_obs_batch.priv_actor, mask_batch)
+            # Compute MSE loss between velocity estimation and ground truth velocity estimation
+            priv_loss = masked_MSE(vel_est, critic_obs_batch.est_gt, mask_batch)
 
             # Total loss for backward pass
             total_loss = roa_loss + priv_loss
@@ -347,11 +347,9 @@ class PPO_Odom_ROA(BaseAlgorithm):
             if use_estimated_values:
                 depth_enc, est = self.depth_est.inference_forward(obs.depth)
 
-                est = obs.priv_actor
-
                 return {'actions': self.actor.act(obs, depth_enc, est, **kwargs)}
             else:
-                return {'actions': self.actor.act(obs, None, None, **kwargs)}
+                return {'actions': self.actor.act(obs, None, obs.est, **kwargs)}
 
     def reset(self, dones):
         self.depth_est.reset(dones)

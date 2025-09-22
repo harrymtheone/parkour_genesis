@@ -12,9 +12,9 @@ from torch import nn
 
 
 class ActorJIT(Actor):
-    def forward(self, proprio, recon, hidden_states):
+    def forward(self, proprio, recon, est, hidden_states):
         recon_enc = self.scan_encoder(recon.flatten(1))
-        x = torch.cat([proprio, recon_enc], dim=1)
+        x = torch.cat([proprio, recon_enc, est], dim=1)
 
         x, hidden_states_new = self.gru(x.unsqueeze(0), hidden_states)
         x = x.squeeze(0)
@@ -66,10 +66,11 @@ def trace_actor(proj, cfg, exptid, checkpoint):
     with torch.no_grad():
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
-        recon = torch.zeros(1, 2, 64, 16, device=device)
+        recon = torch.zeros(1, 2, 32, 16, device=device)
+        est = torch.zeros(1, 3, device=device)
         hidden_states = torch.zeros(2, 1, task_cfg.policy.actor_gru_hidden_size, device=device)
 
-        trace_and_save(model, (proprio, recon, hidden_states))
+        trace_and_save(model, (proprio, recon, est, hidden_states))
 
 
 def trace_odom(proj, cfg, exptid, checkpoint):
@@ -111,14 +112,14 @@ def trace_odom(proj, cfg, exptid, checkpoint):
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
         depth = torch.zeros(1, 2, 64, 64, device=device)
-        prev_recon = torch.zeros(1, 2, 64, 16, device=device)
+        prev_recon = torch.zeros(1, 2, 32, 16, device=device)
 
         trace_and_save(model, (proprio, depth, prev_recon))
 
 
 if __name__ == '__main__':
-    kwargs = dict(proj='t1', cfg='t1_odom_neg_finetune', exptid='t1_odom_neg_x_014r1', checkpoint=57400)
+    kwargs = dict(proj='t1', cfg='t1_odom_neg_finetune', exptid='t1_odom_neg_x_001', checkpoint=33000)
     # kwargs = dict(proj='pdd', cfg='pdd_odom_finetune', exptid='pdd_odom_002', checkpoint=16800)
 
     trace_actor(**kwargs)
-    trace_odom(**kwargs)
+    # trace_odom(**kwargs)

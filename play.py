@@ -45,9 +45,9 @@ def play(args):
     task_cfg.domain_rand.push_interval_s = 3
     task_cfg.domain_rand.push_duration = [0.3]
     task_cfg.domain_rand.action_delay = True
-    task_cfg.domain_rand.action_delay_range = [(2, 2)]
+    task_cfg.domain_rand.action_delay_range = [(10, 10)]
     task_cfg.domain_rand.add_dof_lag = False
-    task_cfg.domain_rand.dof_lag_range = (3, 3)
+    task_cfg.domain_rand.dof_lag_range = (10, 10)
     task_cfg.domain_rand.randomize_friction = True
     task_cfg.domain_rand.friction_range = [0.7, 0.7]
     task_cfg.domain_rand.randomize_torques = False
@@ -62,8 +62,8 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 0,
         'rough_slope': 0,
-        'stairs_up': 1,
-        'stairs_down': 1,
+        'stairs_up': 0,
+        'stairs_down': 0,
         'huge_stair': 0,
         'discrete': 0,
         'stepping_stone': 0,
@@ -74,7 +74,7 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 0,
+        'parkour_stair': 1,
         'parkour_stair_down': 0,
         'parkour_mini_stair': 0,
         'parkour_mini_stair_down': 0,

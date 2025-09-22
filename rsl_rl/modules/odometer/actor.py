@@ -18,7 +18,7 @@ class Actor(nn.Module):
                                                activation_func=nn.ELU())
 
         # belief encoder
-        self.gru = nn.GRU(env_cfg.n_proprio + 128, policy_cfg.actor_gru_hidden_size, num_layers=2)
+        self.gru = nn.GRU(env_cfg.n_proprio + 128 + env_cfg.est_len, policy_cfg.actor_gru_hidden_size, num_layers=2)
         self.hidden_states = None
 
         self.actor = make_linear_layers(policy_cfg.actor_gru_hidden_size,
@@ -31,7 +31,7 @@ class Actor(nn.Module):
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions), requires_grad=True)
         self.distribution = None
 
-    def act(self, obs, recon, use_estimated_values, eval_=False, **kwargs):
+    def act(self, obs, recon, est, use_estimated_values, eval_=False, **kwargs):
         if torch.any(use_estimated_values):
             scan_enc = torch.where(
                 use_estimated_values,
@@ -39,11 +39,15 @@ class Actor(nn.Module):
                 self.scan_encoder(obs.scan.flatten(1))
             )
 
-            x = torch.cat([obs.proprio, scan_enc], dim=1)
+            x = torch.where(
+                use_estimated_values,
+                torch.cat([obs.proprio, scan_enc, est], dim=1),
+                torch.cat([obs.proprio, scan_enc, obs.est], dim=1)
+            )
 
         else:
             scan_enc = self.scan_encoder(obs.scan.flatten(1))
-            x = torch.cat([obs.proprio, scan_enc], dim=1)
+            x = torch.cat([obs.proprio, scan_enc, obs.est], dim=1)
 
         x, self.hidden_states = self.gru(x.unsqueeze(0), self.hidden_states)
         x = x.squeeze(0)
@@ -56,7 +60,7 @@ class Actor(nn.Module):
         self.distribution = Normal(mean, torch.exp(self.log_std))
         return self.distribution.sample()
 
-    def train_act(self, obs, scan, hidden_states, use_estimated_values):
+    def train_act(self, obs, scan, est, hidden_states, use_estimated_values):
         if torch.any(use_estimated_values):
             scan_enc = torch.where(
                 use_estimated_values,
@@ -64,11 +68,15 @@ class Actor(nn.Module):
                 gru_wrapper(self.scan_encoder, obs.scan.flatten(2)),
             )
 
-            x = torch.cat([obs.proprio, scan_enc], dim=2)
+            x = torch.where(
+                use_estimated_values,
+                torch.cat([obs.proprio, scan_enc, est], dim=2),
+                torch.cat([obs.proprio, scan_enc, obs.est], dim=2),
+            )
 
         else:
             scan_enc = gru_wrapper(self.scan_encoder, obs.scan.flatten(2))
-            x = torch.cat([obs.proprio, scan_enc], dim=2)
+            x = torch.cat([obs.proprio, scan_enc, obs.est], dim=2)
 
         x, _ = self.gru(x, hidden_states)
 
@@ -165,12 +173,12 @@ class ActorROA(Actor):
             x = torch.where(
                 use_estimated_values,
                 torch.cat([obs.proprio, depth_enc, est], dim=1),
-                torch.cat([obs.proprio, scan_enc, obs.priv_actor], dim=1)
+                torch.cat([obs.proprio, scan_enc, obs.est], dim=1)
             )
 
         else:
             scan_enc = self.scan_encoder(obs.scan.flatten(1))
-            x = torch.cat([obs.proprio, scan_enc, obs.priv_actor], dim=1)
+            x = torch.cat([obs.proprio, scan_enc, obs.est], dim=1)
 
         x, self.hidden_states = self.gru(x.unsqueeze(0), self.hidden_states)
         x = x.squeeze(0)
@@ -190,12 +198,12 @@ class ActorROA(Actor):
             x = torch.where(
                 use_estimated_values,
                 torch.cat([obs.proprio, depth_enc, est], dim=2),
-                torch.cat([obs.proprio, scan_enc, obs.priv_actor], dim=2),
+                torch.cat([obs.proprio, scan_enc, obs.est], dim=2),
             )
 
         else:
             scan_enc = gru_wrapper(self.scan_encoder, obs.scan.flatten(2))
-            x = torch.cat([obs.proprio, scan_enc, obs.priv_actor], dim=2)
+            x = torch.cat([obs.proprio, scan_enc, obs.est], dim=2)
 
         x, _ = self.gru(x, hidden_states)
 

@@ -179,6 +179,55 @@ class T1PIEEnvironment(T1BaseEnv):
 
         super().render()
 
+    def _reward_joint_pos_flat(self):
+        diff = self.sim.dof_pos - torch.where(
+            self.is_zero_command.unsqueeze(1),
+            self.init_state_dof_pos,
+            self.ref_dof_pos
+        )
+        diff = torch.norm(diff[:, self.dof_activated], dim=1)
+
+        rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
+        rew[self.env_class >= 2] = 0.
+        return rew
+
+    def _reward_joint_pos_parkour(self):
+        diff = self.sim.dof_pos - torch.where(
+            self.is_zero_command.unsqueeze(1),
+            self.init_state_dof_pos,
+            self.ref_dof_pos
+        )
+        diff = torch.norm(diff[:, self.dof_activated], dim=1)
+
+        rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
+        rew[self.env_class < 2] = 0.
+        return rew
+
+    def _reward_feet_contact_number_flat(self):
+        swing = self._get_swing_mask()
+        stance = self._get_stance_mask()
+        contact = self.contact_filt
+
+        rew = self._zero_tensor(self.num_envs, len(self.feet_indices))
+        rew[swing] = torch.where(contact[swing], -0.3, 1.0)
+        rew[stance] = torch.where(contact[stance], 1.0, -0.3)
+
+        rew[self.env_class >= 2] = 0.
+        return torch.mean(rew, dim=1)
+
+    def _reward_feet_contact_number_parkour(self):
+        swing = self._get_swing_mask()
+        stance = self._get_stance_mask()
+        contact = self.contact_filt
+
+        rew = self._zero_tensor(self.num_envs, len(self.feet_indices))
+        rew[swing] = torch.where(contact[swing], -0.3, 1.0)
+        rew[stance] = torch.where(contact[stance], 1.0, -0.3)
+
+        rew[self.env_class < 2] = 0.
+        return torch.mean(rew, dim=1)
+
+
     def _reward_default_dof_pos(self):
         return (self.sim.dof_pos - self.init_state_dof_pos).abs().sum(dim=1)
 

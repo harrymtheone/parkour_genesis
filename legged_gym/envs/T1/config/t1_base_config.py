@@ -65,9 +65,7 @@ class T1BaseCfg(BaseConfig):
         base_pts_x = np.linspace(-0.2, 0.2, 8)
         base_pts_y = np.linspace(-0.2, 0.2, 8)
 
-        # scan_pts_x = np.linspace(-0.5, 1.1, 32)
-        scan_pts_x = np.linspace(-0.6, 0.6, 64)
-
+        scan_pts_x = np.linspace(-0.6, 0.6, 32)
         scan_pts_y = np.linspace(-0.4, 0.4, 16)
         body_pts_x = np.linspace(-0.1, 0.3, 4)
         body_pts_y = np.linspace(-0.2, 0.2, 4)
@@ -152,16 +150,16 @@ class T1BaseCfg(BaseConfig):
 
         action_delay = False
         randomize_action_delay = True  # if False, max delay will be used
-        action_delay_range = [(0, 2), (0, 4)]
+        action_delay_range = [(0, 10)]
         action_delay_update_steps = 2000 * 24
 
         add_dof_lag = False
         randomize_dof_lag = True  # if False, max delay will be used
-        dof_lag_range = (0, 6)
+        dof_lag_range = (0, 10)
 
         add_imu_lag = False
         randomize_imu_lag = True  # if False, max delay will be used
-        imu_lag_range = (0, 6)
+        imu_lag_range = (0, 10)
 
         randomize_base_mass = False
         added_mass_range = [-2.5, 2.5]

@@ -34,8 +34,8 @@ class T1_PIE_Cfg(T1BaseCfg):
             pitch_range = [-3, 3]
 
             data_format = 'depth'  # depth, cloud, hmap
-            update_interval = 1
-            delay_prop = None  # Gaussian (mean, std), or None
+            update_interval = 5
+            delay_prop = (5, 1)  # Gaussian (mean, std), or None
             history_length = 2
 
             resolution = (114, 64)  # width, height
@@ -70,8 +70,8 @@ class T1_PIE_Cfg(T1BaseCfg):
             pitch_range = [-3, 3]
 
             data_format = 'depth'  # depth, cloud, hmap
-            update_interval = 1
-            delay_prop = None  # Gaussian (mean, std), or None
+            update_interval = 5
+            delay_prop = (5, 1)  # Gaussian (mean, std), or None
             history_length = 2
 
             resolution = (114, 64)  # width, height
@@ -111,18 +111,18 @@ class T1_PIE_Cfg(T1BaseCfg):
         delta_t = 0.02
 
         class flat_ranges:
-            lin_vel_x = [-0.8, 1.2]
+            lin_vel_x = [-0.6, 0.8]
             lin_vel_y = [-0.8, 0.8]
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [-0.5, 0.8]
-            lin_vel_y = [-0.5, 0.5]
+            lin_vel_x = [-0.4, 0.6]
+            lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.3, 0.8]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.2, 0.8]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
@@ -131,10 +131,7 @@ class T1_PIE_Cfg(T1BaseCfg):
 
         terrain_dict = {
             'smooth_slope': 1,
-            # 'rough_slope': 1,
-            # 'stairs_up': 1,
-            # 'stairs_down': 1,
-            # 'parkour_stair': 1,
+            'rough_slope': 1,
             'parkour_flat': 1,
         }
 
@@ -159,9 +156,9 @@ class T1_PIE_Cfg(T1BaseCfg):
         push_robots = True
         push_duration = [0.1]
         action_delay = True
-        action_delay_range = [(0, 4)]
+        action_delay_range = [(0, 5)]
         add_dof_lag = True
-        dof_lag_range = (0, 6)
+        dof_lag_range = (0, 10)
         add_imu_lag = False
 
         randomize_torque = True
@@ -269,8 +266,7 @@ class T1_PIE_Cfg(T1BaseCfg):
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'  # rl, distil, mixed
-        # algorithm_name = 'ppo_pie'
-        algorithm_name = 'ppo_pie_moc'
+        algorithm_name = 'ppo_pie_mc'
 
         lock_smpl_until = 10000
         max_iterations = 20000  # number of policy updates
@@ -289,22 +285,12 @@ class T1_PIE_Stair_Cfg(T1_PIE_Cfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'stairs_up': 0,
-            'stairs_down': 0,
-            'huge_stair': 0,
-            'discrete': 0,
-            'stepping_stone': 0,
-            'gap': 0,
-            'pit': 0,
-            'parkour': 0,
-            'parkour_gap': 0,
-            'parkour_box': 0,
-            'parkour_step': 0,
-            'parkour_stair': 2,
-            'parkour_stair_down': 2,
-            'parkour_mini_stair': 2,
-            'parkour_mini_stair_down': 2,
-            'parkour_flat': 0,
+            # 'stairs_up': 1,
+            # 'stairs_down': 1,
+            'parkour_stair': 3,
+            'parkour_stair_down': 3,
+            # 'parkour_mini_stair': 1,
+            # 'parkour_mini_stair_down': 1,
         }
 
     class domain_rand(T1_PIE_Cfg.domain_rand):
@@ -312,58 +298,66 @@ class T1_PIE_Stair_Cfg(T1_PIE_Cfg):
         push_duration = [0.3]
 
         action_delay = True
-        action_delay_range = [(0, 4), (0, 6)]
+        action_delay_range = [(0, 10), (0, 15)]
         action_delay_update_steps = 5000 * 24
 
         add_dof_lag = True
-        dof_lag_range = (0, 6)
+        dof_lag_range = (0, 10)
 
         randomize_joint_armature = True
         joint_armature_range = {
             'default': dict(range=(0.005, 0.05), log_space=True),
-            'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.001, 0.05), log_space=True)
+            'ankle': dict(dof_ids=(5, 6, 11, 12), range=(0.001, 0.05), log_space=True)
         }
 
     class rewards(T1_PIE_Cfg.rewards):
+        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards_until_epoch = 1000 + 200  # after the epoch, turn off only_positive_reward
+
         class scales(T1_PIE_Cfg.rewards.scales):  # start, end, span, start_it
-            joint_pos = 2.
-            feet_contact_number = 1.2
+            # joint_pos = 2.
+            # feet_contact_number = 1.2
+            joint_pos_flat = 1.2
+            joint_pos_parkour = (0.6, 0., 6000, 4000)
+            feet_contact_number_flat = 1.2
+            feet_contact_number_parkour = (0.6, 0., 6000, 4000)
             feet_clearance = 1.
-            feet_distance = 0.2
-            knee_distance = 0.2
-            feet_rotation = 0.5
+            feet_distance = -1.
+            knee_distance = -1.
+            feet_rotation = -0.3
 
             # vel tracking
-            tracking_lin_vel = 3.5
-            tracking_goal_vel = 3.0
-            tracking_ang_vel = 2.5
-            goal_dist_change = (1000., 100, 1000, 2000)
+            tracking_lin_vel = 1.5
+            tracking_goal_vel = 2.5
+            tracking_ang_vel = 2.0
 
             # contact
-            feet_slip = -0.5
+            feet_slip = -0.1
             feet_contact_forces = -1e-3
-            feet_stumble = (0, -1., 1000, 3000)
-            foothold = (0., -1., 1000, 3000)
-            feet_edge = (0., -0.5, 1000, 3000)
+            feet_stumble = -2.
+            foothold = -0.1
+            feet_edge = -0.1
 
             # base pos
-            default_joint_pos = 2.0
-            orientation = 1.
-            base_height = 0.2
-            base_acc = 0.2
-            vel_mismatch_exp = 0.5
+            default_dof_pos = -0.04
+            default_dof_pos_yr = -1.
+            orientation = -10.
+            # base_height = -10.
+            base_acc = -1.
+            lin_vel_z = -1.
+            ang_vel_xy = -0.05
 
             # energy
-            action_smoothness = -3e-3
+            action_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
-            dof_acc = -1e-7
+            dof_acc = -1.e-7
             collision = -1.
 
-            dof_vel_smoothness = (0., -1e-3, 1000, 3000)
+            dof_vel_smoothness = -1e-3
             dof_pos_limits = -10.
-            dof_vel_limits = -1.
-            dof_torque_limits = (0., -0.1, 1000, 3000)
+            # dof_vel_limits = -0.5
+            dof_torque_limits = -0.1
 
     class control(T1BaseCfg.control):
         # PD Drive parameters:

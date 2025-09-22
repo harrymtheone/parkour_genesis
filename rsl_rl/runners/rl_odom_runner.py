@@ -6,6 +6,10 @@ from pathlib import Path
 
 import torch
 import wandb
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.columns import Columns
 
 from legged_gym.utils.terrain.terrain_types import TerrainType
 from rsl_rl.algorithms import BaseAlgorithm, algorithm_dict
@@ -221,24 +225,52 @@ class RLOdomRunner(RunnerLogger):
                 self.logger.add_scalar(t, v, global_step=self.cur_it)
             self.logger.flush()
 
-        # logging string to print
-        progress = f" \033[1m Learning iteration {self.cur_it}/{self.start_it + self.cfg.max_iterations} \033[0m "
+        # Calculate metrics
         fps = int(self.num_steps_per_env * self.task_cfg.env.num_envs / iteration_time)
         curr_it = self.cur_it - self.start_it
         eta = self.tot_time / (curr_it + 1) * (self.cfg.max_iterations - curr_it)
-        log_string = (
-            f"""{'*' * width}\n"""
-            f"""{progress.center(width, ' ')}\n\n"""
-            f"""{'Experiment:':>{pad}} {self.exptid}\n"""
-            f"""{'Computation:':>{pad}} {fps:.0f} steps/s\n"""
-            f"""{'Total timesteps:':>{pad}} {self.tot_steps}\n"""
-            f"""{'Iteration time:':>{pad}} {iteration_time:.2f}s {self.collection_time:.2f}s {self.learn_time:.2f}s\n"""
-            f"""{'Total time:':>{pad}} {self.tot_time:.2f}s\n"""
-            f"""{'ETA:':>{pad}} {eta // 60:.0f} mins {eta % 60:.1f} s\n"""
-            f"""{'CUDA allocated:':>{pad}} {torch.cuda.memory_allocated() / 1024 / 1024:.2f}\n"""
-            f"""{'CUDA reserved:':>{pad}} {torch.cuda.memory_reserved() / 1024 / 1024:.2f}\n"""
-        )
-        print(log_string)
+        
+        console = Console()
+        
+        # Add separation and centered title
+        console.print("\n" + "=" * 80)
+        title = f"Learning Iteration {self.cur_it}/{self.start_it + self.cfg.max_iterations}"
+        console.print(f"[bold green]{title.center(80)}[/bold green]")
+        console.print("=" * 80)
+        
+        # Format ETA with hours, minutes, and seconds
+        eta_hours = int(eta // 3600)
+        eta_mins = int((eta % 3600) // 60)
+        eta_secs = eta % 60
+        if eta_hours > 0:
+            eta_str = f"{eta_hours}h {eta_mins}m {eta_secs:.1f}s"
+        else:
+            eta_str = f"{eta_mins}m {eta_secs:.1f}s"
+        
+        # Training & Performance Table (merged)
+        main_table = Table(title="Training & Performance", show_header=True, header_style="bold blue")
+        main_table.add_column("Metric", style="cyan", no_wrap=True)
+        main_table.add_column("Total", style="white")
+        
+        main_table.add_row("Experiment", str(self.exptid))
+        main_table.add_row("Total timesteps", f"{self.tot_steps:,}")
+        main_table.add_row("Total time", f"{self.tot_time:.2f}s")
+        main_table.add_row("ETA", eta_str)
+        main_table.add_row("Iteration time", f"{iteration_time:.2f}s | {self.collection_time:.2f}s | {self.learn_time:.2f}s")
+        main_table.add_row("Computation", f"{fps:.0f} steps/s")
+        
+        # System Resources Table
+        system_table = Table(title="System Resources", show_header=True, header_style="bold blue")
+        system_table.add_column("Resource", style="cyan", no_wrap=True)
+        system_table.add_column("Usage", style="white")
+        
+        system_table.add_row("CUDA allocated", f"{torch.cuda.memory_allocated() / 1024 / 1024:.2f} MB")
+        system_table.add_row("CUDA reserved", f"{torch.cuda.memory_reserved() / 1024 / 1024:.2f} MB")
+        
+        # Display tables
+        console.print(main_table)
+        console.print(system_table)
+        console.print()  # Extra spacing
 
     def play_act(self, obs, dones=None, **kwargs):
         if dones is not None:

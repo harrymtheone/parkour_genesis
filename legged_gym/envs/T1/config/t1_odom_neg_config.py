@@ -8,14 +8,16 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         n_proprio = 50
         len_prop_his = 10
 
-        scan_shape = (64, 16)
+        scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
+
+        est_len = 3
 
         num_critic_obs = 70
         len_critic_his = 50
 
         num_actions = 13
-        episode_length_s = 40  # episode length in seconds
+        episode_length_s = 50  # episode length in seconds
 
     class sensors:
         activated = False
@@ -152,9 +154,9 @@ class T1_Odom_Neg_Cfg(T1BaseCfg):
         push_robots = True
         push_duration = [0.1]
         action_delay = True
-        action_delay_range = [(0, 4)]
+        action_delay_range = [(0, 10)]
         add_dof_lag = True
-        dof_lag_range = (0, 6)
+        dof_lag_range = (0, 10)
         add_imu_lag = False
 
         randomize_torque = True
@@ -289,11 +291,11 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
         push_duration = [0.3]
 
         action_delay = True
-        action_delay_range = [(0, 4), (0, 6)]
+        action_delay_range = [(0, 10), (0, 15)]
         action_delay_update_steps = 5000 * 24
 
         add_dof_lag = True
-        dof_lag_range = (0, 6)
+        dof_lag_range = (0, 10)
 
         randomize_joint_armature = True
         joint_armature_range = {
@@ -312,8 +314,8 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
             'stairs_down': 1,
             'parkour_stair': 1,
             'parkour_stair_down': 1,
-            'parkour_mini_stair': 1,
-            'parkour_mini_stair_down': 1,
+            # 'parkour_mini_stair': 1,
+            # 'parkour_mini_stair_down': 1,
         }
 
     class rewards(T1_Odom_Neg_Cfg.rewards):
@@ -323,9 +325,9 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
         class scales(T1_Odom_Neg_Cfg.rewards.scales):  # start, end, span, start_it
             # joint_pos = 0.6
             # feet_contact_number = 0.6
-            joint_pos_flat = 0.6
+            joint_pos_flat = 1.2
             joint_pos_parkour = (0.6, 0., 6000, 4000)
-            feet_contact_number_flat = 0.6
+            feet_contact_number_flat = 1.2
             feet_contact_number_parkour = (0.6, 0., 6000, 4000)
             feet_clearance = 1.
             feet_distance = -1.
@@ -360,7 +362,7 @@ class T1_Odom_Stair_Neg_Cfg(T1_Odom_Neg_Cfg):
             dof_acc = -1.e-7
             collision = -1.
 
-            dof_vel_smoothness = -1e-4
+            dof_vel_smoothness = -1e-3
             dof_pos_limits = -10.
             # dof_vel_limits = -0.5
             dof_torque_limits = -0.1

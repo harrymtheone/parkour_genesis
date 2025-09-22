@@ -8,27 +8,30 @@ from ...utils.math import torch_rand_float
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, depth, scan):
+    def __init__(self, proprio, depth, scan, est):
         super().__init__()
         self.proprio = proprio.clone()
         self.depth = depth
         self.scan = scan.clone()
+        self.est = est.clone()
 
     def no_depth(self):
-        return ObsNoDepth(self.proprio, self.scan)
+        return ObsNoDepth(self.proprio, self.scan, self.est)
 
 
 class ObsNoDepth(ObsBase):
-    def __init__(self, proprio, scan):
+    def __init__(self, proprio, scan, est):
         super().__init__()
         self.proprio = proprio.clone()
         self.scan = scan.clone()
+        self.est = est.clone()
 
     @torch.compiler.disable
     def mirror(self):
         return ObsNoDepth(
             mirror_proprio_by_x(self.proprio),
             torch.flip(self.scan, dims=[2]),
+            self.mirror_est_by_x(self.est)
         )
 
     @staticmethod
@@ -36,6 +39,12 @@ class ObsNoDepth(ObsBase):
         dof_prop_mirrored = dof_prop.clone()
         mirror_dof_prop_by_x(dof_prop_mirrored, 0)
         return dof_prop_mirrored
+
+    @staticmethod
+    def mirror_est_by_x(est: torch.Tensor):
+        est = est.clone()
+        est[:, 1:3] = -est[:, 1:3]
+        return est
 
 
 class CriticObs(ObsBase):
@@ -160,7 +169,11 @@ class T1OdomNegEnvironment(T1BaseEnv):
         else:
             depth = None
 
-        self.actor_obs = ActorObs(proprio, depth, scan_edge)
+        est = torch.cat([
+            base_lin_vel * self.obs_scales.lin_vel,  # 3
+        ], dim=-1)
+
+        self.actor_obs = ActorObs(proprio, depth, scan_edge, est)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compose critic observation

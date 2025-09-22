@@ -4,9 +4,9 @@ import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.model_pie import Policy
-from rsl_rl.modules.utils import MixtureOfCritic
-from rsl_rl.storage import RolloutStorageMixtureOfCritic as RolloutStorage
-from .alg_base import BaseAlgorithm
+from rsl_rl.modules.utils import UniversalCritic
+from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
+from rsl_rl.algorithms.alg_base import BaseAlgorithm
 
 try:
     from torch.amp import GradScaler
@@ -22,8 +22,10 @@ class Transition:
         self.observations_next = None
         self.actions = None
         self.rewards = None
+        self.rewards_contact = None
         self.dones = None
         self.values = None
+        self.values_contact = None
         self.actions_log_prob = None
         self.action_mean = None
         self.action_sigma = None
@@ -37,7 +39,7 @@ class Transition:
             setattr(self, key, None)
 
 
-class PPO_PIE_MOC(BaseAlgorithm):
+class PPO_PIE_MC(BaseAlgorithm):
     def __init__(self, task_cfg, device=torch.device('cpu'), env=None, **kwargs):
         self.env = env
 
@@ -51,7 +53,7 @@ class PPO_PIE_MOC(BaseAlgorithm):
         self.actor = Policy(task_cfg.env, task_cfg.policy).to(self.device)
         self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
 
-        self.critic = MixtureOfCritic(task_cfg).to(self.device)
+        self.critic = UniversalCritic(task_cfg.env, task_cfg.policy).to(self.device)
         self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
@@ -72,7 +74,7 @@ class PPO_PIE_MOC(BaseAlgorithm):
                 self.transition.hidden_states = self.actor.get_hidden_states()
 
             self.transition.use_estimated_values = use_estimated_values
-            actions = self.actor.act(obs, use_estimated_values)
+            actions = self.actor.act(obs)
 
             if self.actor.is_recurrent and self.transition.hidden_states is None:
                 # only for the first step where hidden_state is None
@@ -81,6 +83,7 @@ class PPO_PIE_MOC(BaseAlgorithm):
             # store
             self.transition.actions = actions
             self.transition.values = self.critic.evaluate(obs_critic)
+            self.transition.values_contact = self.critic.evaluate(obs_critic)  # Use same critic for both
             self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions)
             self.transition.action_mean = self.actor.action_mean
             self.transition.action_sigma = self.actor.action_std
@@ -88,7 +91,8 @@ class PPO_PIE_MOC(BaseAlgorithm):
 
     def process_env_step(self, rewards, dones, infos, *args):
         self.transition.observations_next = args[0].as_obs_next()
-        self.transition.rewards = {rew_name: rew.clone().unsqueeze(1) for rew_name, rew in infos['step_rew'].items()}
+        self.transition.rewards = rewards.clone().unsqueeze(1)
+        self.transition.rewards_contact = rewards.clone().unsqueeze(1)  # Use same rewards for both
         self.transition.dones = dones.unsqueeze(1)
 
         # Bootstrapping on time-outs
@@ -98,8 +102,8 @@ class PPO_PIE_MOC(BaseAlgorithm):
             else:
                 bootstrapping = (infos['time_outs']).unsqueeze(1).to(self.device)
 
-            for rew_name in self.transition.rewards:
-                self.transition.rewards[rew_name] += self.cfg.gamma * self.transition.values[rew_name] * bootstrapping
+            self.transition.rewards += self.cfg.gamma * self.transition.values * bootstrapping
+            self.transition.rewards_contact += self.cfg.gamma * self.transition.values_contact * bootstrapping
 
         # Record the transition
         self.storage.add_transitions(self.transition)
@@ -107,8 +111,9 @@ class PPO_PIE_MOC(BaseAlgorithm):
         self.reset(dones)
 
     def compute_returns(self, last_critic_obs):
-        last_values = self.critic.evaluate(last_critic_obs)
-        self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lam)
+        last_values_default = self.critic.evaluate(last_critic_obs).detach()
+        last_values_contact = self.critic.evaluate(last_critic_obs).detach()  # Use same critic for both
+        self.storage.compute_returns(last_values_default, last_values_contact, self.cfg.gamma, self.cfg.lam)
 
     def update(self, cur_it=0, **kwargs):
         mean_value_loss = 0
@@ -120,7 +125,6 @@ class PPO_PIE_MOC(BaseAlgorithm):
         mean_vae_loss = 0
         mean_recon_loss = 0
         mean_symmetry_loss = 0
-        mean_roa_loss = 0
 
         kl_change = []
         num_updates = 0
@@ -132,9 +136,11 @@ class PPO_PIE_MOC(BaseAlgorithm):
 
         for batch in generator:
             loss_tuple = self._compute_loss(cur_it, batch)
-            kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, symmetry_loss, loss_roa = loss_tuple
+            kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, symmetry_loss = loss_tuple
 
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
+                kl_mean = loss_tuple[0]
+
                 if kl_mean > self.cfg.desired_kl * 2.0:
                     self.learning_rate = max(1e-5, self.learning_rate / 1.5)
                 elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
@@ -168,7 +174,6 @@ class PPO_PIE_MOC(BaseAlgorithm):
             mean_vae_loss += vae_loss
             mean_recon_loss += recon_loss
             mean_symmetry_loss += symmetry_loss
-            mean_roa_loss += loss_roa
 
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
@@ -179,7 +184,6 @@ class PPO_PIE_MOC(BaseAlgorithm):
         mean_vae_loss /= num_updates
         mean_recon_loss /= num_updates
         mean_symmetry_loss /= num_updates
-        mean_roa_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -199,7 +203,6 @@ class PPO_PIE_MOC(BaseAlgorithm):
             'Loss/VAE_loss': mean_vae_loss,
             'Loss/recon_loss': mean_recon_loss,
             'Loss/symmetry_loss': mean_symmetry_loss,
-            'Loss/roa_loss': mean_roa_loss,
         }
         return return_dict
 
@@ -217,11 +220,10 @@ class PPO_PIE_MOC(BaseAlgorithm):
             old_mu_batch = batch['action_mean']
             old_sigma_batch = batch['action_sigma']
             old_actions_log_prob_batch = batch['actions_log_prob']
-            use_estimated_values_batch = batch['use_estimated_values']
 
             # ################################  Policy Update ################################
-            vae_mu, vae_logvar, est, ot1, recon, depth_latent, scan_enc = self.actor.train_act(
-                obs_batch, hidden_states=hidden_states_batch, use_estimated_values=use_estimated_values_batch)
+            vae_mu, vae_logvar, est, ot1, recon = self.actor.train_act(
+                obs_batch, hidden_states=hidden_states_batch)
             action_mean_original = self.actor.action_mean.detach()
 
             # Use KL to adaptively update learning rate
@@ -234,7 +236,6 @@ class PPO_PIE_MOC(BaseAlgorithm):
 
             actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
             evaluation = self.critic.evaluate(critic_obs_batch)
-            evaluation = torch.cat(tuple(evaluation.values()), dim=2)
 
             # Surrogate loss
             ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
@@ -247,9 +248,9 @@ class PPO_PIE_MOC(BaseAlgorithm):
                 value_clipped = target_values_batch + (evaluation - target_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
                 value_losses = (evaluation - returns_batch).pow(2)
                 value_losses_clipped = (value_clipped - returns_batch).pow(2)
-                value_loss = torch.max(value_losses, value_losses_clipped)[mask_batch].sum(-1).mean() * self.cfg.value_loss_coef
+                value_loss = torch.max(value_losses, value_losses_clipped)[mask_batch].mean() * self.cfg.value_loss_coef
             else:
-                value_loss = (evaluation - returns_batch)[mask_batch].pow(2).sum(-1).mean() * self.cfg.value_loss_coef
+                value_loss = (evaluation - returns_batch)[mask_batch].pow(2).mean() * self.cfg.value_loss_coef
 
             entropy_loss = -self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
@@ -271,18 +272,13 @@ class PPO_PIE_MOC(BaseAlgorithm):
 
             # Symmetry loss
             obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
-            self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states_batch, use_estimated_values=use_estimated_values_batch[:batch_size])
+            self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states_batch)
 
             action_mean_original = action_mean_original[:batch_size]
             mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
             symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
 
-            if cur_it % 3 == 0:
-                loss_roa = self.mse_loss(depth_latent.detach(), scan_enc)
-            else:
-                loss_roa = self.mse_loss(depth_latent, scan_enc.detach())
-
-        return kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, symmetry_loss, loss_roa
+        return kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, symmetry_loss
 
     def reset(self, dones):
         if self.actor.is_recurrent:
@@ -304,14 +300,10 @@ class PPO_PIE_MOC(BaseAlgorithm):
 
     def load(self, loaded_dict, load_optimizer=True):
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
-        self.critic.load(loaded_dict['critic_state_dict'])
+        self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
         if load_optimizer:
-            try:
-                self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
-            except Exception as e:
-                print(f"Failed to load optimizer state_dict: {e}")
-                print("Continuing with fresh optimizer state...")
+            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)

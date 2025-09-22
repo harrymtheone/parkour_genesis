@@ -93,7 +93,7 @@ class PPO_Odom(BaseAlgorithm):
             self.transition.actor_hidden_states = self.actor.get_hidden_states()
 
             self.transition.recon = recon
-            actions = self.actor.act(obs, recon, use_estimated_values=use_estimated_values)
+            actions = self.actor.act(obs, recon, obs.est, use_estimated_values=use_estimated_values)
 
             if self.transition.actor_hidden_states is None:
                 # only for the first step where hidden_state is None
@@ -252,6 +252,7 @@ class PPO_Odom(BaseAlgorithm):
             self.actor.train_act(
                 obs_batch,
                 recon_batch,
+                obs_batch.est,
                 hidden_states=actor_hidden_states_batch,
                 use_estimated_values=use_estimated_values_batch
             )
@@ -315,6 +316,7 @@ class PPO_Odom(BaseAlgorithm):
                 self.actor.train_act(
                     obs_mirrored_batch,
                     recon_batch,
+                    obs_mirrored_batch.est,
                     hidden_states=actor_hidden_states_batch,
                     use_estimated_values=use_estimated_values_batch
                 )
@@ -332,7 +334,7 @@ class PPO_Odom(BaseAlgorithm):
             else:
                 kwargs['use_estimated_values'] = use_estimated_values
 
-            return {'actions': self.actor.act(obs, recon, **kwargs)}
+            return {'actions': self.actor.act(obs, recon, obs.est, **kwargs)}
 
     def reset(self, dones):
         self.actor.reset(dones)
