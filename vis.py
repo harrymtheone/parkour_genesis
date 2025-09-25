@@ -47,8 +47,6 @@ def gen_info_panel(args, env):
     table11.add_column("yaw")
     table11.add_row("cmd", f'{cmd_vx: .2f}', f'{cmd_vy: .2f}', f'{zero: .2f}', f'{cmd_yaw: .2f}')
     table11.add_row("real", f'{real_vx_avg: .2f}', f'{real_vy_avg: .2f}', f'{real_vz_avg: .2f}', f'{real_yaw_avg: .2f}')
-    if hasattr(args, 'est_vel'):
-        table11.add_row("est_vel", f'{args.est_vel[0]: .2f}', f'{args.est_vel[1]: .2f}', f'{args.est_vel[2]: .2f}', f'{zero: .2f}')
 
     table12 = Table()
     table12.add_column("target_yaw")
@@ -93,8 +91,16 @@ class BaseVisualizer:
     his_length: int
 
     def __init__(self):
-        # History buffers
-        self.his = {name: deque(maxlen=self.his_length) for name in self.subplot_props}
+        # History buffers - support multiple lines per subplot
+        self.his = {}
+        for name, props in self.subplot_props.items():
+            if 'lines' in props:
+                # Multiple lines per subplot
+                for line_name in props['lines']:
+                    self.his[line_name] = deque(maxlen=self.his_length)
+            else:
+                # Single line per subplot (backward compatibility)
+                self.his[name] = deque(maxlen=self.his_length)
 
         # Create figure and axes
         self.fig, axes = plt.subplots(*self.subplot_shape, figsize=self.figsize)
@@ -114,9 +120,19 @@ class BaseVisualizer:
             if 'lim_lower' in props:
                 ax.axhline(props['lim_lower'], linestyle='--')
 
-            # Create animated line for data
-            line, = ax.plot([], [], lw=1, animated=True)
-            self.lines[name] = line
+            # Create animated lines for data
+            if 'lines' in props:
+                # Multiple lines per subplot
+                colors = props.get('colors', ['blue', 'red', 'green', 'orange', 'purple'])
+                for i, line_name in enumerate(props['lines']):
+                    color = colors[i % len(colors)]
+                    line, = ax.plot([], [], lw=1, animated=True, color=color, label=line_name)
+                    self.lines[line_name] = line
+                ax.legend()
+            else:
+                # Single line per subplot (backward compatibility)
+                line, = ax.plot([], [], lw=1, animated=True)
+                self.lines[name] = line
 
         # Disable any unused axes
         for ax in axes_flat[len(self.subplot_props):]:
@@ -131,35 +147,67 @@ class BaseVisualizer:
         plt.show(block=False)
 
     def _plot(self, data: dict):
-        # data: mapping subplot name -> new y-value
+        # Handle both single values and dictionaries
         for name, y_val in data.items():
-            if name not in self.lines:
-                continue
+            if isinstance(y_val, dict):
+                # Multiple lines for this subplot
+                # First, update all line data
+                lines_to_draw = []
+                for line_name, values in y_val.items():
+                    if line_name not in self.lines:
+                        continue
 
-            buf = self.his[name]
-            buf.append(y_val)
-            y = np.array(buf)
-            x = np.arange(len(y))
+                    buf = self.his[line_name]
+                    buf.append(values)
+                    y = np.array(buf)
+                    x = np.arange(len(y))
 
-            line = self.lines[name]
-            ax = line.axes
+                    line = self.lines[line_name]
+                    line.set_data(x, y)
+                    lines_to_draw.append(line)
+                
+                # Then restore background once and draw all lines
+                if lines_to_draw:
+                    ax = lines_to_draw[0].axes
+                    # Use the first line's background (they should all be the same)
+                    first_line_name = list(y_val.keys())[0]
+                    self.fig.canvas.restore_region(self.backgrounds[first_line_name])
+                    
+                    # Draw all lines
+                    for line in lines_to_draw:
+                        ax.draw_artist(line)
+                    
+                    # Blit the updated region to the screen
+                    self.fig.canvas.blit(ax.bbox)
+            else:
+                # Single line per subplot (original behavior)
+                if name not in self.lines:
+                    continue
 
-            # Restore the clean background (with limit lines baked in)
-            self.fig.canvas.restore_region(self.backgrounds[name])
+                buf = self.his[name]
+                buf.append(y_val)
+                y = np.array(buf)
+                x = np.arange(len(y))
 
-            # Update line data
-            line.set_data(x, y)
+                line = self.lines[name]
+                ax = line.axes
 
-            # Redraw just this line
-            ax.draw_artist(line)
+                # Restore the clean background (with limit lines baked in)
+                self.fig.canvas.restore_region(self.backgrounds[name])
 
-            # Blit the updated region to the screen
-            self.fig.canvas.blit(ax.bbox)
+                # Update line data
+                line.set_data(x, y)
+
+                # Redraw just this line
+                ax.draw_artist(line)
+
+                # Blit the updated region to the screen
+                self.fig.canvas.blit(ax.bbox)
 
         # Flush GUI events
         self.fig.canvas.flush_events()
 
-    def plot(self, env):
+    def plot(self, env, args):
         raise NotImplementedError
 
 
@@ -183,7 +231,7 @@ class T1ActionsVisualizer(BaseVisualizer):
     }
     his_length = 50
 
-    def plot(self, env):
+    def plot(self, env, args):
         actions = env.last_action_output.cpu().numpy()
         self._plot({
             'Waist': actions[env.lookat_id, 0],
@@ -221,7 +269,7 @@ class T1DofPosVisualizer(BaseVisualizer):
     }
     his_length = 50
 
-    def plot(self, env):
+    def plot(self, env, args):
         dof_pos = env.sim.dof_pos.cpu().numpy()
         self._plot({
             'Left_Hip_Pitch': dof_pos[env.lookat_id, 11],
@@ -259,7 +307,7 @@ class T1DofVelVisualizer(BaseVisualizer):
     }
     his_length = 50
 
-    def plot(self, env):
+    def plot(self, env, args):
         dof_vel = env.sim.dof_vel.cpu().numpy()
         self._plot({
             'Left_Hip_Pitch': dof_vel[env.lookat_id, 11],
@@ -299,7 +347,7 @@ class T1TorqueVisualizer(BaseVisualizer):
     }
     his_length = 50
 
-    def plot(self, env):
+    def plot(self, env, args):
         torques = env.torques.cpu().numpy()
         feet_contact_forces = torch.norm(env.sim.contact_forces[:, env.feet_indices], dim=-1).cpu().numpy()
         offset = 0
@@ -330,7 +378,27 @@ class RewVisualizer(BaseVisualizer):
     }
     his_length = 50
 
-    def plot(self, env):
+    def plot(self, env, *args):
         # rew = env.extras['step_rew']
         rew = env.rew_buf[env.lookat_id].item()
         self._plot({'Rew': rew})
+
+
+class VelEstVisualizer(BaseVisualizer):
+    figsize = (12, 6)
+    subplot_shape = (3, 1)
+    subplot_props = {
+        'X': {'range': (-0.5, 0.5), 'lines': ['real_vx', 'est_x'], 'colors': ['blue', 'red']},
+        'Y': {'range': (-0.5, 0.5), 'lines': ['real_vy', 'est_y'], 'colors': ['blue', 'red']},
+        'Z': {'range': (-0.5, 0.5), 'lines': ['real_vz', 'est_z'], 'colors': ['blue', 'red']},
+    }
+    his_length = 50
+
+    def plot(self, env, args):
+        real_vx, real_vy, real_vz = env.base_lin_vel[env.lookat_id].cpu().numpy()
+        est_x, est_y, est_z = args.vel_est[env.lookat_id].cpu().numpy()
+        self._plot({
+            'X': {'real_vx': real_vx, 'est_x': est_x},
+            'Y': {'real_vy': real_vy, 'est_y': est_y},
+            'Z': {'real_vz': real_vz, 'est_z': est_z},
+        })

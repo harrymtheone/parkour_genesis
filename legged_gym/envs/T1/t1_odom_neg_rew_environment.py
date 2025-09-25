@@ -162,10 +162,6 @@ class T1OdomNegEnvironment(T1BaseEnv):
 
         if self.cfg.sensors.activated:
             depth = torch.cat([self.sensors.get('depth_0'), self.sensors.get('depth_1')], dim=1).half()
-
-            if self.cfg.sensors.depth_0.data_format == 'hmap':
-                depth = depth.squeeze(1)
-                self.draw_hmap_from_depth(depth[self.lookat_id])
         else:
             depth = None
 

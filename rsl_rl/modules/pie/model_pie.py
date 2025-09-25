@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 
-from .utils import make_linear_layers, gru_wrapper
+from rsl_rl.modules.utils import make_linear_layers, gru_wrapper
 
 
 class EstimatorGRU(nn.Module):
@@ -77,30 +77,38 @@ class EstimatorVAE(nn.Module):
         super().__init__()
         activation = nn.ELU()
         hidden_size = policy_cfg.estimator_gru_hidden_size
+        self.len_latent_z = policy_cfg.len_latent_z
+        self.len_latent_hmap = policy_cfg.len_latent_hmap
 
-        self.mlp_mu = make_linear_layers(hidden_size, hidden_size, hidden_size,
-                                         activation_func=activation, output_activation=False)
+        self.encoder = make_linear_layers(hidden_size, hidden_size, activation_func=activation)
 
-        self.mlp_logvar = make_linear_layers(hidden_size, hidden_size, hidden_size,
-                                             activation_func=activation, output_activation=False)
+        self.mlp_vel = nn.Linear(hidden_size, 3)
+        self.mlp_vel_logvar = nn.Linear(hidden_size, 3)
+        self.mlp_z = nn.Linear(hidden_size, self.len_latent_z + self.len_latent_hmap)
+        self.mlp_z_logvar = nn.Linear(hidden_size, self.len_latent_z + self.len_latent_hmap)
 
-        self.ot1_predictor = make_linear_layers(hidden_size, 128, env_cfg.n_proprio,
+        self.ot1_predictor = make_linear_layers(3 + self.len_latent_z + self.len_latent_hmap, 128, env_cfg.n_proprio,
                                                 activation_func=activation, output_activation=False)
 
-        self.len_estimation = policy_cfg.len_estimation
-        self.len_hmap_latent = policy_cfg.len_hmap_latent
-        self.hmap_recon = make_linear_layers(self.len_hmap_latent, 256, env_cfg.n_scan,
+        self.hmap_recon = make_linear_layers(self.len_latent_hmap, 256, env_cfg.n_scan,
                                              activation_func=activation, output_activation=False)
 
-    def forward(self, gru_out):
-        return self.mlp_mu(gru_out)
+        self.mlp_vel_logvar.bias.data.fill_(-4.0)
+        self.mlp_z_logvar.bias.data.fill_(-4.0)
 
-    def estimate(self, gru_out):
-        vae_mu = self.mlp_mu(gru_out)
-        vae_logvar = self.mlp_logvar(gru_out)
-        ot1 = self.ot1_predictor(self.reparameterize(vae_mu, vae_logvar))
-        hmap = self.hmap_recon(vae_mu[..., -self.len_hmap_latent:])
-        return vae_mu, vae_logvar, vae_mu[..., :self.len_estimation], ot1, hmap
+    def forward(self, gru_out, sample=True):
+        mu_vel = self.mlp_vel(gru_out)
+        logvar_vel = self.mlp_vel_logvar(gru_out)
+        mu_z = self.mlp_z(gru_out)
+        logvar_z = self.mlp_z_logvar(gru_out)
+
+        vel = self.reparameterize(mu_vel, logvar_vel) if sample else mu_vel
+        z = self.reparameterize(mu_z, logvar_z) if sample else mu_z
+
+        ot1 = self.ot1_predictor(torch.cat([vel, z], dim=1))
+        hmap = self.hmap_recon(z[:, -self.len_latent_hmap:])
+
+        return vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap
 
     @staticmethod
     def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
@@ -112,12 +120,12 @@ class EstimatorVAE(nn.Module):
 class Actor(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        self.actor = make_linear_layers(env_cfg.n_proprio + policy_cfg.estimator_gru_hidden_size,
+        self.actor = make_linear_layers(env_cfg.n_proprio + 3 + policy_cfg.len_latent_z + policy_cfg.len_latent_hmap,
                                         *policy_cfg.actor_hidden_dims, env_cfg.num_actions,
                                         activation_func=nn.ELU(), output_activation=False)
 
-    def forward(self, proprio, priv):
-        return self.actor(torch.cat([proprio, priv], dim=1))
+    def forward(self, proprio, vel, z):
+        return self.actor(torch.cat([proprio, vel, z], dim=1))
 
 
 class Policy(nn.Module):
@@ -133,23 +141,21 @@ class Policy(nn.Module):
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
         self.distribution = None
 
-    def act(self,
+    def act(
+            self,
             obs: ActorObs,
             eval_=False,
-            **kwargs):  # <-- my mood be like
+            **kwargs
+    ):  # <-- my mood be like
         # encode history proprio
-        gru_out = self.estimator.inference_forward(obs.prop_his, obs.depth)
-        vae_mu = self.vae(gru_out)
+        with torch.no_grad():
+            gru_out = self.estimator.inference_forward(obs.prop_his, obs.depth)
+            vel, z = self.vae(gru_out, sample=not eval_)[:2]
 
-        # compute action
-        mean = self.actor(obs.proprio, vae_mu)
+        mean = self.actor(obs.proprio, vel, z)
 
         if eval_:
-            # vae_mu, vae_logvar, est, ot1, hmap = self.estimator(obs.prop_his, obs.depth)
-            # mean = self.actor(obs.proprio, vae_mu)
-            # hmap = hmap.unflatten(1, (32, 16))
-            # return mean, hmap, hmap
-            return mean
+            return mean, vel
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
@@ -160,15 +166,24 @@ class Policy(nn.Module):
             obs: ActorObs,
             hidden_states,
     ):  # <-- my mood be like
-        gru_out = self.estimator(obs.prop_his, obs.depth, hidden_states)
-        vae_mu, vae_logvar, est, ot1, recon = self.vae.estimate(gru_out)
+        with torch.no_grad():
+            gru_out = self.estimator(obs.prop_his, obs.depth, hidden_states)
+            vel, z = gru_wrapper(self.vae, gru_out)[:2]
 
         # compute action
-        mean = gru_wrapper(self.actor, obs.proprio, vae_mu)
+        mean = gru_wrapper(self.actor, obs.proprio, vel, z)
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
-        return vae_mu, vae_logvar, est, ot1, recon
+
+    def estimate(
+            self,
+            obs: ActorObs,
+            hidden_states
+    ):
+        gru_out = self.estimator(obs.prop_his, obs.depth, hidden_states)
+        vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap = gru_wrapper(self.vae, gru_out)
+        return vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)

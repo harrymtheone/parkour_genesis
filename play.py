@@ -28,7 +28,7 @@ def play(args):
 
     # override some parameters for testing
     task_cfg.play.control = False
-    task_cfg.env.num_envs = 8
+    task_cfg.env.num_envs = 5
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
@@ -60,7 +60,7 @@ def play(args):
 
     task_cfg.terrain.description_type = 'trimesh'
     task_cfg.terrain.terrain_dict = {
-        'smooth_slope': 0,
+        'smooth_slope': 1,
         'rough_slope': 0,
         'stairs_up': 0,
         'stairs_down': 0,
@@ -74,7 +74,7 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 1,
+        'parkour_stair': 0,
         'parkour_stair_down': 0,
         'parkour_mini_stair': 0,
         'parkour_mini_stair_down': 0,
@@ -108,6 +108,9 @@ def play(args):
             # rtn = runner.play_act(obs, obs_critic=obs_critic, use_estimated_values=random.random() > 0.9, eval_=True, dones=dones)
 
             actions = rtn['actions']
+
+            if 'vel_est' in rtn:
+                args.vel_est = rtn['vel_est']
 
             if 'wm_depth' in rtn:
                 depth_img = rtn['wm_depth'][env.lookat_id, 0]
@@ -158,7 +161,7 @@ def play(args):
                 env.refresh_graphics(clear_lines=False)
             env.refresh_graphics(clear_lines=True)
 
-            t1_vis.plot(env)
+            t1_vis.plot(env, args)
 
 
 if __name__ == '__main__':
@@ -167,6 +170,7 @@ if __name__ == '__main__':
     # t1_vis = vis.T1DofPosVisualizer()
     # t1_vis = vis.T1DofVelVisualizer()
     # t1_vis = vis.T1TorqueVisualizer()
+    # t1_vis = vis.VelEstVisualizer()
 
     with torch.inference_mode():
         play(get_args())

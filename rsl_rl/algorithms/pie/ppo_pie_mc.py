@@ -3,10 +3,10 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
-from rsl_rl.modules.model_pie import Policy
+from rsl_rl.algorithms.alg_base import BaseAlgorithm
+from rsl_rl.modules.pie import Policy
 from rsl_rl.modules.utils import UniversalCritic
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
-from rsl_rl.algorithms.alg_base import BaseAlgorithm
 
 try:
     from torch.amp import GradScaler
@@ -49,12 +49,20 @@ class PPO_PIE_MC(BaseAlgorithm):
         self.learning_rate = self.cfg.learning_rate
         self.device = device
 
+        # Initialize adaptive KL coefficient
+        self.kl_coef_vel = 0.01
+        self.kl_coef_z = 0.01
+
         # PPO components
         self.actor = Policy(task_cfg.env, task_cfg.policy).to(self.device)
         self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
 
         self.critic = UniversalCritic(task_cfg.env, task_cfg.policy).to(self.device)
-        self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
+
+        # Create separate optimizers for different update types
+        self.ppo_optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=self.learning_rate)
+
         self.scaler = GradScaler(enabled=self.cfg.use_amp)
 
         # reconstructor
@@ -116,16 +124,23 @@ class PPO_PIE_MC(BaseAlgorithm):
         self.storage.compute_returns(last_values_default, last_values_contact, self.cfg.gamma, self.cfg.lam)
 
     def update(self, cur_it=0, **kwargs):
+        # Initialize metrics
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
-        mean_estimation_loss = 0
-        mean_prediction_loss = 0
-        mean_vae_loss = 0
+        mean_vel_est_loss = 0
+        mean_ot1_loss = 0
+        mean_vel_vae_loss = 0
+        mean_z_vae_loss = 0
         mean_recon_loss = 0
         mean_symmetry_loss = 0
-
+        mean_mu_vel = 0
+        mean_mu_z = 0
+        mean_std_vel = 0
+        mean_std_z = 0
+        mean_kl_coef_vel = 0
+        mean_kl_coef_z = 0
         kl_change = []
         num_updates = 0
 
@@ -135,55 +150,52 @@ class PPO_PIE_MC(BaseAlgorithm):
             generator = self.storage.mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
 
         for batch in generator:
-            loss_tuple = self._compute_loss(cur_it, batch)
-            kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, symmetry_loss = loss_tuple
+            # PPO Update
+            ppo_metrics = self.update_ppo(cur_it, batch)
+            mean_kl += ppo_metrics['kl_mean']
+            mean_value_loss += ppo_metrics['value_loss']
+            mean_surrogate_loss += ppo_metrics['surrogate_loss']
+            mean_entropy_loss += ppo_metrics['entropy_loss']
+            kl_change.append(ppo_metrics['kl_mean'])
 
-            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-                kl_mean = loss_tuple[0]
+            # Symmetry Update
+            # sym_metrics = self.update_symmetry(cur_it, batch)
+            # mean_symmetry_loss += sym_metrics['symmetry_loss']
 
-                if kl_mean > self.cfg.desired_kl * 2.0:
-                    self.learning_rate = max(1e-5, self.learning_rate / 1.5)
-                elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
-                    self.learning_rate = min(1e-3, self.learning_rate * 1.5)
-
-                # Use KL to adaptively update learning rate
-                if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-                    for param_group in self.optimizer.param_groups:
-                        param_group['lr'] = self.learning_rate
-
-            # Gradient step
-            self.optimizer.zero_grad()
-            self.scaler.scale(sum(loss_tuple)).backward()  # noqa
-            # self.scaler.unscale_(self.optimizer)
-            # nn.utils.clip_grad_norm_([*self.actor.parameters(), *self.critic.parameters()], self.cfg.max_grad_norm)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-
-            self.actor.clip_std(self.cfg.noise_range[0], self.cfg.noise_range[1])
+            # Estimation Update
+            if cur_it < 200 or cur_it % 3 == 0:
+                est_metrics = self.update_estimation(cur_it, batch)
+                mean_vel_est_loss += est_metrics['vel_est_loss']
+                mean_ot1_loss += est_metrics['ot1_loss']
+                mean_vel_vae_loss += est_metrics['vel_vae_loss']
+                mean_z_vae_loss += est_metrics['z_vae_loss']
+                mean_recon_loss += est_metrics['recon_loss']
+                mean_mu_vel += est_metrics['mu_vel']
+                mean_mu_z += est_metrics['mu_z']
+                mean_std_vel += est_metrics['std_vel']
+                mean_std_z += est_metrics['std_z']
+                mean_kl_coef_vel += est_metrics['kl_coef_vel']
+                mean_kl_coef_z += est_metrics['kl_coef_z']
 
             num_updates += 1
-            # policy statistics
-            kl_change.append(kl_mean)
-            mean_kl += kl_mean
-            mean_value_loss += value_loss
-            mean_surrogate_loss += surrogate_loss
-            mean_entropy_loss += -entropy_loss
-            # estimation statistics
-            mean_estimation_loss += estimation_loss
-            mean_prediction_loss += prediction_loss
-            mean_vae_loss += vae_loss
-            mean_recon_loss += recon_loss
-            mean_symmetry_loss += symmetry_loss
 
+        # Average metrics
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
         mean_kl /= num_updates
-        mean_estimation_loss /= num_updates
-        mean_prediction_loss /= num_updates
-        mean_vae_loss /= num_updates
+        mean_vel_est_loss /= num_updates
+        mean_ot1_loss /= num_updates
+        mean_vel_vae_loss /= num_updates
+        mean_z_vae_loss /= num_updates
         mean_recon_loss /= num_updates
         mean_symmetry_loss /= num_updates
+        mean_mu_vel /= num_updates
+        mean_mu_z /= num_updates
+        mean_std_vel /= num_updates
+        mean_std_z /= num_updates
+        mean_kl_coef_vel /= num_updates
+        mean_kl_coef_z /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -191,28 +203,42 @@ class PPO_PIE_MC(BaseAlgorithm):
         print(kl_str)
 
         self.storage.clear()
-        return_dict = {
+
+        metrics = {
             'Loss/learning_rate': self.learning_rate,
             'Loss/value_loss': mean_value_loss,
             'Loss/kl_div': mean_kl,
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
-            'Loss/estimation_loss': mean_estimation_loss,
-            'Loss/Ot+1 prediction_loss': mean_prediction_loss,
-            'Loss/VAE_loss': mean_vae_loss,
-            'Loss/recon_loss': mean_recon_loss,
-            'Loss/symmetry_loss': mean_symmetry_loss,
         }
-        return return_dict
 
-    def _compute_loss(self, cur_it, batch: dict):
+        if cur_it < 200 or cur_it % 3 == 0:
+            metrics.update({
+                'Loss/vel_est_loss': mean_vel_est_loss,
+                'Loss/Ot+1_loss': mean_ot1_loss,
+                'Loss/vel_vae_loss': mean_vel_vae_loss,
+                'Loss/z_vae_loss': mean_z_vae_loss,
+                'Loss/total_vae_loss': mean_vel_vae_loss + mean_z_vae_loss,
+                'Loss/recon_loss': mean_recon_loss,
+                'Loss/symmetry_loss': mean_symmetry_loss,
+                'VAE/mu_vel': mean_mu_vel,
+                'VAE/mu_z': mean_mu_z,
+                'VAE/std_vel': mean_std_vel,
+                'VAE/std_z': mean_std_z,
+                'VAE/kl_coef_vel': mean_kl_coef_vel,
+                'VAE/kl_coef_z': mean_kl_coef_z,
+            })
+
+        return metrics
+
+    def update_ppo(self, cur_it, batch):
+        """Update PPO policy-related components (surrogate, value, entropy losses)"""
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
             critic_obs_batch = batch['critic_observations']
             hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
             mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
-            obs_next_batch = batch['observations_next']
             actions_batch = batch['actions']
             target_values_batch = batch['values']
             advantages_batch = batch['advantages']
@@ -221,12 +247,11 @@ class PPO_PIE_MC(BaseAlgorithm):
             old_sigma_batch = batch['action_sigma']
             old_actions_log_prob_batch = batch['actions_log_prob']
 
-            # ################################  Policy Update ################################
-            vae_mu, vae_logvar, est, ot1, recon = self.actor.train_act(
-                obs_batch, hidden_states=hidden_states_batch)
-            action_mean_original = self.actor.action_mean.detach()
+            # Forward pass
+            self.actor.train_act(obs_batch, hidden_states=hidden_states_batch)
 
-            # Use KL to adaptively update learning rate
+            # KL divergence calculation
+            kl_mean = 0.0
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
                 with torch.no_grad():
                     kl_mean = kl_divergence(
@@ -234,6 +259,16 @@ class PPO_PIE_MC(BaseAlgorithm):
                         Normal(self.actor.action_mean, self.actor.action_std)
                     )[mask_batch].sum(dim=-1).mean().item()
 
+                # Adaptive learning rate
+                if kl_mean > self.cfg.desired_kl * 2.0:
+                    self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+                elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
+                    self.learning_rate = min(1e-3, self.learning_rate * 1.5)
+
+                for param_group in self.ppo_optimizer.param_groups:
+                    param_group['lr'] = self.learning_rate
+
+            # Policy losses
             actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
             evaluation = self.critic.evaluate(critic_obs_batch)
 
@@ -252,33 +287,125 @@ class PPO_PIE_MC(BaseAlgorithm):
             else:
                 value_loss = (evaluation - returns_batch)[mask_batch].pow(2).mean() * self.cfg.value_loss_coef
 
+            # Entropy loss
             entropy_loss = -self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
-            # ################################  Estimation Update ################################
-            batch_size = 4
-            mask_batch = mask_batch.clone()
-            mask_batch[batch_size:] = False
+            # Total PPO loss
+            total_loss = surrogate_loss + value_loss + entropy_loss
 
-            # privileged information estimation loss
-            estimation_loss = self.mse_loss(est[mask_batch], critic_obs_batch.est_gt[mask_batch])
+            # Gradient step
+            self.ppo_optimizer.zero_grad()
+            self.scaler.scale(total_loss).backward()
+            self.scaler.step(self.ppo_optimizer)
+            self.scaler.update()
 
-            # Ot+1 prediction and VAE loss
-            prediction_loss = self.mse_loss(ot1[mask_batch], obs_next_batch.proprio[mask_batch])
-            vae_loss = 1 + vae_logvar - vae_mu.pow(2) - vae_logvar.exp()
-            vae_loss = -0.5 * vae_loss[mask_batch].sum(dim=1).mean()
+            self.actor.clip_std(self.cfg.noise_range[0], self.cfg.noise_range[1])
 
-            # reconstructor loss
-            recon_loss = self.l1_loss(recon[mask_batch], critic_obs_batch.scan.flatten(2)[mask_batch])
+            return {
+                'kl_mean': kl_mean,
+                'value_loss': value_loss.item(),
+                'surrogate_loss': surrogate_loss.item(),
+                'entropy_loss': -entropy_loss.item(),
+            }
 
-            # Symmetry loss
-            obs_mirrored_batch = obs_batch[:batch_size].flatten(0, 1).mirror().unflatten(0, (batch_size, -1))
+    def update_symmetry(self, cur_it, batch):
+        """Update symmetry-related components"""
+        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+            obs_batch = batch['observations']
+            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
+            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
+            n_steps = mask_batch.size(0)
+
+            # Forward pass to get original action mean
+            self.actor.train_act(obs_batch, hidden_states=hidden_states_batch)
+            action_mean_original = self.actor.action_mean.clone().detach()
+
+            # Symmetry loss computation
+            obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (n_steps, -1))
             self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states_batch)
 
-            action_mean_original = action_mean_original[:batch_size]
-            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (batch_size, -1))
-            symmetry_loss = 0.1 * self.mse_loss(mu_batch, self.actor.action_mean)
+            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (n_steps, -1))
+            symmetry_loss = self.mse_loss(mu_batch[mask_batch], self.actor.action_mean[mask_batch])
 
-        return kl_mean, value_loss, surrogate_loss, entropy_loss, estimation_loss, prediction_loss, vae_loss, recon_loss, symmetry_loss
+            # Gradient step
+            self.actor_optimizer.zero_grad()
+            self.scaler.scale(symmetry_loss).backward()
+            self.scaler.step(self.actor_optimizer)
+            self.scaler.update()
+
+            return {
+                'symmetry_loss': symmetry_loss.item(),
+            }
+
+    def update_estimation(
+            self,
+            cur_it,
+            batch,
+            target_std_vel=0.1,
+            target_std_z=0.1,
+    ):
+        """Update estimation-related components (estimation, prediction, VAE, recon losses)"""
+        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+            obs_batch = batch['observations']
+            critic_obs_batch = batch['critic_observations']
+            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
+            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
+            obs_next_batch = batch['observations_next']
+
+            # Forward pass
+            vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1_loss, hmap = self.actor.estimate(
+                obs_batch, hidden_states=hidden_states_batch)
+
+            # Estimation losses
+            vel_est_loss = self.mse_loss(vel[mask_batch], critic_obs_batch.est_gt[mask_batch])
+            ot1_loss = self.mse_loss(ot1_loss[mask_batch], obs_next_batch.proprio[mask_batch])
+            recon_loss = self.l1_loss(hmap[mask_batch], critic_obs_batch.scan.flatten(2)[mask_batch])
+
+            # VAE loss
+            vel_vae_loss = 1 + logvar_vel - mu_vel.pow(2) - logvar_vel.exp()
+            vel_vae_loss = -0.5 * vel_vae_loss[mask_batch].sum(dim=1).mean()
+            z_vae_loss = 1 + logvar_z - mu_z.pow(2) - logvar_z.exp()
+            z_vae_loss = -0.5 * z_vae_loss[mask_batch].sum(dim=1).mean()
+
+            # Adaptive KL coefficient based on std_vel and std_z
+            std_vel = logvar_vel.exp().sqrt().mean().item()
+            std_z = logvar_z.exp().sqrt().mean().item()
+
+            # Adaptive KL coefficient similar to learning rate adaptation
+            if std_vel < target_std_vel:
+                self.kl_coef_vel = min(1., self.kl_coef_vel * 1.1)
+            else:
+                self.kl_coef_vel = max(1e-7, self.kl_coef_vel / 1.1)
+
+            if std_z < target_std_z:
+                self.kl_coef_z = min(1., self.kl_coef_z * 1.1)
+            else:
+                self.kl_coef_z = max(1e-7, self.kl_coef_z / 1.1)
+
+            kl_loss = self.kl_coef_vel * vel_vae_loss + self.kl_coef_z * z_vae_loss
+
+            # Total estimation loss
+            total_loss = vel_est_loss + ot1_loss + recon_loss + kl_loss
+
+            # Gradient step
+            self.actor_optimizer.zero_grad()
+            self.scaler.scale(total_loss).backward()
+            self.scaler.step(self.actor_optimizer)
+            self.scaler.update()
+
+            return {
+                'vel_est_loss': vel_est_loss.item(),
+                'ot1_loss': ot1_loss.item(),
+                'vel_vae_loss': vel_vae_loss.item(),
+                'z_vae_loss': z_vae_loss.item(),
+                'recon_loss': recon_loss.item(),
+                'mu_vel': mu_vel.mean().item(),
+                'mu_z': mu_z.mean().item(),
+                'std_vel': std_vel,
+                'std_z': std_z,
+                'kl_coef_vel': self.kl_coef_vel,
+                'kl_coef_z': self.kl_coef_z,
+            }
 
     def reset(self, dones):
         if self.actor.is_recurrent:
@@ -292,7 +419,8 @@ class PPO_PIE_MC(BaseAlgorithm):
             else:
                 kwargs['use_estimated_values'] = use_estimated_values
 
-            return {"actions": self.actor.act(obs, **kwargs)}
+            actions, vel_est = self.actor.act(obs, **kwargs)
+            return {"actions": actions, "vel_est": vel_est}
 
     def train(self):
         self.actor.train()
@@ -303,7 +431,10 @@ class PPO_PIE_MC(BaseAlgorithm):
         self.critic.load_state_dict(loaded_dict['critic_state_dict'])
 
         if load_optimizer:
-            self.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+            if 'ppo_optimizer_state_dict' in loaded_dict:
+                self.ppo_optimizer.load_state_dict(loaded_dict['ppo_optimizer_state_dict'])
+            if 'actor_optimizer_state_dict' in loaded_dict:
+                self.actor_optimizer.load_state_dict(loaded_dict['actor_optimizer_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
@@ -314,5 +445,6 @@ class PPO_PIE_MC(BaseAlgorithm):
         return {
             'actor_state_dict': self.actor.state_dict(),
             'critic_state_dict': self.critic.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
+            'ppo_optimizer_state_dict': self.ppo_optimizer.state_dict(),
+            'actor_optimizer_state_dict': self.actor_optimizer.state_dict(),
         }

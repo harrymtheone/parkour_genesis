@@ -103,8 +103,6 @@ class T1PIEEnvironment(T1BaseEnv):
         # explicit privileged information
         priv_obs = torch.cat((
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
-            self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
-            self.get_body_hmap() - self.cfg.normalization.scan_norm_bias,  # 16
             self.base_ang_vel * self.obs_scales.ang_vel,  # 3
             self.base_euler * self.obs_scales.quat,  # 3
             command_input,  # 5D
@@ -226,7 +224,6 @@ class T1PIEEnvironment(T1BaseEnv):
 
         rew[self.env_class < 2] = 0.
         return torch.mean(rew, dim=1)
-
 
     def _reward_default_dof_pos(self):
         return (self.sim.dof_pos - self.init_state_dof_pos).abs().sum(dim=1)

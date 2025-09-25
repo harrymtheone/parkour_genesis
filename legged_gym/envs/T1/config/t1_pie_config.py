@@ -12,7 +12,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 86
+        num_critic_obs = 62
         len_critic_his = 50
 
         num_actions = 13
@@ -122,7 +122,7 @@ class T1_PIE_Cfg(T1BaseCfg):
             heading = [-1.5, 1.5]
 
         class parkour_ranges:
-            lin_vel_x = [0.2, 0.8]  # min value should be greater than lin_vel_clip
+            lin_vel_x = [0.3, 0.8]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
@@ -214,15 +214,15 @@ class T1_PIE_Cfg(T1BaseCfg):
 
             # base pos
             default_dof_pos = -0.04
-            default_dof_pos_yr = (0., -1., 10, 100)
+            default_dof_pos_yr = (0., -1., 1, 100)
             orientation = -10.0
             # base_height = -10.
             base_acc = -1.
             lin_vel_z = -1.
-            ang_vel_xy = (0., -0.05, 10, 100)
+            ang_vel_xy = (0., -0.05, 1, 100)
 
             # energy
-            action_smoothness = (0., -1e-3, 10, 100)
+            action_smoothness = (0., -1e-3, 1, 100)
             # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
@@ -236,13 +236,13 @@ class T1_PIE_Cfg(T1BaseCfg):
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
 
         # critic parameters
-        critic_hidden_dims = [128, 64]
+        critic_hidden_dims = [512, 256, 128]
 
         use_recurrent_policy = True
         estimator_gru_hidden_size = 256
 
-        len_estimation = 3
-        len_hmap_latent = 128
+        len_latent_z = 32
+        len_latent_hmap = 32
 
     class algorithm:
         # training params
