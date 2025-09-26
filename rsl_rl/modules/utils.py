@@ -49,6 +49,11 @@ def gru_wrapper(func, *args, **kwargs):
         return rtn.unflatten(0, (n_steps, -1))
 
 
+def recurrent_wrapper(func, tensor):
+    n_seq = tensor.size(0)
+    return func(tensor.flatten(0, 1)).unflatten(0, (n_seq, -1))
+
+
 class UniMixOneHotCategorical(torch.distributions.OneHotCategorical):
     def __init__(self, logits, unimix_ratio=0.0):
         assert unimix_ratio > 0.

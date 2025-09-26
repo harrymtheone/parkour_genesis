@@ -45,8 +45,8 @@ def play(args):
     task_cfg.domain_rand.push_interval_s = 3
     task_cfg.domain_rand.push_duration = [0.3]
     task_cfg.domain_rand.action_delay = True
-    task_cfg.domain_rand.action_delay_range = [(10, 10)]
-    task_cfg.domain_rand.add_dof_lag = False
+    task_cfg.domain_rand.action_delay_range = [(5, 5)]
+    task_cfg.domain_rand.add_dof_lag = True
     task_cfg.domain_rand.dof_lag_range = (10, 10)
     task_cfg.domain_rand.randomize_friction = True
     task_cfg.domain_rand.friction_range = [0.7, 0.7]
@@ -61,7 +61,7 @@ def play(args):
     task_cfg.terrain.description_type = 'trimesh'
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
-        'rough_slope': 0,
+        'rough_slope': 1,
         'stairs_up': 0,
         'stairs_down': 0,
         'huge_stair': 0,
@@ -74,8 +74,8 @@ def play(args):
         'parkour_gap': 0,
         'parkour_box': 0,
         'parkour_step': 0,
-        'parkour_stair': 0,
-        'parkour_stair_down': 0,
+        'parkour_stair': 1,
+        'parkour_stair_down': 1,
         'parkour_mini_stair': 0,
         'parkour_mini_stair_down': 0,
         'parkour_go_back_stair': 0,
@@ -166,9 +166,9 @@ def play(args):
 
 if __name__ == '__main__':
     # t1_vis = vis.RewVisualizer()
-    t1_vis = vis.T1ActionsVisualizer()
+    # t1_vis = vis.T1ActionsVisualizer()
     # t1_vis = vis.T1DofPosVisualizer()
-    # t1_vis = vis.T1DofVelVisualizer()
+    t1_vis = vis.T1DofVelVisualizer()
     # t1_vis = vis.T1TorqueVisualizer()
     # t1_vis = vis.VelEstVisualizer()
 

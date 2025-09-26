@@ -4,8 +4,7 @@ import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.algorithms.alg_base import BaseAlgorithm
-from rsl_rl.algorithms.utils import masked_mean, masked_MSE
-from rsl_rl.modules.pie import Policy
+from rsl_rl.modules.pie import PolicyPlain
 from rsl_rl.modules.utils import UniversalCritic
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 
@@ -40,7 +39,7 @@ class Transition:
             setattr(self, key, None)
 
 
-class PPO_PIE_MC(BaseAlgorithm):
+class PPO_PIE_Plain(BaseAlgorithm):
     def __init__(self, task_cfg, device=torch.device('cpu'), env=None, **kwargs):
         self.env = env
 
@@ -50,20 +49,11 @@ class PPO_PIE_MC(BaseAlgorithm):
         self.learning_rate = self.cfg.learning_rate
         self.device = device
 
-        # Initialize adaptive KL coefficient
-        self.kl_coef_vel = 0.01
-        self.kl_coef_z = 0.01
-
         # PPO components
-        self.actor = Policy(task_cfg.env, task_cfg.policy).to(self.device)
+        self.actor = PolicyPlain(task_cfg.env, task_cfg.policy).to(self.device)
         self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
-        if self.actor.is_recurrent:
-            self.mixer_hidden_states = None
 
-        self.critic = nn.ModuleDict({
-            'default': UniversalCritic(task_cfg.env, task_cfg.policy),
-            'contact': UniversalCritic(task_cfg.env, task_cfg.policy),
-        }).to(self.device)
+        self.critic = UniversalCritic(task_cfg.env, task_cfg.policy).to(self.device)
 
         # Create separate optimizers for different update types
         self.ppo_optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
@@ -85,24 +75,19 @@ class PPO_PIE_MC(BaseAlgorithm):
             self.transition.observations = obs
             self.transition.critic_observations = obs_critic
             if self.actor.is_recurrent:
-                self.transition.hidden_states = self.mixer_hidden_states
-            self.transition.use_estimated_values = use_estimated_values
+                self.transition.hidden_states = self.actor.get_hidden_states()
 
-            actions, self.mixer_hidden_states = self.actor.act(
-                proprio=obs.proprio.unsqueeze(0),
-                prop_his=obs.prop_his.unsqueeze(0),
-                depth=obs.depth.unsqueeze(0),
-                mixer_hidden_states=self.mixer_hidden_states,
-            )
+            self.transition.use_estimated_values = use_estimated_values
+            actions = self.actor.act(obs)
 
             if self.actor.is_recurrent and self.transition.hidden_states is None:
                 # only for the first step where hidden_state is None
-                self.transition.hidden_states = torch.zeros_like(self.mixer_hidden_states)
+                self.transition.hidden_states = 0 * self.actor.get_hidden_states()
 
             # store
             self.transition.actions = actions
-            self.transition.values = self.critic['default'].evaluate(obs_critic)
-            self.transition.values_contact = self.critic['contact'].evaluate(obs_critic)
+            self.transition.values = self.critic.evaluate(obs_critic)
+            self.transition.values_contact = self.critic.evaluate(obs_critic)  # Use same critic for both
             self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions)
             self.transition.action_mean = self.actor.action_mean
             self.transition.action_sigma = self.actor.action_std
@@ -110,20 +95,9 @@ class PPO_PIE_MC(BaseAlgorithm):
 
     def process_env_step(self, rewards, dones, infos, *args):
         self.transition.observations_next = args[0].as_obs_next()
+        self.transition.rewards = rewards.clone().unsqueeze(1)
+        self.transition.rewards_contact = rewards.clone().unsqueeze(1)  # Use same rewards for both
         self.transition.dones = dones.unsqueeze(1)
-
-        # from Logan
-        step_rew: dict = infos['step_rew']
-
-        rew_contact = torch.zeros_like(rewards)
-        rew_contact += step_rew.get('feet_contact_forces', 0.)
-        rew_contact += step_rew.get('feet_stumble', 0.)
-        rew_contact += step_rew.get('foothold', 0.)
-        rew_contact += step_rew.get('feet_edge', 0.)
-
-        rew_default = rewards - rew_contact
-        self.transition.rewards = rew_default.unsqueeze(1)
-        self.transition.rewards_contact = rew_contact.unsqueeze(1)
 
         # Bootstrapping on time-outs
         if 'time_outs' in infos:
@@ -141,29 +115,20 @@ class PPO_PIE_MC(BaseAlgorithm):
         self.reset(dones)
 
     def compute_returns(self, last_critic_obs):
-        last_values_default = self.critic['default'].evaluate(last_critic_obs).detach()
-        last_values_contact = self.critic['contact'].evaluate(last_critic_obs).detach()
+        last_values_default = self.critic.evaluate(last_critic_obs).detach()
+        last_values_contact = self.critic.evaluate(last_critic_obs).detach()  # Use same critic for both
         self.storage.compute_returns(last_values_default, last_values_contact, self.cfg.gamma, self.cfg.lam)
 
     def update(self, cur_it=0, **kwargs):
         # Initialize metrics
-        mean_value_loss_default = 0
-        mean_value_loss_contact = 0
+        mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
-        mean_symmetry_loss = 0
         mean_vel_est_loss = 0
         mean_ot1_loss = 0
         mean_recon_loss = 0
-        mean_vel_kl_loss = 0
-        mean_z_kl_loss = 0
-        mean_mu_vel = 0
-        mean_mu_z = 0
-        mean_std_vel = 0
-        mean_std_z = 0
-        mean_kl_coef_vel = 0
-        mean_kl_coef_z = 0
+        mean_symmetry_loss = 0
         kl_change = []
         num_updates = 0
 
@@ -176,13 +141,12 @@ class PPO_PIE_MC(BaseAlgorithm):
             # PPO Update
             ppo_metrics = self.update_ppo(cur_it, batch)
             mean_kl += ppo_metrics['kl_mean']
-            mean_value_loss_default += ppo_metrics['value_loss_default']
-            mean_value_loss_contact += ppo_metrics['value_loss_contact']
+            mean_value_loss += ppo_metrics['value_loss']
             mean_surrogate_loss += ppo_metrics['surrogate_loss']
             mean_entropy_loss += ppo_metrics['entropy_loss']
             kl_change.append(ppo_metrics['kl_mean'])
 
-            # Symmetry Update
+            # # Symmetry Update
             # sym_metrics = self.update_symmetry(cur_it, batch)
             # mean_symmetry_loss += sym_metrics['symmetry_loss']
 
@@ -192,35 +156,18 @@ class PPO_PIE_MC(BaseAlgorithm):
                 mean_vel_est_loss += est_metrics['vel_est_loss']
                 mean_ot1_loss += est_metrics['ot1_loss']
                 mean_recon_loss += est_metrics['recon_loss']
-                mean_vel_kl_loss += est_metrics['vel_kl_loss']
-                mean_z_kl_loss += est_metrics['z_kl_loss']
-                mean_mu_vel += est_metrics['mu_vel']
-                mean_mu_z += est_metrics['mu_z']
-                mean_std_vel += est_metrics['std_vel']
-                mean_std_z += est_metrics['std_z']
-                mean_kl_coef_vel += est_metrics['kl_coef_vel']
-                mean_kl_coef_z += est_metrics['kl_coef_z']
 
             num_updates += 1
 
         # Average metrics
-        mean_value_loss_default /= num_updates
-        mean_value_loss_contact /= num_updates
+        mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
         mean_kl /= num_updates
-        mean_symmetry_loss /= num_updates
         mean_vel_est_loss /= num_updates
         mean_ot1_loss /= num_updates
         mean_recon_loss /= num_updates
-        mean_vel_kl_loss /= num_updates
-        mean_z_kl_loss /= num_updates
-        mean_mu_vel /= num_updates
-        mean_mu_z /= num_updates
-        mean_std_vel /= num_updates
-        mean_std_z /= num_updates
-        mean_kl_coef_vel /= num_updates
-        mean_kl_coef_z /= num_updates
+        mean_symmetry_loss /= num_updates
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -231,8 +178,7 @@ class PPO_PIE_MC(BaseAlgorithm):
 
         metrics = {
             'Loss/learning_rate': self.learning_rate,
-            'Loss/value_loss_default': mean_value_loss_default,
-            'Loss/value_loss_contact': mean_value_loss_contact,
+            'Loss/value_loss': mean_value_loss,
             'Loss/kl_div': mean_kl,
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
@@ -241,19 +187,10 @@ class PPO_PIE_MC(BaseAlgorithm):
 
         if cur_it < 500 or cur_it % 3 == 0:
             metrics.update({
-                'Loss/symmetry_loss': mean_symmetry_loss,
                 'Loss/vel_est_loss': mean_vel_est_loss,
                 'Loss/Ot+1_loss': mean_ot1_loss,
                 'Loss/recon_loss': mean_recon_loss,
-                'Loss/vel_kl_loss': mean_vel_kl_loss,
-                'Loss/z_kl_loss': mean_z_kl_loss,
-                'Loss/total_kl_loss': mean_vel_kl_loss + mean_z_kl_loss,
-                'VAE/mu_vel': mean_mu_vel,
-                'VAE/mu_z': mean_mu_z,
-                'VAE/std_vel': mean_std_vel,
-                'VAE/std_z': mean_std_z,
-                'VAE/kl_coef_vel': mean_kl_coef_vel,
-                'VAE/kl_coef_z': mean_kl_coef_z,
+                'Loss/symmetry_loss': mean_symmetry_loss,
             })
 
         return metrics
@@ -261,35 +198,30 @@ class PPO_PIE_MC(BaseAlgorithm):
     def update_ppo(self, cur_it, batch):
         """Update PPO policy-related components (surrogate, value, entropy losses)"""
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            obs = batch['observations']
-            critic_obs = batch['critic_observations']
-            hidden_states = batch['hidden_states'] if self.actor.is_recurrent else None
-            mask = batch['masks'] if self.actor.is_recurrent else slice(None)
-            actions = batch['actions']
-            default_values = batch['values']
-            contact_values = batch['values_contact']
-            advantages = batch['advantages']
-            default_returns = batch['returns']
-            contact_returns = batch['returns_contact']
-            old_actions_log_prob = batch['actions_log_prob']
+            obs_batch = batch['observations']
+            critic_obs_batch = batch['critic_observations']
+            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
+            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
+            actions_batch = batch['actions']
+            target_values_batch = batch['values']
+            advantages_batch = batch['advantages']
+            returns_batch = batch['returns']
+            old_mu_batch = batch['action_mean']
+            old_sigma_batch = batch['action_sigma']
+            old_actions_log_prob_batch = batch['actions_log_prob']
 
             # Forward pass
-            self.actor.act(
-                proprio=obs.proprio,
-                prop_his=obs.prop_his,
-                depth=obs.depth,
-                mixer_hidden_states=hidden_states,
-            )
+            self.actor.train_act(obs_batch, hidden_states=hidden_states_batch)
 
             # KL divergence calculation
-            with torch.no_grad():
-                kl_mean = kl_divergence(
-                    Normal(batch['action_mean'], batch['action_sigma']),
-                    Normal(self.actor.action_mean, self.actor.action_std)
-                ).sum(dim=2, keepdim=True)
-                kl_mean = masked_mean(kl_mean, mask)
-
+            kl_mean = 0.0
             if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
+                with torch.no_grad():
+                    kl_mean = kl_divergence(
+                        Normal(old_mu_batch, old_sigma_batch),
+                        Normal(self.actor.action_mean, self.actor.action_std)
+                    )[mask_batch].sum(dim=-1).mean().item()
+
                 # Adaptive learning rate
                 if kl_mean > self.cfg.desired_kl * 2.0:
                     self.learning_rate = max(1e-5, self.learning_rate / 1.5)
@@ -299,41 +231,30 @@ class PPO_PIE_MC(BaseAlgorithm):
                 for param_group in self.ppo_optimizer.param_groups:
                     param_group['lr'] = self.learning_rate
 
-            # Policy loss
-            actions_log_prob = self.actor.get_actions_log_prob(actions)
-            evaluation_default = self.critic['default'].evaluate(critic_obs)
-            evaluation_contact = self.critic['contact'].evaluate(critic_obs)
+            # Policy losses
+            actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
+            evaluation = self.critic.evaluate(critic_obs_batch)
 
             # Surrogate loss
-            ratio = torch.exp(actions_log_prob - old_actions_log_prob)
-            surrogate = -advantages * ratio
-            surrogate_clipped = -advantages * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
-            surrogate_loss = masked_mean(torch.max(surrogate, surrogate_clipped), mask)
+            ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
+            surrogate = -advantages_batch * ratio
+            surrogate_clipped = -advantages_batch * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
+            surrogate_loss = torch.max(surrogate, surrogate_clipped)[mask_batch].mean()
 
             # Value function loss
             if self.cfg.use_clipped_value_loss:
-                value_clipped_default = default_values + (
-                        evaluation_default - default_values).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_loss_default = (evaluation_default - default_returns).square()
-                value_loss_clipped_default = (value_clipped_default - default_returns).square()
-                value_loss_default = masked_mean(torch.maximum(value_loss_default, value_loss_clipped_default), mask)
-
-                value_clipped_contact = contact_values + (
-                        evaluation_contact - contact_values).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_loss_contact = (evaluation_contact - contact_returns).square()
-                value_loss_clipped_contact = (value_clipped_contact - contact_returns).square()
-                value_loss_contact = masked_mean(torch.max(value_loss_contact, value_loss_clipped_contact), mask)
+                value_clipped = target_values_batch + (evaluation - target_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
+                value_losses = (evaluation - returns_batch).pow(2)
+                value_losses_clipped = (value_clipped - returns_batch).pow(2)
+                value_loss = torch.max(value_losses, value_losses_clipped)[mask_batch].mean() * self.cfg.value_loss_coef
             else:
-                value_loss_default = masked_MSE(evaluation_default, default_returns, mask)
-                value_loss_contact = masked_MSE(evaluation_contact, contact_returns, mask)
-
-            value_loss = value_loss_default + value_loss_contact
+                value_loss = (evaluation - returns_batch)[mask_batch].pow(2).mean() * self.cfg.value_loss_coef
 
             # Entropy loss
-            entropy_loss = masked_mean(self.actor.entropy, mask)
+            entropy_loss = -self.cfg.entropy_coef * self.actor.entropy[mask_batch].mean()
 
             # Total PPO loss
-            total_loss = surrogate_loss + self.cfg.value_loss_coef * value_loss - self.cfg.entropy_coef * entropy_loss
+            total_loss = surrogate_loss + value_loss + entropy_loss
 
             # Gradient step
             self.ppo_optimizer.zero_grad()
@@ -345,8 +266,7 @@ class PPO_PIE_MC(BaseAlgorithm):
 
             return {
                 'kl_mean': kl_mean,
-                'value_loss_default': value_loss_default.item(),
-                'value_loss_contact': value_loss_contact.item(),
+                'value_loss': value_loss.item(),
                 'surrogate_loss': surrogate_loss.item(),
                 'entropy_loss': -entropy_loss.item(),
             }
@@ -354,26 +274,21 @@ class PPO_PIE_MC(BaseAlgorithm):
     def update_symmetry(self, cur_it, batch):
         """Update symmetry-related components"""
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            obs = batch['observations']
-            hidden_states = batch['hidden_states'] if self.actor.is_recurrent else None
-            mask = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
-            n_steps = mask.size(0)
+            obs_batch = batch['observations']
+            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
+            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
+            n_steps = mask_batch.size(0)
 
             # Forward pass to get original action mean
-            self.actor.act(
-                proprio=obs.proprio,
-                prop_his=obs.prop_his,
-                depth=obs.depth,
-                mixer_hidden_states=hidden_states,
-            )
+            self.actor.train_act(obs_batch, hidden_states=hidden_states_batch)
             action_mean_original = self.actor.action_mean.clone().detach()
 
             # Symmetry loss computation
-            obs_mirrored_batch = obs.flatten(0, 1).mirror().unflatten(0, (n_steps, -1))
-            self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states)
+            obs_mirrored_batch = obs_batch.flatten(0, 1).mirror().unflatten(0, (n_steps, -1))
+            self.actor.train_act(obs_mirrored_batch, hidden_states=hidden_states_batch)
 
-            mu_batch = obs.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (n_steps, -1))
-            symmetry_loss = self.mse_loss(mu_batch[mask], self.actor.action_mean[mask])
+            mu_batch = obs_batch.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (n_steps, -1))
+            symmetry_loss = self.mse_loss(mu_batch[mask_batch], self.actor.action_mean[mask_batch])
 
             # Gradient step
             self.actor_optimizer.zero_grad()
@@ -389,51 +304,26 @@ class PPO_PIE_MC(BaseAlgorithm):
             self,
             cur_it,
             batch,
-            target_std_vel=0.1,
-            target_std_z=0.01,
     ):
         """Update estimation-related components (estimation, prediction, VAE, recon losses)"""
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            obs = batch['observations']
-            critic_obs = batch['critic_observations']
-            hidden_states = batch['hidden_states'] if self.actor.is_recurrent else None
-            mask = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
-            obs_next = batch['observations_next']
+            obs_batch = batch['observations']
+            critic_obs_batch = batch['critic_observations']
+            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
+            mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
+            obs_next_batch = batch['observations_next']
 
             # Forward pass
-            vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1_loss, hmap = self.actor.estimate(
-                obs, hidden_states=hidden_states)
+            vel, z, ot1_loss, hmap = self.actor.estimate(
+                obs_batch, hidden_states=hidden_states_batch)
 
-            # Estimation loss
-            vel_est_loss = self.mse_loss(vel[mask], critic_obs.est_gt[mask])
-            ot1_loss = self.mse_loss(ot1_loss[mask], obs_next.proprio[mask])
-            recon_loss = self.l1_loss(hmap[mask], critic_obs.scan.flatten(2)[mask])
-
-            # KL loss
-            vel_kl_loss = 1 + logvar_vel - mu_vel.pow(2) - logvar_vel.exp()
-            vel_kl_loss = -0.5 * vel_kl_loss[mask].sum(dim=1).mean()
-            z_kl_loss = 1 + logvar_z - mu_z.pow(2) - logvar_z.exp()
-            z_kl_loss = -0.5 * z_kl_loss[mask].sum(dim=1).mean()
-
-            # Adaptive KL coefficient based on std_vel and std_z
-            std_vel = logvar_vel.exp().sqrt().mean().item()
-            std_z = logvar_z.exp().sqrt().mean().item()
-
-            # Adaptive KL coefficient similar to learning rate adaptation
-            if std_vel < target_std_vel:
-                self.kl_coef_vel = min(1., self.kl_coef_vel * 1.1)
-            else:
-                self.kl_coef_vel = max(1e-7, self.kl_coef_vel / 1.1)
-
-            if std_z < target_std_z:
-                self.kl_coef_z = min(1., self.kl_coef_z * 1.1)
-            else:
-                self.kl_coef_z = max(1e-7, self.kl_coef_z / 1.1)
-
-            kl_loss = self.kl_coef_vel * vel_kl_loss + self.kl_coef_z * z_kl_loss
+            # Estimation losses
+            vel_est_loss = self.mse_loss(vel[mask_batch], critic_obs_batch.est_gt[mask_batch])
+            ot1_loss = self.mse_loss(ot1_loss[mask_batch], obs_next_batch.proprio[mask_batch])
+            recon_loss = self.l1_loss(hmap[mask_batch], critic_obs_batch.scan.flatten(2)[mask_batch])
 
             # Total estimation loss
-            total_loss = vel_est_loss + ot1_loss + recon_loss + kl_loss
+            total_loss = vel_est_loss + ot1_loss + recon_loss
 
             # Gradient step
             self.actor_optimizer.zero_grad()
@@ -445,19 +335,11 @@ class PPO_PIE_MC(BaseAlgorithm):
                 'vel_est_loss': vel_est_loss.item(),
                 'ot1_loss': ot1_loss.item(),
                 'recon_loss': recon_loss.item(),
-                'vel_kl_loss': vel_kl_loss.item(),
-                'z_kl_loss': z_kl_loss.item(),
-                'mu_vel': mu_vel.mean().item(),
-                'mu_z': mu_z.mean().item(),
-                'std_vel': std_vel,
-                'std_z': std_z,
-                'kl_coef_vel': self.kl_coef_vel,
-                'kl_coef_z': self.kl_coef_z,
             }
 
     def reset(self, dones):
         if self.actor.is_recurrent:
-            self.mixer_hidden_states[:, dones] = 0.
+            self.actor.reset(dones)
 
     def play_act(self, obs, use_estimated_values=False, **kwargs):
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):

@@ -80,3 +80,15 @@ class SymlogMSELoss(nn.Module):
     def forward(self, data, target):
         loss = nn.functional.mse_loss(data, symlog(target), reduction=self.reduction)
         return loss.clip(min=self.tolerance)
+
+
+def masked_MSE(input_, target, mask):
+    return ((input_ - target) * mask).square().sum() / (input_.numel() / mask.numel() * mask.sum())
+
+
+def masked_L1(input_, target, mask):
+    return ((input_ - target) * mask).abs().sum() / (input_.numel() / mask.numel() * mask.sum())
+
+
+def masked_mean(input_, mask):
+    return (input_ * mask).sum() / (input_.numel() / mask.numel() * mask.sum())

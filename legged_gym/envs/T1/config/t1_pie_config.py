@@ -132,7 +132,6 @@ class T1_PIE_Cfg(T1BaseCfg):
         terrain_dict = {
             'smooth_slope': 1,
             'rough_slope': 1,
-            'parkour_flat': 1,
         }
 
     class noise(T1BaseCfg.noise):
@@ -180,7 +179,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         feet_height_target = 0.04
         feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
         only_positive_rewards_until_epoch = 500  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         EMA_update_alpha = 0.99
@@ -193,43 +192,38 @@ class T1_PIE_Cfg(T1BaseCfg):
 
         class scales:  # float or (start, end, span, start_it)
             # gait
-            joint_pos = 2.0
-            feet_contact_number = 1.2
-            feet_clearance = 1.
+            joint_pos = 1.0
+            feet_contact_number = 0.6
+            feet_clearance = 0.5
             feet_distance = -1.
             knee_distance = -1.
             feet_rotation = -0.3
 
             # vel tracking
-            tracking_lin_vel = 1.5
+            tracking_lin_vel = 1.0
             tracking_goal_vel = 2.5
-            tracking_ang_vel = 1.0
+            tracking_ang_vel = 1.5
 
             # contact
-            feet_slip = -0.1
+            feet_slip = (0, -0.1, 1, 1000)
             feet_contact_forces = -1e-3
-            feet_stumble = -2.
-            foothold = -0.5
+            # feet_stumble = -2.
+            foothold = -0.01
             # feet_edge = -0.1
 
             # base pos
             default_dof_pos = -0.04
-            default_dof_pos_yr = (0., -1., 1, 100)
+            default_dof_pos_yr = -0.3
             orientation = -10.0
-            # base_height = -10.
-            base_acc = -1.
-            lin_vel_z = -1.
-            ang_vel_xy = (0., -0.05, 1, 100)
+            ang_vel_xy = -0.05
 
             # energy
-            action_smoothness = (0., -1e-3, 1, 100)
-            # dof_vel_smoothness = -1e-3
-            torques = -1e-5
-            dof_vel = -5e-4
-            dof_acc = -1.e-7
+            action_smoothness = -5e-4
+            torques = -1.25e-7
+            dof_acc = -1.5e-7
             collision = -1.
-            dof_pos_limits = -10.
-            dof_torque_limits = -0.01
+
+            termination = -200.
 
     class policy:
         # actor parameters
@@ -266,6 +260,7 @@ class T1_PIE_Cfg(T1BaseCfg):
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'  # rl, distil, mixed
+        # algorithm_name = 'ppo_pie_plain'
         algorithm_name = 'ppo_pie_mc'
 
         lock_smpl_until = 10000
@@ -311,53 +306,47 @@ class T1_PIE_Stair_Cfg(T1_PIE_Cfg):
         }
 
     class rewards(T1_PIE_Cfg.rewards):
-        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
-        only_positive_rewards_until_epoch = 1000 + 200  # after the epoch, turn off only_positive_reward
-
         class scales(T1_PIE_Cfg.rewards.scales):  # start, end, span, start_it
             # joint_pos = 2.
             # feet_contact_number = 1.2
-            joint_pos_flat = 1.2
-            joint_pos_parkour = (0.6, 0., 6000, 4000)
-            feet_contact_number_flat = 1.2
-            feet_contact_number_parkour = (0.6, 0., 6000, 4000)
-            feet_clearance = 1.
+            joint_pos_flat = 1.
+            # joint_pos_parkour = (0.6, 0., 6000, 4000)
+            feet_contact_number_flat = 0.6
+            # feet_contact_number_parkour = (0.6, 0., 6000, 4000)
+            feet_clearance = 0.5
             feet_distance = -1.
             knee_distance = -1.
             feet_rotation = -0.3
 
             # vel tracking
-            tracking_lin_vel = 1.5
-            tracking_goal_vel = 2.5
-            tracking_ang_vel = 2.0
+            tracking_lin_vel = 1.
+            tracking_goal_vel = 2.
+            tracking_ang_vel = 1.5
 
             # contact
             feet_slip = -0.1
             feet_contact_forces = -1e-3
-            feet_stumble = -2.
+            feet_stumble = -1.
             foothold = -0.1
-            feet_edge = -0.1
 
             # base pos
             default_dof_pos = -0.04
-            default_dof_pos_yr = -1.
+            default_dof_pos_yr = -0.3
             orientation = -10.
-            # base_height = -10.
-            base_acc = -1.
             lin_vel_z = -1.
             ang_vel_xy = -0.05
 
             # energy
             action_smoothness = -1e-3
             torques = -1e-5
-            dof_vel = -5e-4
-            dof_acc = -1.e-7
+            dof_acc = -1.5e-7
             collision = -1.
 
-            dof_vel_smoothness = -1e-3
+            dof_vel_smoothness = -1e-4
             dof_pos_limits = -10.
-            # dof_vel_limits = -0.5
             dof_torque_limits = -0.1
+
+            termination = -200.
 
     class control(T1BaseCfg.control):
         # PD Drive parameters:

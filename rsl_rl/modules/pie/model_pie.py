@@ -3,10 +3,10 @@ import math
 import torch
 import torch.nn as nn
 
-from rsl_rl.modules.utils import make_linear_layers, gru_wrapper
+from rsl_rl.modules.utils import make_linear_layers, recurrent_wrapper
 
 
-class EstimatorGRU(nn.Module):
+class Mixer(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         activation = nn.ELU()
@@ -32,44 +32,19 @@ class EstimatorGRU(nn.Module):
             nn.Flatten()
         )
 
-        hidden_size = policy_cfg.estimator_gru_hidden_size
-        self.gru = nn.GRU(input_size=256, hidden_size=hidden_size, num_layers=1)
-        self.hidden_states = None
-
-    def inference_forward(self, prop_his, depth_his, **kwargs):
-        # inference forward
-        prop_latent = self.prop_his_enc(prop_his.transpose(1, 2))
-        depth_latent = self.depth_enc(depth_his)
-
-        gru_input = torch.cat((prop_latent, depth_latent), dim=1)
-
-        # TODO: transformer here?
-        gru_out, self.hidden_states = self.gru(gru_input.unsqueeze(0), self.hidden_states)
-        return gru_out.squeeze(0)
+        self.gru = nn.GRU(input_size=256, hidden_size=policy_cfg.estimator_gru_hidden_size, num_layers=1)
 
     def forward(self, prop_his, depth_his, hidden_states, **kwargs):
         # update forward
-        prop_latent = gru_wrapper(self.prop_his_enc.forward, prop_his.transpose(2, 3))
+        prop_latent = recurrent_wrapper(self.prop_his_enc, prop_his.transpose(2, 3))
 
-        depth_latent = gru_wrapper(self.depth_enc.forward, depth_his)
+        depth_latent = recurrent_wrapper(self.depth_enc, depth_his)
 
-        gru_input = torch.cat((prop_latent, depth_latent), dim=2)
-
-        gru_out, _ = self.gru(gru_input, hidden_states)
-        return gru_out
-
-    def get_hidden_states(self):
-        if self.hidden_states is None:
-            return None
-        return self.hidden_states.detach()
-
-    def detach_hidden_states(self):
-        if self.hidden_states is not None:
-            self.hidden_states = self.hidden_states.detach()
-
-    def reset(self, dones):
-        if self.hidden_states is not None:
-            self.hidden_states[:, dones] = 0.
+        mixer_out, hidden_states_new = self.gru(
+            torch.cat((prop_latent, depth_latent), dim=-1),
+            hidden_states
+        )
+        return mixer_out, hidden_states_new
 
 
 class EstimatorVAE(nn.Module):
@@ -96,17 +71,17 @@ class EstimatorVAE(nn.Module):
         self.mlp_vel_logvar.bias.data.fill_(-4.0)
         self.mlp_z_logvar.bias.data.fill_(-4.0)
 
-    def forward(self, gru_out, sample=True):
-        mu_vel = self.mlp_vel(gru_out)
-        logvar_vel = self.mlp_vel_logvar(gru_out)
-        mu_z = self.mlp_z(gru_out)
-        logvar_z = self.mlp_z_logvar(gru_out)
+    def forward(self, mixer_out, sample=True):
+        mu_vel = self.mlp_vel(mixer_out)
+        logvar_vel = self.mlp_vel_logvar(mixer_out)
+        mu_z = self.mlp_z(mixer_out)
+        logvar_z = self.mlp_z_logvar(mixer_out)
 
         vel = self.reparameterize(mu_vel, logvar_vel) if sample else mu_vel
         z = self.reparameterize(mu_z, logvar_z) if sample else mu_z
 
-        ot1 = self.ot1_predictor(torch.cat([vel, z], dim=1))
-        hmap = self.hmap_recon(z[:, -self.len_latent_hmap:])
+        ot1 = self.ot1_predictor(torch.cat([vel, z], dim=-1))
+        hmap = self.hmap_recon(z[:, :, -self.len_latent_hmap:])
 
         return vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap
 
@@ -125,7 +100,7 @@ class Actor(nn.Module):
                                         activation_func=nn.ELU(), output_activation=False)
 
     def forward(self, proprio, vel, z):
-        return self.actor(torch.cat([proprio, vel, z], dim=1))
+        return self.actor(torch.cat([proprio, vel, z], dim=-1))
 
 
 class Policy(nn.Module):
@@ -134,32 +109,29 @@ class Policy(nn.Module):
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        self.estimator = EstimatorGRU(env_cfg, policy_cfg)
+        self.mixer = Mixer(env_cfg, policy_cfg)
         self.vae = EstimatorVAE(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
         self.distribution = None
 
-    def act(
-            self,
-            obs: ActorObs,
-            eval_=False,
-            **kwargs
-    ):  # <-- my mood be like
+    def act(self, proprio, prop_his, depth, mixer_hidden_states, eval_=False, **kwargs):  # <-- my mood be like
         # encode history proprio
         with torch.no_grad():
-            gru_out = self.estimator.inference_forward(obs.prop_his, obs.depth)
-            vel, z = self.vae(gru_out, sample=not eval_)[:2]
+            mixer_out, mixer_hidden_states = self.mixer(prop_his, depth, mixer_hidden_states)
+            vel, z = self.vae(mixer_out, sample=not eval_)[:2]
 
-        mean = self.actor(obs.proprio, vel, z)
+        mean = self.actor(proprio, vel, z)
+
+        mean, vel = mean.squeeze(0), vel.squeeze(0)
 
         if eval_:
-            return mean, vel
+            return mean, vel, mixer_hidden_states
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
-        return self.distribution.sample()
+        return self.distribution.sample(), mixer_hidden_states
 
     def train_act(
             self,
@@ -167,11 +139,11 @@ class Policy(nn.Module):
             hidden_states,
     ):  # <-- my mood be like
         with torch.no_grad():
-            gru_out = self.estimator(obs.prop_his, obs.depth, hidden_states)
-            vel, z = gru_wrapper(self.vae, gru_out)[:2]
+            mixer_out, _ = self.mixer(obs.prop_his, obs.depth, hidden_states)
+            vel, z = self.vae(mixer_out)[:2]
 
         # compute action
-        mean = gru_wrapper(self.actor, obs.proprio, vel, z)
+        mean = self.actor(obs.proprio, vel, z)
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
@@ -181,8 +153,8 @@ class Policy(nn.Module):
             obs: ActorObs,
             hidden_states
     ):
-        gru_out = self.estimator(obs.prop_his, obs.depth, hidden_states)
-        vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap = gru_wrapper(self.vae, gru_out)
+        mixer_out, _ = self.mixer(obs.prop_his, obs.depth, hidden_states)
+        vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap = self.vae(mixer_out)
         return vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap
 
     def get_actions_log_prob(self, actions):
@@ -198,7 +170,7 @@ class Policy(nn.Module):
 
     @property
     def entropy(self):
-        return self.distribution.entropy().sum(dim=-1)
+        return torch.sum(self.distribution.entropy(), dim=-1, keepdim=True)
 
     def reset_std(self, std, device):
         new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
@@ -206,12 +178,3 @@ class Policy(nn.Module):
 
     def clip_std(self, min_std: float, max_std: float) -> None:
         self.log_std.data = torch.clamp(self.log_std.data, math.log(min_std), math.log(max_std))
-
-    def get_hidden_states(self):
-        return self.estimator.get_hidden_states()
-
-    def detach_hidden_states(self):
-        self.estimator.detach_hidden_states()
-
-    def reset(self, dones):
-        self.estimator.reset(dones)

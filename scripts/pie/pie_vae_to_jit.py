@@ -6,7 +6,7 @@ except ImportError:
 import os
 
 from legged_gym.utils.task_registry import TaskRegistry
-from rsl_rl.modules.pie import EstimatorGRU, EstimatorPlain, Actor
+from rsl_rl.modules.pie import EstimatorGRU, EstimatorVAE, Actor
 from torch import nn
 
 
@@ -14,15 +14,15 @@ class Policy(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
         self.estimator = EstimatorGRU(env_cfg, policy_cfg)
-        self.vae = EstimatorPlain(env_cfg, policy_cfg)
+        self.vae = EstimatorVAE(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.ones(env_cfg.num_actions))
 
-    def forward(self, prop_his, depth, hidden_states):  # <-- my mood be like
+    def forward(self, proprio, prop_his, depth, hidden_states):  # <-- my mood be like
         # encode history proprio
         gru_out = self.estimator(prop_his.unsqueeze(0), depth.unsqueeze(0), hidden_states)
-        vel, z, ot1, hmap = self.vae(gru_out)
+        vel, z, ot1, hmap = self.vae.estimate(gru_out)
         mean = self.actor(proprio, vae_mu.squeeze(0))
         return mean, hidden_states, hmap.squeeze().view(32, 16)
 
@@ -63,10 +63,10 @@ def trace():
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
         prop_his = torch.zeros(1, task_cfg.env.len_prop_his, task_cfg.env.n_proprio, device=device)
-        depth_his = torch.zeros(1, 2 * task_cfg.env.len_depth_his, *reversed(task_cfg.sensors.depth_0.resized), device=device)
+        depth_his = torch.zeros(1, task_cfg.env.len_depth_his, *reversed(task_cfg.sensors.depth_0.resized), device=device)
         hidden_states = torch.zeros(1, 1, task_cfg.policy.estimator_gru_hidden_size, device=device)
 
-        trace_and_save(model, (prop_his, depth_his, hidden_states))
+        trace_and_save(model, (proprio, prop_his, depth_his, hidden_states))
 
 
 if __name__ == '__main__':

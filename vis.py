@@ -104,6 +104,8 @@ class BaseVisualizer:
 
         # Create figure and axes
         self.fig, axes = plt.subplots(*self.subplot_shape, figsize=self.figsize)
+        self.fig.canvas.manager.set_window_title(self.__class__.__name__)
+
         axes_flat = axes.flatten() if hasattr(axes, 'flatten') else [axes]
 
         # Prepare animated lines, static limit lines, and cache backgrounds
@@ -309,19 +311,20 @@ class T1DofVelVisualizer(BaseVisualizer):
 
     def plot(self, env, args):
         dof_vel = env.sim.dof_vel.cpu().numpy()
+        offset = 0
         self._plot({
-            'Left_Hip_Pitch': dof_vel[env.lookat_id, 11],
-            'Left_Hip_Roll': dof_vel[env.lookat_id, 12],
-            'Left_Hip_Yaw': dof_vel[env.lookat_id, 13],
-            'Left_Knee_Pitch': dof_vel[env.lookat_id, 14],
-            'Left_Ankle_Pitch': dof_vel[env.lookat_id, 15],
-            'Left_Ankle_Roll': dof_vel[env.lookat_id, 16],
-            'Right_Hip_Pitch': dof_vel[env.lookat_id, 17],
-            'Right_Hip_Roll': dof_vel[env.lookat_id, 18],
-            'Right_Hip_Yaw': dof_vel[env.lookat_id, 19],
-            'Right_Knee_Pitch': dof_vel[env.lookat_id, 20],
-            'Right_Ankle_Pitch': dof_vel[env.lookat_id, 21],
-            'Right_Ankle_Roll': dof_vel[env.lookat_id, 22],
+            'Left_Hip_Pitch': dof_vel[env.lookat_id, offset + 0],
+            'Left_Hip_Roll': dof_vel[env.lookat_id, offset + 1],
+            'Left_Hip_Yaw': dof_vel[env.lookat_id, offset + 2],
+            'Left_Knee_Pitch': dof_vel[env.lookat_id, offset + 3],
+            'Left_Ankle_Pitch': dof_vel[env.lookat_id, offset + 4],
+            'Left_Ankle_Roll': dof_vel[env.lookat_id, offset + 5],
+            'Right_Hip_Pitch': dof_vel[env.lookat_id, offset + 6],
+            'Right_Hip_Roll': dof_vel[env.lookat_id, offset + 7],
+            'Right_Hip_Yaw': dof_vel[env.lookat_id, offset + 8],
+            'Right_Knee_Pitch': dof_vel[env.lookat_id, offset + 9],
+            'Right_Ankle_Pitch': dof_vel[env.lookat_id, offset + 10],
+            'Right_Ankle_Roll': dof_vel[env.lookat_id, offset + 11],
         })
 
 

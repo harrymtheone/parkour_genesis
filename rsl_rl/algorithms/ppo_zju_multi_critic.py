@@ -4,6 +4,7 @@ from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.model_zju_exp import EstimatorNoRecon, EstimatorGRU
 from rsl_rl.modules.utils import UniversalCritic
+from .utils import masked_MSE, masked_mean
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from .alg_base import BaseAlgorithm
 
@@ -11,18 +12,6 @@ try:
     from torch.amp import GradScaler
 except ImportError:
     from torch.cuda.amp import GradScaler
-
-
-def masked_MSE(input_, target, mask):
-    return ((input_ - target) * mask).square().sum() / (input_.numel() / mask.numel() * mask.sum())
-
-
-def masked_L1(input_, target, mask):
-    return ((input_ - target) * mask).abs().sum() / (input_.numel() / mask.numel() * mask.sum())
-
-
-def masked_mean(input_, mask):
-    return (input_ * mask).sum() / (input_.numel() / mask.numel() * mask.sum())
 
 
 class Transition:
