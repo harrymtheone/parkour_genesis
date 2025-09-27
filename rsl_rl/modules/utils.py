@@ -99,6 +99,12 @@ class UniversalCritic(nn.Module):
                                          activation_func=nn.ELU(),
                                          output_activation=False)
 
+    def forward(self, priv_his, scan, edge_mask):
+        priv_latent = gru_wrapper(self.priv_enc, priv_his.transpose(2, 3))
+        scan_enc = self.scan_enc(scan.flatten(2))
+        edge_enc = self.edge_mask_enc(edge_mask.flatten(2))
+        return self.critic(torch.cat([priv_latent, scan_enc, edge_enc], dim=2))
+
     def evaluate(self, obs):
         if obs.priv_his.ndim == 3:
             priv_latent = self.priv_enc(obs.priv_his.transpose(1, 2))

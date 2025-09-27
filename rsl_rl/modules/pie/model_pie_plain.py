@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 
-from rsl_rl.modules.utils import make_linear_layers, gru_wrapper
+from rsl_rl.modules.utils import make_linear_layers
 from . import Mixer, Actor
 
 
@@ -28,68 +28,42 @@ class EstimatorPlain(nn.Module):
         vel = self.mlp_vel(gru_out)
         z = self.mlp_z(gru_out)
 
-        ot1 = self.ot1_predictor(torch.cat([vel, z], dim=1))
-        hmap = self.hmap_recon(z[:, -self.len_latent_hmap:])
+        ot1 = self.ot1_predictor(torch.cat([vel, z], dim=-1))
+        hmap = self.hmap_recon(z[:, :, -self.len_latent_hmap:])
 
         return vel, z, ot1, hmap
 
 
 class PolicyPlain(nn.Module):
     is_recurrent = True
-    from legged_gym.envs.T1.t1_pie_environment import ActorObs
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        self.estimator = Mixer(env_cfg, policy_cfg)
+        self.mixer = Mixer(env_cfg, policy_cfg)
         self.vae = EstimatorPlain(env_cfg, policy_cfg)
         self.actor = Actor(env_cfg, policy_cfg)
 
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
         self.distribution = None
 
-    def act(
-            self,
-            obs: ActorObs,
-            eval_=False,
-            **kwargs
-    ):  # <-- my mood be like
+    def act(self, proprio, prop_his, depth, mixer_hidden_states, eval_=False, **kwargs):  # <-- my mood be like
         # encode history proprio
         with torch.no_grad():
-            gru_out = self.estimator.inference_forward(obs.prop_his, obs.depth)
-            vel, z = self.vae(gru_out)[:2]
+            mixer_out, mixer_hidden_states = self.mixer(prop_his, depth, mixer_hidden_states)
+            vel, z = self.vae(mixer_out)[:2]
 
-        mean = self.actor(obs.proprio, vel, z)
+        mean = self.actor(proprio, vel, z)
 
         if eval_:
-            return mean, vel
+            return mean, vel, mixer_hidden_states
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
-        return self.distribution.sample()
+        return self.distribution.sample(), mixer_hidden_states
 
-    def train_act(
-            self,
-            obs: ActorObs,
-            hidden_states,
-    ):  # <-- my mood be like
-        with torch.no_grad():
-            gru_out = self.estimator(obs.prop_his, obs.depth, hidden_states)
-            vel, z = gru_wrapper(self.vae, gru_out)[:2]
-
-        # compute action
-        mean = gru_wrapper(self.actor, obs.proprio, vel, z)
-
-        # sample action from distribution
-        self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
-
-    def estimate(
-            self,
-            obs: ActorObs,
-            hidden_states
-    ):
-        gru_out = self.estimator(obs.prop_his, obs.depth, hidden_states)
-        vel, z, ot1, hmap = gru_wrapper(self.vae, gru_out)
-        return vel, z, ot1, hmap
+    def estimate(self, prop_his, depth, hidden_states):
+        mixer_out, _ = self.mixer(prop_his, depth, hidden_states)
+        return self.vae(mixer_out)
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
@@ -104,7 +78,7 @@ class PolicyPlain(nn.Module):
 
     @property
     def entropy(self):
-        return self.distribution.entropy().sum(dim=-1)
+        return self.distribution.entropy().sum(dim=-1, keepdim=True)
 
     def reset_std(self, std, device):
         new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=device))
@@ -112,12 +86,3 @@ class PolicyPlain(nn.Module):
 
     def clip_std(self, min_std: float, max_std: float) -> None:
         self.log_std.data = torch.clamp(self.log_std.data, math.log(min_std), math.log(max_std))
-
-    def get_hidden_states(self):
-        return self.estimator.get_hidden_states()
-
-    def detach_hidden_states(self):
-        self.estimator.detach_hidden_states()
-
-    def reset(self, dones):
-        self.estimator.reset(dones)

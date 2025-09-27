@@ -179,8 +179,8 @@ class T1_PIE_Cfg(T1BaseCfg):
         feet_height_target = 0.04
         feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
-        only_positive_rewards_until_epoch = 500  # after the epoch, turn off only_positive_reward
+        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards_until_epoch = 5000  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         EMA_update_alpha = 0.99
 

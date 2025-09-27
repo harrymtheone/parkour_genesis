@@ -69,7 +69,7 @@ def play(args):
         'stepping_stone': 0,
         'gap': 0,
         'pit': 0,
-        'parkour_flat': 0,
+        'parkour_flat': 1,
         'parkour': 0,
         'parkour_gap': 0,
         'parkour_box': 0,
@@ -168,8 +168,8 @@ if __name__ == '__main__':
     # t1_vis = vis.RewVisualizer()
     # t1_vis = vis.T1ActionsVisualizer()
     # t1_vis = vis.T1DofPosVisualizer()
-    t1_vis = vis.T1DofVelVisualizer()
-    # t1_vis = vis.T1TorqueVisualizer()
+    # t1_vis = vis.T1DofVelVisualizer()
+    t1_vis = vis.T1TorqueVisualizer()
     # t1_vis = vis.VelEstVisualizer()
 
     with torch.inference_mode():

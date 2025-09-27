@@ -40,11 +40,11 @@ class Mixer(nn.Module):
 
         depth_latent = recurrent_wrapper(self.depth_enc, depth_his)
 
-        mixer_out, hidden_states_new = self.gru(
+        mixer_out, hidden_states = self.gru(
             torch.cat((prop_latent, depth_latent), dim=-1),
             hidden_states
         )
-        return mixer_out, hidden_states_new
+        return mixer_out, hidden_states
 
 
 class EstimatorVAE(nn.Module):
@@ -105,7 +105,6 @@ class Actor(nn.Module):
 
 class Policy(nn.Module):
     is_recurrent = True
-    from legged_gym.envs.T1.t1_pie_environment import ActorObs
 
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
@@ -124,8 +123,6 @@ class Policy(nn.Module):
 
         mean = self.actor(proprio, vel, z)
 
-        mean, vel = mean.squeeze(0), vel.squeeze(0)
-
         if eval_:
             return mean, vel, mixer_hidden_states
 
@@ -133,29 +130,9 @@ class Policy(nn.Module):
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
         return self.distribution.sample(), mixer_hidden_states
 
-    def train_act(
-            self,
-            obs: ActorObs,
-            hidden_states,
-    ):  # <-- my mood be like
-        with torch.no_grad():
-            mixer_out, _ = self.mixer(obs.prop_his, obs.depth, hidden_states)
-            vel, z = self.vae(mixer_out)[:2]
-
-        # compute action
-        mean = self.actor(obs.proprio, vel, z)
-
-        # sample action from distribution
-        self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
-
-    def estimate(
-            self,
-            obs: ActorObs,
-            hidden_states
-    ):
-        mixer_out, _ = self.mixer(obs.prop_his, obs.depth, hidden_states)
-        vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap = self.vae(mixer_out)
-        return vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap
+    def estimate(self, prop_his, depth, hidden_states):
+        mixer_out, _ = self.mixer(prop_his, depth, hidden_states)
+        return self.vae(mixer_out)
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1, keepdim=True)
