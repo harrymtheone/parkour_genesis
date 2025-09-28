@@ -211,59 +211,59 @@ class T1BaseCfg(BaseConfig):
         ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
 
         default_joint_angles = {
-            # 'AAHead_yaw': 0.,
-            # # 'Head_pitch': 0.5236,
-            # 'Head_pitch': 0.785,
-            #
-            # 'Left_Shoulder_Pitch': 0.,
-            # 'Left_Shoulder_Roll': -1.3,
-            # 'Left_Elbow_Pitch': 0.,
-            # 'Left_Elbow_Yaw': -1.,
-            # 'Right_Shoulder_Pitch': 0.,
-            # 'Right_Shoulder_Roll': 1.3,
-            # 'Right_Elbow_Pitch': 0.,
-            # 'Right_Elbow_Yaw': 1.,
+            'AAHead_yaw': 0.,
+            # 'Head_pitch': 0.5236,
+            'Head_pitch': 0.785,
+
+            'Left_Shoulder_Pitch': 0.,
+            'Left_Shoulder_Roll': -1.3,
+            'Left_Elbow_Pitch': 0.,
+            'Left_Elbow_Yaw': -1.,
+            'Right_Shoulder_Pitch': 0.,
+            'Right_Shoulder_Roll': 1.3,
+            'Right_Elbow_Pitch': 0.,
+            'Right_Elbow_Yaw': 1.,
             'Waist': 0.,
 
-            # 'Left_Hip_Pitch': -0.2,
-            # 'Left_Hip_Roll': 0.,
-            # 'Left_Hip_Yaw': 0.,
-            # 'Left_Knee_Pitch': 0.4,
-            # 'Left_Ankle_Pitch': -0.25,
-            # 'Left_Ankle_Roll': 0.,
-            # 'Right_Hip_Pitch': -0.2,
-            # 'Right_Hip_Roll': 0.,
-            # 'Right_Hip_Yaw': 0.,
-            # 'Right_Knee_Pitch': 0.4,
-            # 'Right_Ankle_Pitch': -0.25,
-            # 'Right_Ankle_Roll': 0.,
-
-            'Left_Hip_Pitch': -0.2 - 0.1974,
+            'Left_Hip_Pitch': -0.2,
             'Left_Hip_Roll': 0.,
             'Left_Hip_Yaw': 0.,
-            'Left_Knee_Pitch': 0.4 + 0.3948,
-            'Left_Ankle_Pitch': -0.25 - 0.1974,
+            'Left_Knee_Pitch': 0.4,
+            'Left_Ankle_Pitch': -0.25,
             'Left_Ankle_Roll': 0.,
-            'Right_Hip_Pitch': -0.2 - 0.1974,
+            'Right_Hip_Pitch': -0.2,
             'Right_Hip_Roll': 0.,
             'Right_Hip_Yaw': 0.,
-            'Right_Knee_Pitch': 0.4 + 0.3948,
-            'Right_Ankle_Pitch': -0.25 - 0.1974,
+            'Right_Knee_Pitch': 0.4,
+            'Right_Ankle_Pitch': -0.25,
             'Right_Ankle_Roll': 0.,
+
+            # 'Left_Hip_Pitch': -0.2 - 0.1974,
+            # 'Left_Hip_Roll': 0.,
+            # 'Left_Hip_Yaw': 0.,
+            # 'Left_Knee_Pitch': 0.4 + 0.3948,
+            # 'Left_Ankle_Pitch': -0.25 - 0.1974,
+            # 'Left_Ankle_Roll': 0.,
+            # 'Right_Hip_Pitch': -0.2 - 0.1974,
+            # 'Right_Hip_Roll': 0.,
+            # 'Right_Hip_Yaw': 0.,
+            # 'Right_Knee_Pitch': 0.4 + 0.3948,
+            # 'Right_Ankle_Pitch': -0.25 - 0.1974,
+            # 'Right_Ankle_Roll': 0.,
         }
 
     class control:
         # PD Drive parameters:
         stiffness = {
-            # 'Head': 30,
-            # 'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+            'Head': 30,
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
             'Waist': 100,
             'Hip_Pitch': 150, 'Hip_Roll': 150, 'Hip_Yaw': 150, 'Knee_Pitch': 180, 'Ankle_Pitch': 50, 'Ankle_Roll': 50,
         }
 
         damping = {
-            # 'Head': 1,
-            # 'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+            'Head': 1,
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
             'Waist': 3.0,
             'Hip_Pitch': 8, 'Hip_Roll': 8.0, 'Hip_Yaw': 4.0, 'Knee_Pitch': 8.0, 'Ankle_Pitch': 1.0, 'Ankle_Roll': 1.0,
         }
@@ -277,7 +277,7 @@ class T1BaseCfg(BaseConfig):
         decimation = 10
 
     class asset:
-        file = LEGGED_GYM_ROOT_DIR + '/robots/T1/T1_legs.urdf'
+        file = LEGGED_GYM_ROOT_DIR + '/robots/T1/T1_serial.urdf'
         name = 'T1_hzx'
         base_link_name = 'Trunk'
         foot_name = 'foot_link'

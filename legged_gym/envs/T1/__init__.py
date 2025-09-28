@@ -1,10 +1,12 @@
 from .config.t1_dreamwaq_config import T1DreamWaqCfg, T1DreamWaqPhase2Cfg
 from .config.t1_multi_critic_config import T1_Multi_Critic_Cfg
 from .config.t1_multi_critic_config import T1_Multi_Critic_Stair_Cfg
+from .config.t1_odom_amp_config import T1_Odom_AMP_Cfg
 from .config.t1_odom_config import T1_Odom_Cfg, T1_Odom_Stair_Cfg, T1_Odom_Finetune_Cfg
 from .config.t1_odom_neg_config import T1_Odom_Neg_Cfg, T1_Odom_Stair_Neg_Cfg, T1_Odom_Neg_Finetune_Cfg
 from .config.t1_pie_config import T1_PIE_Cfg, T1_PIE_Stair_Cfg
 from .t1_dreamwaq_environment import T1DreamWaqEnvironment
+from .t1_odom_amp_environment import T1OdomAmpEnv
 from .t1_odom_environment import T1OdomEnvironment
 from .t1_odom_neg_rew_environment import T1OdomNegEnvironment
 from .t1_pie_environment import T1PIEEnvironment
@@ -37,6 +39,8 @@ t1_tasks = {
     't1_odom_neg': (T1OdomNegEnvironment, T1_Odom_Neg_Cfg()),
     't1_odom_neg_stair': (T1OdomNegEnvironment, T1_Odom_Stair_Neg_Cfg()),
     't1_odom_neg_finetune': (T1OdomNegEnvironment, T1_Odom_Neg_Finetune_Cfg()),
+
+    't1_odom_amp': (T1OdomAmpEnv, T1_Odom_AMP_Cfg()),
 
     # 't1_phase': (T1_Phase_Environment, T1_Phase_Cfg()),
     # 't1_phase_stair': (T1_Phase_Environment, T1_Phase_Stair_Cfg()),

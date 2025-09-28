@@ -179,7 +179,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         feet_height_target = 0.04
         feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
         only_positive_rewards_until_epoch = 5000  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         EMA_update_alpha = 0.99
@@ -192,20 +192,20 @@ class T1_PIE_Cfg(T1BaseCfg):
 
         class scales:  # float or (start, end, span, start_it)
             # gait
-            joint_pos = 1.0
-            feet_contact_number = 0.6
-            feet_clearance = 0.5
+            joint_pos = 2.0
+            feet_contact_number = 1.6
+            feet_clearance = 1.0
             feet_distance = -1.
             knee_distance = -1.
             feet_rotation = -0.3
 
             # vel tracking
-            tracking_lin_vel = 1.0
+            tracking_lin_vel = 2.0
             tracking_goal_vel = 2.5
             tracking_ang_vel = 1.5
 
             # contact
-            feet_slip = (0, -0.1, 1, 1000)
+            feet_slip = -0.1
             feet_contact_forces = -1e-3
             # feet_stumble = -2.
             foothold = -0.01

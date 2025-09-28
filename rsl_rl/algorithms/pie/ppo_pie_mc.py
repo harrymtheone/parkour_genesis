@@ -19,7 +19,8 @@ class Transition:
     def __init__(self):
         self.observations = None
         self.critic_observations = None
-        self.hidden_states = None
+        self.mixer_hidden_states = None
+        self.actor_hidden_states = None
         self.observations_next = None
         self.actions = None
         self.rewards = None
@@ -59,6 +60,7 @@ class PPO_PIE_MC(BaseAlgorithm):
         self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
         if self.actor.is_recurrent:
             self.mixer_hidden_states = None
+            self.actor_hidden_states = None
 
         self.critic = nn.ModuleDict({
             'default': UniversalCritic(task_cfg.env, task_cfg.policy),
@@ -80,19 +82,22 @@ class PPO_PIE_MC(BaseAlgorithm):
             self.transition.observations = obs
             self.transition.critic_observations = obs_critic
             if self.actor.is_recurrent:
-                self.transition.hidden_states = self.mixer_hidden_states
+                self.transition.mixer_hidden_states = self.mixer_hidden_states
+                self.transition.actor_hidden_states = self.actor_hidden_states
             self.transition.use_estimated_values = use_estimated_values
 
-            actions, self.mixer_hidden_states = self.actor.act(
+            actions, self.mixer_hidden_states, self.actor_hidden_states = self.actor.act(
                 proprio=obs.proprio.unsqueeze(0),
                 prop_his=obs.prop_his.unsqueeze(0),
                 depth=obs.depth.unsqueeze(0),
                 mixer_hidden_states=self.mixer_hidden_states,
+                actor_hidden_states=self.actor_hidden_states,
             )
 
-            if self.actor.is_recurrent and self.transition.hidden_states is None:
+            if self.actor.is_recurrent and self.transition.mixer_hidden_states is None:
                 # only for the first step where hidden_state is None
-                self.transition.hidden_states = torch.zeros_like(self.mixer_hidden_states)
+                self.transition.mixer_hidden_states = torch.zeros_like(self.mixer_hidden_states)
+                self.transition.actor_hidden_states = torch.zeros_like(self.actor_hidden_states)
 
             # store
             self.transition.actions = actions
@@ -276,7 +281,8 @@ class PPO_PIE_MC(BaseAlgorithm):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs = batch['observations']
             critic_obs = batch['critic_observations']
-            hidden_states = batch['hidden_states'] if self.actor.is_recurrent else None
+            mixer_hidden_states = batch['mixer_hidden_states'] if self.actor.is_recurrent else None
+            actor_hidden_states = batch['actor_hidden_states'] if self.actor.is_recurrent else None
             mask = batch['masks'] if self.actor.is_recurrent else slice(None)
             actions = batch['actions']
             default_values = batch['values']
@@ -291,7 +297,8 @@ class PPO_PIE_MC(BaseAlgorithm):
                 proprio=obs.proprio,
                 prop_his=obs.prop_his,
                 depth=obs.depth,
-                mixer_hidden_states=hidden_states,
+                mixer_hidden_states=mixer_hidden_states,
+                actor_hidden_states=actor_hidden_states,
             )
 
             # KL divergence calculation
@@ -368,7 +375,8 @@ class PPO_PIE_MC(BaseAlgorithm):
         """Update symmetry-related components"""
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs_batch = batch['observations']
-            hidden_states_batch = batch['hidden_states'] if self.actor.is_recurrent else None
+            mixer_hidden_states = batch['mixer_hidden_states'] if self.actor.is_recurrent else None
+            actor_hidden_states = batch['actor_hidden_states'] if self.actor.is_recurrent else None
             mask_batch = batch['masks'].squeeze() if self.actor.is_recurrent else slice(None)
             n_steps = mask_batch.size(0)
 
@@ -404,13 +412,13 @@ class PPO_PIE_MC(BaseAlgorithm):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs = batch['observations']
             critic_obs = batch['critic_observations']
-            hidden_states = batch['hidden_states'] if self.actor.is_recurrent else None
+            mixer_hidden_states = batch['mixer_hidden_states'] if self.actor.is_recurrent else None
             mask = batch['masks'] if self.actor.is_recurrent else slice(None)
             obs_next = batch['observations_next']
 
             # Forward pass
             vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap = self.actor.estimate(
-                obs.prop_his, obs.depth, hidden_states=hidden_states)
+                obs.prop_his, obs.depth, mixer_hidden_states=mixer_hidden_states)
 
             # Estimation loss
             vel_est_loss = masked_MSE(vel, critic_obs.est_gt, mask)
@@ -475,11 +483,12 @@ class PPO_PIE_MC(BaseAlgorithm):
             else:
                 kwargs['use_estimated_values'] = use_estimated_values
 
-            actions, vel_est, self.mixer_hidden_states = self.actor.act(
+            actions, vel_est, self.mixer_hidden_states, self.actor_hidden_states = self.actor.act(
                 proprio=obs.proprio.unsqueeze(0),
                 prop_his=obs.prop_his.unsqueeze(0),
                 depth=obs.depth.unsqueeze(0),
                 mixer_hidden_states=self.mixer_hidden_states,
+                actor_hidden_states=self.actor_hidden_states,
                 **kwargs
             )
             return {"actions": actions, "vel_est": vel_est}

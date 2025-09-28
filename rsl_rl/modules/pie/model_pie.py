@@ -95,12 +95,18 @@ class EstimatorVAE(nn.Module):
 class Actor(nn.Module):
     def __init__(self, env_cfg, policy_cfg):
         super().__init__()
-        self.actor = make_linear_layers(env_cfg.n_proprio + 3 + policy_cfg.len_latent_z + policy_cfg.len_latent_hmap,
-                                        *policy_cfg.actor_hidden_dims, env_cfg.num_actions,
+        self.gru = nn.GRU(
+            input_size=env_cfg.n_proprio + 3 + policy_cfg.len_latent_z + policy_cfg.len_latent_hmap,
+            hidden_size=policy_cfg.actor_hidden_dims[0],
+            num_layers=1,
+        )
+
+        self.actor = make_linear_layers(*policy_cfg.actor_hidden_dims, env_cfg.num_actions,
                                         activation_func=nn.ELU(), output_activation=False)
 
-    def forward(self, proprio, vel, z):
-        return self.actor(torch.cat([proprio, vel, z], dim=-1))
+    def forward(self, proprio, vel, z, hidden_states):
+        x, hidden_states = self.gru(torch.cat([proprio, vel, z], dim=-1), hidden_states)
+        return self.actor(x), hidden_states
 
 
 class Policy(nn.Module):
@@ -115,23 +121,23 @@ class Policy(nn.Module):
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
         self.distribution = None
 
-    def act(self, proprio, prop_his, depth, mixer_hidden_states, eval_=False, **kwargs):  # <-- my mood be like
+    def act(self, proprio, prop_his, depth, mixer_hidden_states, actor_hidden_states, eval_=False, **kwargs):  # <-- my mood be like
         # encode history proprio
-        with torch.no_grad():
-            mixer_out, mixer_hidden_states = self.mixer(prop_his, depth, mixer_hidden_states)
-            vel, z = self.vae(mixer_out, sample=not eval_)[:2]
+        # with torch.no_grad():
+        mixer_out, mixer_hidden_states = self.mixer(prop_his, depth, mixer_hidden_states)
+        vel, z = self.vae(mixer_out, sample=not eval_)[:2]
 
-        mean = self.actor(proprio, vel, z)
+        mean, actor_hidden_states = self.actor(proprio, vel, z, actor_hidden_states)
 
         if eval_:
-            return mean, vel, mixer_hidden_states
+            return mean, vel, mixer_hidden_states, actor_hidden_states
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())
-        return self.distribution.sample(), mixer_hidden_states
+        return self.distribution.sample(), mixer_hidden_states, actor_hidden_states
 
-    def estimate(self, prop_his, depth, hidden_states):
-        mixer_out, _ = self.mixer(prop_his, depth, hidden_states)
+    def estimate(self, prop_his, depth, mixer_hidden_states):
+        mixer_out, _ = self.mixer(prop_his, depth, mixer_hidden_states)
         return self.vae(mixer_out)
 
     def get_actions_log_prob(self, actions):

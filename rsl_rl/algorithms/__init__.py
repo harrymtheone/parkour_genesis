@@ -1,4 +1,5 @@
 from .alg_base import BaseAlgorithm
+from .odom_amp import PPO_Odom_AMP
 from .ppo_dream_waq import PPODreamWaQ
 from .ppo_phase import PPO_Phase
 from rsl_rl.algorithms.pie import *
@@ -16,6 +17,8 @@ algorithm_dict = {
     'distiller': Distiller,
     'ppo_odom': PPO_Odom,
     'ppo_odom_roa': PPO_Odom_ROA,
+
+    'ppo_odom_amp': PPO_Odom_AMP,
 
     'ppo_priv': PPO_Priv,
     'ppo_dreamwaq': PPODreamWaQ,

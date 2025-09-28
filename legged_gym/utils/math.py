@@ -102,6 +102,7 @@ def quat_to_mat(quat):
     rot_matrix = torch.stack([row0, row1, row2], dim=-2)  # shape (..., 3, 3)
     return rot_matrix
 
+
 @torch.jit.script
 def transform_by_quat(v, quat):
     # type: (torch.Tensor, torch.Tensor) -> torch.Tensor
@@ -147,137 +148,11 @@ def transform_by_yaw(v, yaw):
     )
     return transform_by_quat(v, quat_yaw)
 
-# def depth_to_point_cloud(depth: np.ndarray,
-#                          proj: np.matrix,
-#                          v_inv: np.matrix,
-#                          far_clip: float,
-#                          near_clip: float) -> np.ndarray:
-#     height, width = depth.shape  # (60, 106)
-#     u = np.arange(0, width)[np.newaxis, :].repeat(height, axis=0)
-#     v = np.arange(0, height)[:, np.newaxis].repeat(width, axis=1)
-#
-#     fu, fv = 2 / proj[0, 0], 2 / proj[1, 1]
-#     centerU, centerV = width / 2, height / 2
-#
-#     Z = -depth
-#     X = -(u - centerU) / width * Z * fu
-#     Y = (v - centerV) / height * Z * fv
-#
-#     Z, X, Y = Z.flatten(), X.flatten(), Y.flatten()
-#     valid = (Z > -far_clip) & (Z < -near_clip)
-#
-#     position = np.stack((X, Y, Z, np.ones(X.shape)), axis=0).T
-#     position = position @ v_inv
-#
-#     return np.array(position[valid, :3])
-#
-#
-# @torch.jit.script
-# def point_cloud_to_voxel_grid_jit(cloud: List[torch.Tensor],
-#                                   base_quat: torch.Tensor,
-#                                   root_states: torch.Tensor,
-#                                   voxel_translation: torch.Tensor,
-#                                   grid_shape: Tuple[int, int, int],
-#                                   grid_size: float,
-#                                   device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
-#     num_cloud = len(cloud)
-#     quat_inv = base_quat * torch.tensor([[-1, -1, -1, 1]], dtype=torch.float, device=device)
-#     grid_shape_tensor = torch.tensor(grid_shape, dtype=torch.float, device=device)[None, :] - 1
-#
-#     # init buffer to store voxel grid
-#     grid_com = torch.zeros(num_cloud, *grid_shape, 3, dtype=torch.float, device=device)
-#     grid_occupied = torch.zeros(num_cloud, *grid_shape, dtype=torch.bool, device=device)
-#     voxel_point_count = torch.zeros(num_cloud, *grid_shape, dtype=torch.int, device=device)
-#     voxel_sum_position = torch.zeros(num_cloud, *grid_shape, 3, dtype=torch.float, device=device)
-#     p_cloud = torch.zeros(max([len(c) for c in cloud]), 3, dtype=torch.float, device=device)
-#
-#     for i in range(num_cloud):
-#         p_cloud[:len(cloud[i])] = cloud[i]
-#         p_cloud[len(cloud[i]):] = 0
-#
-#         # convert cloud to base frame
-#         cloud_base = p_cloud - root_states[i, :3]
-#         cloud_base = quat_apply_yaw(quat_inv[[i]], cloud_base)  # TODO performance bottleneck: compute before for loop
-#
-#         # convert points into voxel grid frame
-#         cloud_voxel = cloud_base - voxel_translation
-#
-#         # Determine voxel indices for each point
-#         voxel_indices = torch.floor(cloud_voxel / grid_size).to(torch.long)
-#         cloud_grid = torch.remainder(cloud_voxel, grid_size)
-#
-#         # To avoid out-of-bounds indexing, we clamp indices to the grid shape
-#         voxel_in_range = (torch.all(voxel_indices > 0, dim=1) &
-#                           torch.all(voxel_indices < grid_shape_tensor, dim=1))
-#         voxel_indices[:] = torch.clip(voxel_indices, torch.zeros(1, 3, device=device), grid_shape_tensor)
-#         p_cloud[~voxel_in_range] = 0
-#         cloud_grid[~voxel_in_range] = 0
-#
-#         # # Accumulate the sum of positions and the count of points per voxel
-#         # for idx, voxel in enumerate(voxel_indices):  (TOO SLOW! DO NOT USE THIS ONE!!!)
-#         #     voxel_sum_position[tuple(voxel)] += cloud_in_range[idx]  # this one determines the frame of COM
-#         #     voxel_point_count[tuple(voxel)] += 1
-#
-#         # Accumulate the sum of positions and the count of points per voxel
-#         voxel_sum_position_flat = voxel_sum_position[i].view(-1, 3)  # Flatten the voxel grid to (32*16*32, 3)
-#         voxel_indices_flat = voxel_indices[:, 0] * (grid_shape[1] * grid_shape[2]) + voxel_indices[:, 1] * grid_shape[2] + voxel_indices[:, 2]
-#         # voxel_sum_position_flat.scatter_add_(0, voxel_indices_flat.unsqueeze(-1).expand(-1, 3), p_cloud)  # this one defines which frame points in
-#         voxel_sum_position_flat.scatter_add_(0, voxel_indices_flat.unsqueeze(-1).expand(-1, 3), cloud_grid)
-#
-#         voxel_point_count_flat = voxel_point_count[i].view(-1)  # Flatten the voxel grid
-#         voxel_in_range_flat = voxel_in_range.to(torch.int).view(-1)
-#         voxel_point_count_flat.scatter_add_(0, voxel_indices_flat, voxel_in_range_flat)
-#
-#     # compute COM and is_occupied of each grid
-#     non_empty_voxels = voxel_point_count > 0
-#     grid_com[non_empty_voxels] = voxel_sum_position[non_empty_voxels] / voxel_point_count[non_empty_voxels][:, None]
-#     grid_occupied[non_empty_voxels] = True
-#
-#     return grid_occupied, grid_com
-#
-#
-# @torch.jit.script
-# def tri_mesh_to_point_cloud_jit(base_quat: torch.Tensor,
-#                                 root_states: torch.Tensor,
-#                                 vertices_ROI: torch.Tensor,
-#                                 cloud: torch.Tensor) -> List[torch.Tensor]:
-#     num_env = len(base_quat)
-#
-#     # convert ROI to world frame
-#     ROI_world = quat_apply_yaw(base_quat.repeat(1, 4), vertices_ROI.repeat(num_env, 1))
-#     ROI_world = ROI_world.view(num_env, 4, 3) + root_states[:, None, :3]  # (num_env, 4, 3)
-#
-#     # Define two triangles from the rectangle
-#     triangles = torch.stack([
-#         ROI_world[:, None, :3],
-#         torch.cat([ROI_world[:, None, [0]], ROI_world[:, None, 2:4]], dim=2)
-#     ], dim=1)  # (num_env, 2, 3, 3)
-#     triangles = triangles.view(-1, 3, 3)  # (num_env * 2, 3, 3)
-#
-#     # Create batched vectors for both triangles
-#     edge0 = triangles[:, 1] - triangles[:, 0]  # Shape (2, 3)
-#     edge1 = triangles[:, 2] - triangles[:, 0]  # Shape (2, 3)
-#     pt_edge = cloud[None, :, :] - triangles[:, None, 0]  # (2, N, 3)
-#
-#     # Compute dot products for all points in both triangles
-#     dot00 = torch.sum(edge1 * edge1, dim=1, keepdim=True)  # Shape (2, 1)
-#     dot01 = torch.sum(edge1 * edge0, dim=1, keepdim=True)  # Shape (2, 1)
-#     dot02 = torch.sum(edge1.unsqueeze(1) * pt_edge, dim=2)  # Shape (2, N)
-#     dot11 = torch.sum(edge0 * edge0, dim=1, keepdim=True)  # Shape (2, 1)
-#     dot12 = torch.sum(edge0.unsqueeze(1) * pt_edge, dim=2)  # Shape (2, N)
-#
-#     # Compute barycentric coordinates
-#     invDenom = 1.0 / (dot00 * dot11 - dot01 * dot01)  # Shape (2, 1)
-#     u = (dot11 * dot02 - dot01 * dot12) * invDenom  # Shape (2, N)
-#     v = (dot00 * dot12 - dot01 * dot02) * invDenom  # Shape (2, N)
-#
-#     # # Check if the points are inside either of the triangles
-#     u, v = u.view(num_env, 2, -1), v.view(num_env, 2, -1)
-#     inside = (u >= 0) & (v >= 0) & (u + v <= 1)
-#     inside = inside[:, 0] | inside[:, 1]
-#
-#     cloud = cloud.clone()
-#     return [cloud[ins] for ins in inside]  # TODO: Bottleneck
+
+@torch.jit.script
+def quat_rotate_inverse(quat, v):
+    # type: (torch.Tensor, torch.Tensor) -> torch.Tensor
+    return transform_by_quat(v, inv_quat(quat))
 
 
 def density_weighted_sampling(points, num_samples, k=10):
@@ -298,3 +173,60 @@ def density_weighted_sampling(points, num_samples, k=10):
     sampled_indices = np.random.choice(len(points), size=num_samples, replace=False, p=probabilities)
 
     return points[sampled_indices]
+
+
+def interpolate_projected_gravity_batch(pg0, pg1, t):
+    """
+    对两个重力投影向量进行批量球面线性插值
+
+    Args:
+        pg0: 起始重力投影向量，shape [B, 3]
+        pg1: 结束重力投影向量，shape [B, 3]
+        t: 插值参数，shape [B] 或 [B, 1]，范围0到1
+
+    Returns:
+        插值后的重力投影向量，shape [B, 3]
+    """
+
+    batch_size = pg0.shape[0]
+
+    # 处理t的形状
+    if t.dim() == 1:
+        t = t.unsqueeze(-1)  # [B] -> [B, 1]
+
+    # 归一化输入向量（确保它们是单位向量）
+    pg0_norm = pg0 / torch.norm(pg0, dim=-1, keepdim=True)
+    pg1_norm = pg1 / torch.norm(pg1, dim=-1, keepdim=True)
+
+    # 计算两向量间的点积（余弦值）
+    cos_theta = torch.sum(pg0_norm * pg1_norm, dim=-1, keepdim=True)  # [B, 1]
+    cos_theta = torch.clamp(cos_theta, -1.0, 1.0)
+
+    # 处理向量方向相反的情况（选择较短的弧）
+    pg1_adjusted = torch.where(cos_theta < 0, -pg1_norm, pg1_norm)
+    cos_theta = torch.abs(cos_theta)
+
+    # 计算角度
+    theta = torch.acos(cos_theta)  # [B, 1]
+    sin_theta = torch.sin(theta)  # [B, 1]
+
+    # 计算SLERP权重
+    ratio0 = torch.sin((1 - t) * theta) / sin_theta  # [B, 1]
+    ratio1 = torch.sin(t * theta) / sin_theta  # [B, 1]
+
+    # 执行球面线性插值
+    result_slerp = ratio0 * pg0_norm + ratio1 * pg1_adjusted  # [B, 3]
+
+    # 处理向量几乎平行的情况（sin_theta接近0）
+    # 在这种情况下使用线性插值然后归一化
+    result_linear = (1 - t) * pg0_norm + t * pg1_adjusted
+    result_linear = result_linear / torch.norm(result_linear, dim=-1, keepdim=True)
+
+    # 选择适当的插值方法
+    parallel_mask = torch.abs(sin_theta) < 1e-6  # [B, 1]
+    result = torch.where(parallel_mask, result_linear, result_slerp)
+
+    # 确保结果是单位向量（数值稳定性）
+    result = result / torch.norm(result, dim=-1, keepdim=True)
+
+    return result
