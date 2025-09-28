@@ -3,7 +3,7 @@ from torch import nn, optim
 
 from rsl_rl.algorithms.utils import masked_MSE, masked_L1
 from rsl_rl.modules.pie import PolicyPlain
-from rsl_rl.modules.utils import UniversalCritic
+from ..template_models import UniversalCritic
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from . import PPO_PIE_MC
 

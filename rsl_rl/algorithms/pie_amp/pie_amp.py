@@ -4,12 +4,12 @@ from torch.distributions import Normal, kl_divergence
 
 from legged_gym.utils.helpers import class_to_dict
 from rsl_rl.algorithms.alg_base import BaseAlgorithm
-from rsl_rl.algorithms.template_models import AMPDiscriminator, UniversalCritic
+from rsl_rl.algorithms.template_models import UniversalCritic, AMPDiscriminator
 from rsl_rl.datasets.amp_motion_loader import AMPMotionLoader
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from rsl_rl.storage.amp_replay_buffer import AMPReplayBuffer
 from . import EmpiricalNormalization
-from .networks import Actor
+from .networks import Policy
 
 try:
     from torch.amp import GradScaler
@@ -33,7 +33,7 @@ class Transition:
     def __init__(self):
         self.observations = None
         self.critic_observations = None
-        self.actor_hidden_states = None
+        self.mixer_hidden_states = None
         self.actions = None
         self.rewards = None
         self.rewards_contact = None
@@ -52,7 +52,7 @@ class Transition:
             setattr(self, key, None)
 
 
-class PPO_Odom_AMP(BaseAlgorithm):
+class PPO_PIE_AMP(BaseAlgorithm):
     def __init__(self, task_cfg, device=torch.device('cpu'), env=None, **kwargs):
         self.env = env
 
@@ -69,9 +69,9 @@ class PPO_Odom_AMP(BaseAlgorithm):
         self.cur_it = 0
 
         # PPO components
-        self.actor = Actor(task_cfg).to(self.device)
-        self.actor.reset_std(self.cfg.init_noise_std)
-        self.actor_hidden_states = None
+        self.actor = Policy(task_cfg.env, task_cfg.policy).to(self.device)
+        self.actor.reset_std(self.cfg.init_noise_std, self.device)
+        self.mixer_hidden_states = None
 
         self.critic = nn.ModuleDict({
             'default': UniversalCritic(task_cfg.env, task_cfg.policy),
@@ -134,20 +134,19 @@ class PPO_Odom_AMP(BaseAlgorithm):
         # act function should run within torch.inference_mode context
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             # store observations
-            self.transition.observations = obs.no_depth()
+            self.transition.observations = obs
             self.transition.critic_observations = obs_critic
-            self.transition.actor_hidden_states = self.actor_hidden_states
 
-            actions, self.actor_hidden_states = self.actor.act(
-                obs.proprio.unsqueeze(0),
-                obs.scan.unsqueeze(0),
-                obs.priv_actor.unsqueeze(0),
-                self.actor_hidden_states
+            actions, self.mixer_hidden_states = self.actor.act(
+                proprio=obs.proprio.unsqueeze(0),
+                prop_his=obs.prop_his.unsqueeze(0),
+                depth=obs.depth.unsqueeze(0),
+                mixer_hidden_states=self.mixer_hidden_states,
             )
 
-            if self.transition.actor_hidden_states is None:
+            if self.transition.mixer_hidden_states is None:
                 # only for the first step where hidden_state is None
-                self.transition.actor_hidden_states = torch.zeros_like(self.actor_hidden_states)
+                self.transition.mixer_hidden_states = torch.zeros_like(self.mixer_hidden_states)
 
             # store
             self.transition.actions = actions
@@ -313,9 +312,9 @@ class PPO_Odom_AMP(BaseAlgorithm):
 
     def _compute_policy_loss(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            obs_batch = batch['observations']
+            obs = batch['observations']
             critic_obs_batch = batch['critic_observations']
-            actor_hidden_states_batch = batch['actor_hidden_states']
+            mixer_hidden_states = batch['mixer_hidden_states'] if self.actor.is_recurrent else None
             mask_batch = batch['masks']
             actions_batch = batch['actions']
             default_values_batch = batch['values']
@@ -325,11 +324,12 @@ class PPO_Odom_AMP(BaseAlgorithm):
             contact_returns_batch = batch['returns_contact']
             old_actions_log_prob_batch = batch['actions_log_prob']
 
+            # Forward pass
             self.actor.act(
-                obs_batch.proprio,
-                obs_batch.scan,
-                obs_batch.priv_actor,
-                actor_hidden_states_batch,
+                proprio=obs.proprio,
+                prop_his=obs.prop_his,
+                depth=obs.depth,
+                mixer_hidden_states=mixer_hidden_states,
             )
 
             with torch.no_grad():
@@ -372,20 +372,20 @@ class PPO_Odom_AMP(BaseAlgorithm):
             return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss
 
     def reset(self, dones):
-        if self.actor_hidden_states is not None:
-            self.actor_hidden_states[:, dones] = 0.
+        if self.mixer_hidden_states is not None:
+            self.mixer_hidden_states[:, dones] = 0.
 
     def play_act(self, obs, **kwargs):
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):
-            actions, self.actor_hidden_states = self.actor.act(
-                obs.proprio.unsqueeze(0),
-                obs.scan.unsqueeze(0),
-                obs.priv_actor.unsqueeze(0),
-                self.actor_hidden_states,
-                **kwargs
+            actions, vel_est, self.mixer_hidden_states = self.actor.act(
+                proprio=obs.proprio.unsqueeze(0),
+                prop_his=obs.prop_his.unsqueeze(0),
+                depth=obs.depth.unsqueeze(0),
+                mixer_hidden_states=self.mixer_hidden_states,
+                eval_=True,
             )
 
-            return {'actions': actions}
+            return {'actions': actions, 'vel_est': vel_est}
 
     def train(self):
         self.actor.train()

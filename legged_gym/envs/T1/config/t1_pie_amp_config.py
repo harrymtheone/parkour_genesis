@@ -11,25 +11,24 @@ class Obs_scales:
     quat = 1.0
 
 
-class T1_Odom_AMP_Cfg(T1BaseCfg):
+class T1_PIE_AMP_Cfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
 
         n_proprio = 48
         len_prop_his = 10
 
-        len_depth_his = 1
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 68
+        num_critic_obs = 67
         len_critic_his = 50
 
         num_actions = 13
         episode_length_s = 40  # episode length in seconds
 
     class sensors:
-        activated = False
+        activated = True
 
         class depth_0:
             # link_attached_to = 'H2'
@@ -39,6 +38,42 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
             position = [0.17, 0, 0.0]  # front camera
             pitch = 60  # positive is looking down
             yaw = 0
+
+            position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
+            pitch_range = [-3, 3]
+
+            data_format = 'depth'  # depth, cloud, hmap
+            update_interval = 5
+            delay_prop = (5, 1)  # Gaussian (mean, std), or None
+            history_length = 2
+
+            resolution = (114, 64)  # width, height
+            crop = (0, 2, 4, 4)  # top, bottom, left, right
+
+            edge_process = True
+            edge_noise = dict(blank_ratio=0.2, repeat_ratio=0.2)
+            blank_ratio = 0.002
+
+            near_clip = 0
+            far_clip = 2
+            dis_noise_global = 0.01  # in meters
+            dis_noise_gaussian = 0.01  # in meters
+            noise_scale_perlin = 1  # 0-1
+
+            resized = (64, 64)
+            horizontal_fov = 87
+
+            bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
+            hmap_shape = (16, 16)  # x dim, y dim
+
+        class depth_1:
+            # link_attached_to = 'H2'
+            # position = [0.07, 0, 0.09]  # front camera
+            # pitch = 0  # positive is looking down
+            link_attached_to = 'Trunk'
+            position = [-0.06, 0, 0.17]  # front camera
+            pitch = 60  # positive is looking down
+            yaw = 180
 
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
             pitch_range = [-3, 3]
@@ -108,8 +143,8 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
 
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 1,
-            'parkour_flat': 1,
+            'rough_slope': 0,
+            'parkour_flat': 0,
         }
 
     class noise(T1BaseCfg.noise):
@@ -202,13 +237,18 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
             dof_torque_limits = -0.01
             dof_pos_limits = -10.
 
+            termination = -200.
+
     class policy:
         # actor parameters
-        actor_gru_hidden_size = 128
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
 
         # critic parameters
         critic_hidden_dims = [512, 256, 128]
+
+        estimator_gru_hidden_size = 256
+        len_latent_z = 32
+        len_latent_hmap = 32
 
     class odometer:
         # odometer parameters
@@ -242,7 +282,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_amp'
-        algorithm_name = 'ppo_odom_amp'
+        algorithm_name = 'ppo_pie_amp'
 
         lock_smpl_to = 1
 

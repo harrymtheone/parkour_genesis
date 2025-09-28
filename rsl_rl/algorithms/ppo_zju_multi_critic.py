@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.model_zju_exp import EstimatorNoRecon, EstimatorGRU
-from rsl_rl.modules.utils import UniversalCritic
+from .template_models import UniversalCritic
 from .utils import masked_MSE, masked_mean
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from .alg_base import BaseAlgorithm

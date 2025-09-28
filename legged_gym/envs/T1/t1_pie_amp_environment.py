@@ -4,70 +4,46 @@ import joblib
 import torch
 
 from legged_gym.utils.helpers import class_to_dict
-from legged_gym.utils.math import torch_rand_float, transform_by_yaw, quat_rotate_inverse
+from legged_gym.utils.math import quat_rotate_inverse
 from rsl_rl.datasets.amp_motion_loader import AMPMotionLoader
 from .t1_base_env import T1BaseEnv
 from ..base.utils import ObsBase
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, depth, priv_actor, rough_scan, scan, env_class):
+    def __init__(self, proprio, prop_his, depth, scan_edge):
         super().__init__()
         self.proprio = proprio.clone()
-        self.depth = depth
-        self.priv_actor = priv_actor.clone()
-        self.rough_scan = rough_scan.clone()
-        self.scan = scan.clone()
-        self.env_class = env_class.clone()
+        self.prop_his = prop_his.clone()
+        self.depth = depth.clone()
+        self.scan_edge = scan_edge.clone()
 
-    def no_depth(self):
-        return ObsNoDepth(self.proprio, self.priv_actor, self.scan)
+    def as_obs_next(self):
+        # remove unwanted attribute to save CUDA memory
+        return ObsNext(self.proprio)
 
 
-class ObsNoDepth(ObsBase):
-    def __init__(self, proprio, priv_actor, scan):
-        super().__init__()
+class ObsNext(ObsBase):
+    def __init__(self, proprio):
         self.proprio = proprio.clone()
-        self.priv_actor = priv_actor.clone()
-        self.scan = scan.clone()
-
-    @torch.compiler.disable
-    def mirror(self):
-        return ObsNoDepth(
-            mirror_proprio_by_x(self.proprio),
-            mirror_priv_by_x(self.priv_actor),
-            torch.flip(self.scan, dims=[2]),
-        )
-
-    @staticmethod
-    def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
-        dof_prop_mirrored = dof_prop.clone()
-        mirror_dof_prop_by_x(dof_prop_mirrored, 0)
-        return dof_prop_mirrored
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv_actor, priv_his, scan, edge_mask):
+    def __init__(self, priv_his, scan, edge_mask, est_gt):
         super().__init__()
-        self.priv_actor = priv_actor.clone()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
         self.edge_mask = edge_mask.clone()
+        self.est_gt = est_gt.clone()
 
 
-class T1OdomAmpEnv(T1BaseEnv):
+class T1PIEAmpEnv(T1BaseEnv):
 
     def _init_robot_props(self):
         super()._init_robot_props()
 
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
-
-        self.head_link_indices = self.sim.create_indices(
-            self.sim.get_full_names(['H2'], True), True)
-
-        self.waist_dof_indices = self.sim.create_indices(
-            self.sim.get_full_names(['Waist'], False), False)
 
         self.ankle_roll_idx = [16, 22]
         self.ankle_pitch_idx = [15, 21]
@@ -84,11 +60,6 @@ class T1OdomAmpEnv(T1BaseEnv):
 
     def _init_buffers(self):
         super()._init_buffers()
-        self.goal_distance = self._zero_tensor(self.num_envs)
-        self.last_goal_distance = self._zero_tensor(self.num_envs)
-
-        self.scan_dev_xy = self._zero_tensor(self.num_envs, 1, 2)
-        self.scan_dev_z = self._zero_tensor(self.num_envs, 1)
 
         self.gen_amp_history = deque(maxlen=self.cfg.amp.amp_obs_hist_steps)
         self.amp_obs_hist_steps = self.cfg.amp.amp_obs_hist_steps
@@ -100,39 +71,6 @@ class T1OdomAmpEnv(T1BaseEnv):
 
         self.motion_cfg = class_to_dict(self.cfg.amp)
         self.amp_motion_loader = AMPMotionLoader(motion_cfg=self.motion_cfg, env_dt=self.dt, amp_num_frames=self.cfg.amp.amp_obs_hist_steps, device=self.device)
-
-    def _reset_idx(self, env_ids: torch.Tensor):
-        super()._reset_idx(env_ids)
-
-        self.scan_dev_xy[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 2), device=self.device).unsqueeze(1)
-        self.scan_dev_z[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 1), device=self.device)
-
-    def _post_physics_pre_step(self):
-        super()._post_physics_pre_step()
-        self.goal_distance[:] = torch.norm(self.cur_goals[:, :2] - self.sim.root_pos[:, :2], dim=1)
-
-    def _post_physics_post_step(self):
-        super()._post_physics_post_step()
-        self.last_goal_distance[:] = self.goal_distance
-
-    def get_scan(self, noisy=False):
-        # convert height points coordinate to world frame
-        points = transform_by_yaw(
-            self.scan_points,
-            self.base_euler[:, 2:3].repeat(1, self.num_scan)
-        ).unflatten(0, (self.num_envs, -1))
-
-        points[:] += self.sim.root_pos.unsqueeze(1) + self.cfg.terrain.border_size
-
-        if not noisy:
-            return self._get_heights(points)
-
-        z_gauss = 0.03 * torch.randn(self.num_envs, self.scan_points.size(1), device=self.device)
-
-        points[:, :, :2] += self.scan_dev_xy
-        heights = self._get_heights(points)
-        heights[:] += self.scan_dev_z + z_gauss
-        return heights
 
     def _post_physics_step(self):
         self.global_counter += 1
@@ -198,7 +136,7 @@ class T1OdomAmpEnv(T1BaseEnv):
         proprio = torch.cat((
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
-            self.commands[:, :3] * self.commands_scale,  # 5
+            self.commands[:, :3] * self.commands_scale,
             (dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 12D
             dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.last_action_output,  # 12D
@@ -210,7 +148,7 @@ class T1OdomAmpEnv(T1BaseEnv):
             self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
             self.base_ang_vel * self.obs_scales.ang_vel,  # 3
             self.base_euler * self.obs_scales.quat,  # 3
-            self.commands[:, :3] * self.commands_scale,  # 5D
+            self.commands[:, :3] * self.commands_scale,
             self.last_action_output,  # 12D
             (self.sim.dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 12D
             self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
@@ -218,39 +156,35 @@ class T1OdomAmpEnv(T1BaseEnv):
             self.ext_torque,  # 3
             self.sim.payload_masses / 10.,  # 1
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
-            self.goal_distance.unsqueeze(1) / 10.,  # 1
+        ), dim=-1)
+
+        est_gt = torch.cat((
+            self.base_lin_vel * self.obs_scales.lin_vel,  # 3
         ), dim=-1)
 
         # compute height map
-        rough_scan = torch.clip(self.get_body_hmap() - self.cfg.normalization.scan_norm_bias, -1, 1.)
-        rough_scan = rough_scan.view(self.num_envs, *self.cfg.env.scan_shape)
-
-        scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.base_height.unsqueeze(1), -1, 1.)
         scan_noisy = scan_noisy.view(self.num_envs, *self.cfg.env.scan_shape)
 
-        base_edge_mask = self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
-        scan_edge = torch.stack([scan_noisy, base_edge_mask], dim=1)
+        edge_mask = -0.5 + self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
+        scan_edge = torch.stack([scan_noisy, edge_mask], dim=1)
 
-        if self.cfg.sensors.activated:
-            depth = self.sensors.get('depth_0').squeeze(2).half()
-        else:
-            depth = None
+        depth = torch.cat([self.sensors.get('depth_0'), self.sensors.get('depth_1')], dim=1).half()
 
-        priv_actor = base_lin_vel * self.obs_scales.lin_vel  # 3
-
-        self.actor_obs = ActorObs(proprio, depth, priv_actor, rough_scan, scan_edge, self.env_class)
+        # compose actor observation
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth, scan_edge)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
-        # compose critic observation
-        priv_actor_clean = self.base_lin_vel * self.obs_scales.lin_vel  # 3
+        # update history buffer
+        reset_flag = self.episode_length_buf <= 1
+        self.prop_his_buf.append(proprio, reset_flag)
 
-        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.cfg.normalization.scan_norm_bias, -1, 1.)
+        scan = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=False) - self.base_height.unsqueeze(1), -1, 1.)
         scan = scan.view(self.num_envs, *self.cfg.env.scan_shape)
 
-        reset_flag = self.episode_length_buf <= 1
+        # compose critic observation
         self.critic_his_buf.append(priv_obs, reset_flag)
-
-        self.critic_obs = CriticObs(priv_actor_clean, self.critic_his_buf.get(), scan, base_edge_mask)
+        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, edge_mask, est_gt)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)
 
         if len(reset_ids) > 0:

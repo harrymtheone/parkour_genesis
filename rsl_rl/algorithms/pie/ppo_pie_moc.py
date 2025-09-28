@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.pie import Policy
-from rsl_rl.modules.utils import MixtureOfCritic
+from rsl_rl.algorithms.template_models import MixtureOfCritic
 from rsl_rl.storage import RolloutStorageMixtureOfCritic as RolloutStorage
 from rsl_rl.algorithms.alg_base import BaseAlgorithm
 

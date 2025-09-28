@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.distributions import kl_divergence, Normal
 
 from rsl_rl.modules.model_priv import ActorGRU
-from rsl_rl.modules.utils import UniversalCritic
+from .template_models import UniversalCritic
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from .alg_base import BaseAlgorithm
 

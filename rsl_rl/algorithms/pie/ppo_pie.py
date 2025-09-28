@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.modules.pie import Policy
-from rsl_rl.modules.utils import UniversalCritic
+from rsl_rl.algorithms.template_models import UniversalCritic
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from rsl_rl.algorithms.alg_base import BaseAlgorithm
 

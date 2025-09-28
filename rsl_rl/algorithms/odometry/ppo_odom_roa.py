@@ -4,7 +4,8 @@ from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.algorithms.alg_base import BaseAlgorithm
 from rsl_rl.modules.odometer.actor import DepthEstimator, ActorROA
-from rsl_rl.modules.utils import UniversalCritic, gru_wrapper
+from rsl_rl.modules.utils import gru_wrapper
+from rsl_rl.algorithms.template_models import UniversalCritic
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 
 try:

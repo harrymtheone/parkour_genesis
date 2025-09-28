@@ -1,5 +1,6 @@
 from .alg_base import BaseAlgorithm
 from .odom_amp import PPO_Odom_AMP
+from .pie_amp import PPO_PIE_AMP
 from .ppo_dream_waq import PPODreamWaQ
 from .ppo_phase import PPO_Phase
 from rsl_rl.algorithms.pie import *
@@ -19,6 +20,8 @@ algorithm_dict = {
     'ppo_odom_roa': PPO_Odom_ROA,
 
     'ppo_odom_amp': PPO_Odom_AMP,
+
+    'ppo_pie_amp': PPO_PIE_AMP,
 
     'ppo_priv': PPO_Priv,
     'ppo_dreamwaq': PPODreamWaQ,
