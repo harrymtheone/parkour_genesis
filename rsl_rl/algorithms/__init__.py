@@ -26,11 +26,11 @@ algorithm_dict = {
     'ppo_priv': PPO_Priv,
     'ppo_dreamwaq': PPODreamWaQ,
 
-    'ppo_pie': PPO_PIE,
-    'ppo_pie_moc': PPO_PIE_MOC,
+    # 'ppo_pie': PPO_PIE,
+    # 'ppo_pie_moc': PPO_PIE_MOC,
     'ppo_pie_mc': PPO_PIE_MC,
-    'ppo_pie_dagger': PPO_PIE_Dagger,
-    'ppo_pie_plain': PPO_PIE_Plain,
+    # 'ppo_pie_dagger': PPO_PIE_Dagger,
+    # 'ppo_pie_plain': PPO_PIE_Plain,
 
     'ppo_zju': PPO_ZJU,
     'ppo_zju_mc': PPO_ZJU_Multi_Critic,

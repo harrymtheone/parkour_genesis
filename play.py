@@ -75,7 +75,7 @@ def play(args):
         'parkour_box': 0,
         'parkour_step': 0,
         'parkour_stair': 0,
-        'parkour_stair_down': 0,
+        'parkour_stair_down': 1,
         'parkour_mini_stair': 0,
         'parkour_mini_stair_down': 0,
         'parkour_go_back_stair': 0,

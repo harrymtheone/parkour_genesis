@@ -34,6 +34,7 @@ class Transition:
         self.observations = None
         self.critic_observations = None
         self.mixer_hidden_states = None
+        self.observations_next = None
         self.actions = None
         self.rewards = None
         self.rewards_contact = None
@@ -64,6 +65,10 @@ class PPO_PIE_AMP(BaseAlgorithm):
         self.amp_lr = self.cfg.amp_lr
         self.device = device
 
+        # Initialize adaptive KL coefficient
+        self.kl_coef_vel = 0.01
+        self.kl_coef_z = 0.01
+
         self.amp_obs = torch.zeros(self.task_cfg.env.num_envs, 26, 3, device=self.device)
 
         self.cur_it = 0
@@ -83,8 +88,18 @@ class PPO_PIE_AMP(BaseAlgorithm):
         ]
         self._build_amp_discriminator()
 
-        self.optimizer_ac = torch.optim.Adam(params_ac, lr=self.learning_rate)
-        self.scaler_ac = GradScaler(enabled=self.cfg.use_amp)
+        self.optimizer_ppo = torch.optim.Adam(params_ac, lr=self.learning_rate)
+        self.scaler_ppo = GradScaler(enabled=self.cfg.use_amp)
+
+        self.optimizer_sym = torch.optim.Adam(self.actor.parameters(), lr=self.learning_rate)
+        self.scaler_sym = GradScaler(enabled=self.cfg.use_amp)
+
+        self.optimizer_vae = torch.optim.Adam(
+            [*self.actor.mixer.parameters(), *self.actor.vae.parameters()],
+            lr=self.learning_rate
+        )
+        self.scaler_vae = GradScaler(enabled=self.cfg.use_amp)
+
         # Rollout Storage
         self.transition = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
@@ -119,8 +134,8 @@ class PPO_PIE_AMP(BaseAlgorithm):
             {"params": self.amp_disc.amp_linear.parameters(), "weight_decay": amp_optim_cfg["amp_head_weight_decay"], "name": "amp_head",
              "lr": amp_optim_cfg["amp_disc_lr"]},
         ]
-        self.optimizer_dis = torch.optim.Adam(params_dis, lr=amp_optim_cfg["amp_disc_lr"])
-        self.scaler_dis = GradScaler(enabled=self.cfg.use_amp)
+        self.optimizer_amp = torch.optim.Adam(params_dis, lr=amp_optim_cfg["amp_disc_lr"])
+        self.scaler_amp = GradScaler(enabled=self.cfg.use_amp)
         self.amp_replay_buffer = AMPReplayBuffer(self.amp_disc.num_input, amp_optim_cfg["amp_replay_buffer_size"], self.device)
         self.amploss_coef = amp_optim_cfg["amp_loss_coef"]
         self.max_amp_disc_grad_norm = amp_optim_cfg["max_amp_disc_grad_norm"]
@@ -161,6 +176,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
             return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
+        self.transition.observations_next = args[0].as_obs_next()
         self.transition.dones = dones.unsqueeze(1)
 
         # from Logan
@@ -200,9 +216,8 @@ class PPO_PIE_AMP(BaseAlgorithm):
 
     def update(self, cur_it=0, **kwargs):
         self.cur_it = cur_it
-        mean_value_loss = 0
-        mean_default_value_loss = 0
-        mean_contact_value_loss = 0
+        mean_value_loss_default = 0
+        mean_value_loss_contact = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
@@ -210,6 +225,20 @@ class PPO_PIE_AMP(BaseAlgorithm):
         mean_grad_pen_loss = 0
         mean_policy_pred = 0
         mean_expert_pred = 0
+        mean_symmetry_loss = 0
+        mean_vel_est_loss = 0
+        mean_ot1_loss = 0
+        mean_recon_loss = 0
+        mean_vel_kl_loss = 0
+        mean_z_kl_loss = 0
+        mean_abs_vel = 0
+        mean_abs_z = 0
+        mean_std_vel = 0
+        mean_std_z = 0
+        mean_snr_vel = 0
+        mean_snr_z = 0
+        mean_kl_coef_vel = 0
+        mean_kl_coef_z = 0
         kl_change = []
         num_updates = 0
 
@@ -225,66 +254,72 @@ class PPO_PIE_AMP(BaseAlgorithm):
         generator = self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
 
         for batch, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
-            # ########################## policy loss ##########################
-            kl_mean, value_loss_default, value_loss_contact, surrogate_loss, entropy_loss = self._compute_policy_loss(batch)
-            loss_ac = surrogate_loss + self.cfg.value_loss_coef * (value_loss_default + value_loss_contact) - entropy_loss
-
             num_updates += 1
-            # policy statistics
-            kl_change.append(kl_mean.item())
-            mean_kl += kl_mean.item()
-            mean_default_value_loss += value_loss_default.item()
-            mean_contact_value_loss += value_loss_contact.item()
-            mean_value_loss = mean_default_value_loss + mean_contact_value_loss
-            mean_surrogate_loss += surrogate_loss.item()
-            mean_entropy_loss += entropy_loss.item()
+
+            # ########################## policy loss ##########################
+            ppo_metrics = self.update_ppo(batch)
+            mean_kl += ppo_metrics['kl_mean']
+            mean_value_loss_default += ppo_metrics['value_loss_default']
+            mean_value_loss_contact += ppo_metrics['value_loss_contact']
+            mean_surrogate_loss += ppo_metrics['surrogate_loss']
+            mean_entropy_loss += ppo_metrics['entropy_loss']
+            kl_change.append(ppo_metrics['kl_mean'])
 
             # ########################## discriminator loss ##########################
-            with torch.no_grad():
-                sample_amp_expert = self.amp_obs_normalizer(sample_amp_expert)
-            amp_loss, grad_pen_loss, gen_d, ref_d = self.amp_disc.compute_amp_loss(sample_amp_expert, sample_amp_policy)
+            if cur_it % self.amp_update_interval == 0:
+                amp_metrics = self.update_amp(sample_amp_policy, sample_amp_expert)
+                mean_amp_loss += amp_metrics['amp_loss']
+                mean_grad_pen_loss += amp_metrics['grad_pen_loss']
+                mean_policy_pred += amp_metrics['policy_pred']
+                mean_expert_pred += amp_metrics['expert_pred']
 
-            loss_dis = self.amploss_coef * amp_loss + self.amploss_coef * grad_pen_loss
-            mean_amp_loss += amp_loss.item()
-            mean_grad_pen_loss += grad_pen_loss.item()
-            mean_policy_pred += gen_d.item()
-            mean_expert_pred += ref_d.item()
+            # # Symmetry Update
+            # sym_metrics = self.update_symmetry(cur_it, batch)
+            # mean_symmetry_loss += sym_metrics['symmetry_loss']
 
-            # Use KL to adaptively update learning rate
-            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-                if kl_mean > self.cfg.desired_kl * 2.0:
-                    self.learning_rate = max(1e-5, self.learning_rate / 1.5)
-                elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
-                    self.learning_rate = min(1e-3, self.learning_rate * 1.5)
+            if cur_it > 500 and cur_it % 3 == 0:
+                est_metrics = self.update_estimation(batch)
+                mean_vel_est_loss += est_metrics['vel_est_loss']
+                mean_ot1_loss += est_metrics['ot1_loss']
+                mean_recon_loss += est_metrics['recon_loss']
+                mean_vel_kl_loss += est_metrics['vel_kl_loss']
+                mean_z_kl_loss += est_metrics['z_kl_loss']
+                mean_abs_vel += est_metrics['abs_vel']
+                mean_abs_z += est_metrics['abs_z']
+                mean_std_vel += est_metrics['std_vel']
+                mean_std_z += est_metrics['std_z']
+                mean_snr_vel += est_metrics['snr_vel']
+                mean_snr_z += est_metrics['snr_z']
+                mean_kl_coef_vel += est_metrics['kl_coef_vel']
+                mean_kl_coef_z += est_metrics['kl_coef_z']
 
-                for param_group in self.optimizer_ac.param_groups:
-                    param_group['lr'] = self.learning_rate
-
-            # Gradient step
-            self.optimizer_ac.zero_grad()
-            self.scaler_ac.scale(loss_ac).backward()
-            self.scaler_ac.step(self.optimizer_ac)
-            self.scaler_ac.update()
-
-            if self.cur_it % self.amp_update_interval == 0:
-                self.optimizer_dis.zero_grad()
-                self.scaler_dis.scale(loss_dis).backward()
-                # 先反缩放梯度，然后进行梯度裁剪
-                self.scaler_dis.unscale_(self.optimizer_dis)
-                nn.utils.clip_grad_norm_(self.amp_disc.parameters(), self.max_amp_disc_grad_norm)
-                self.scaler_dis.step(self.optimizer_dis)
-                self.scaler_dis.update()
-
+        # ---- PPO ----
         mean_kl /= num_updates
-        mean_value_loss /= num_updates
-        mean_default_value_loss /= num_updates
-        mean_contact_value_loss /= num_updates
+        mean_value_loss_default /= num_updates
+        mean_value_loss_contact /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
+        # ---- AMP ----
         mean_amp_loss /= num_updates
         mean_grad_pen_loss /= num_updates
         mean_policy_pred /= num_updates
         mean_expert_pred /= num_updates
+        # ---- SYM ----
+        mean_symmetry_loss /= num_updates
+        # ---- VAE ----
+        mean_vel_est_loss /= num_updates
+        mean_ot1_loss /= num_updates
+        mean_recon_loss /= num_updates
+        mean_vel_kl_loss /= num_updates
+        mean_z_kl_loss /= num_updates
+        mean_abs_vel /= num_updates
+        mean_abs_z /= num_updates
+        mean_std_vel /= num_updates
+        mean_std_z /= num_updates
+        mean_snr_vel /= num_updates
+        mean_snr_z /= num_updates
+        mean_kl_coef_vel /= num_updates
+        mean_kl_coef_z /= num_updates
 
         self.amp_disc.update_lambda(mean_policy_pred)
 
@@ -295,34 +330,58 @@ class PPO_PIE_AMP(BaseAlgorithm):
 
         self.storage.clear()
 
-        return {
+        metrics = {
             'Loss/learning_rate': self.learning_rate,
+            'Loss/value_loss_default': mean_value_loss_default,
+            'Loss/value_loss_contact': mean_value_loss_contact,
             'Loss/kl_div': mean_kl,
-            'Loss/value_loss': mean_value_loss,
-            'Loss/default_value_loss': mean_default_value_loss,
-            'Loss/contact_value_loss': mean_contact_value_loss,
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
-            'Loss/amp_loss': mean_amp_loss,
-            'Loss/grad_pen_loss': mean_grad_pen_loss,
-            'Loss/policy_pred': mean_policy_pred,
-            'Loss/expert_pred': mean_expert_pred,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
+            'Loss/symmetry_loss': mean_symmetry_loss,
         }
 
-    def _compute_policy_loss(self, batch: dict):
+        if cur_it % self.amp_update_interval == 0:
+            metrics.update({
+                'AMP/amp_loss': mean_amp_loss,
+                'AMP/grad_pen_loss': mean_grad_pen_loss,
+                'AMP/policy_pred': mean_policy_pred,
+                'AMP/expert_pred': mean_expert_pred,
+            })
+
+        if cur_it > 500 and cur_it % 3 == 0:
+            metrics.update({
+                'VAE/vel_est_loss': mean_vel_est_loss,
+                'VAE/Ot+1_loss': mean_ot1_loss,
+                'VAE/recon_loss': mean_recon_loss,
+                'VAE/vel_kl_loss': mean_vel_kl_loss,
+                'VAE/z_kl_loss': mean_z_kl_loss,
+                'VAE/total_kl_loss': mean_vel_kl_loss + mean_z_kl_loss,
+                'VAE/abs_vel': mean_abs_vel,
+                'VAE/abs_z': mean_abs_z,
+                'VAE/std_vel': mean_std_vel,
+                'VAE/std_z': mean_std_z,
+                'VAE/SNR_vel': mean_snr_vel,
+                'VAE/SNR_z': mean_snr_z,
+                'VAE/kl_coef_vel': mean_kl_coef_vel,
+                'VAE/kl_coef_z': mean_kl_coef_z,
+            })
+
+        return metrics
+
+    def update_ppo(self, batch: dict):
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs = batch['observations']
-            critic_obs_batch = batch['critic_observations']
+            critic_obs = batch['critic_observations']
             mixer_hidden_states = batch['mixer_hidden_states'] if self.actor.is_recurrent else None
-            mask_batch = batch['masks']
-            actions_batch = batch['actions']
-            default_values_batch = batch['values']
-            contact_values_batch = batch['values_contact']
-            advantages_batch = batch['advantages']
-            default_returns_batch = batch['returns']
-            contact_returns_batch = batch['returns_contact']
-            old_actions_log_prob_batch = batch['actions_log_prob']
+            mask = batch['masks']
+            actions = batch['actions']
+            default_values = batch['values']
+            contact_values = batch['values_contact']
+            advantages = batch['advantages']
+            default_returns = batch['returns']
+            contact_returns = batch['returns_contact']
+            old_actions_log_prob = batch['actions_log_prob']
 
             # Forward pass
             self.actor.act(
@@ -337,39 +396,206 @@ class PPO_PIE_AMP(BaseAlgorithm):
                     Normal(batch['action_mean'], batch['action_sigma']),
                     Normal(self.actor.action_mean, self.actor.action_std)
                 ).sum(dim=2, keepdim=True)
-                kl_mean = masked_mean(kl_mean, mask_batch)
+                kl_mean = masked_mean(kl_mean, mask)
 
-            actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
-            evaluation_default = self.critic['default'].evaluate(critic_obs_batch)
-            evaluation_contact = self.critic['contact'].evaluate(critic_obs_batch)
+            actions_log_prob = self.actor.get_actions_log_prob(actions)
+            evaluation_default = self.critic['default'].evaluate(critic_obs)
+            evaluation_contact = self.critic['contact'].evaluate(critic_obs)
 
             # Surrogate loss
-            ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
-            surrogate = -advantages_batch * ratio
-            surrogate_clipped = -advantages_batch * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
-            surrogate_loss = masked_mean(torch.maximum(surrogate, surrogate_clipped), mask_batch)
+            ratio = torch.exp(actions_log_prob - old_actions_log_prob)
+            surrogate = -advantages * ratio
+            surrogate_clipped = -advantages * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
+            surrogate_loss = masked_mean(torch.maximum(surrogate, surrogate_clipped), mask)
 
             # Value function loss
             if self.cfg.use_clipped_value_loss:
-                value_clipped_default = default_values_batch + (
-                        evaluation_default - default_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_losses_default = (evaluation_default - default_returns_batch).square()
-                value_losses_clipped_default = (value_clipped_default - default_returns_batch).square()
-                value_losses_default = masked_mean(torch.maximum(value_losses_default, value_losses_clipped_default), mask_batch)
+                value_clipped_default = default_values + (
+                        evaluation_default - default_values).clamp(-self.cfg.clip_param, self.cfg.clip_param)
+                value_loss_default = (evaluation_default - default_returns).square()
+                value_loss_clipped_default = (value_clipped_default - default_returns).square()
+                value_loss_default = masked_mean(torch.maximum(value_loss_default, value_loss_clipped_default), mask)
 
-                value_clipped_contact = contact_values_batch + (
-                        evaluation_contact - contact_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_losses_contact = (evaluation_contact - contact_returns_batch).square()
-                value_losses_clipped_contact = (value_clipped_contact - contact_returns_batch).square()
-                value_losses_contact = masked_mean(torch.max(value_losses_contact, value_losses_clipped_contact), mask_batch)
+                value_clipped_contact = contact_values + (
+                        evaluation_contact - contact_values).clamp(-self.cfg.clip_param, self.cfg.clip_param)
+                value_loss_contact = (evaluation_contact - contact_returns).square()
+                value_loss_clipped_contact = (value_clipped_contact - contact_returns).square()
+                value_loss_contact = masked_mean(torch.maximum(value_loss_contact, value_loss_clipped_contact), mask)
             else:
-                value_losses_default = masked_MSE(evaluation_default, default_returns_batch, mask_batch)
-                value_losses_contact = masked_MSE(evaluation_contact, contact_returns_batch, mask_batch)
+                value_loss_default = masked_MSE(evaluation_default, default_returns, mask)
+                value_loss_contact = masked_MSE(evaluation_contact, contact_returns, mask)
+
+            value_loss = value_loss_default + value_loss_contact
 
             # Entropy loss
-            entropy_loss = self.cfg.entropy_coef * masked_mean(self.actor.entropy, mask_batch)
+            entropy_loss = -masked_mean(self.actor.entropy, mask)
 
-            return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss
+            # Total PPO loss
+            total_loss = surrogate_loss + self.cfg.value_loss_coef * value_loss + self.cfg.entropy_coef * entropy_loss
+
+        # Use KL to adaptively update learning rate
+        if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
+            if kl_mean > self.cfg.desired_kl * 2.0:
+                self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+            elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
+                self.learning_rate = min(1e-3, self.learning_rate * 1.5)
+
+            for param_group in self.optimizer_ppo.param_groups:
+                param_group['lr'] = self.learning_rate
+
+        # Gradient step
+        self.optimizer_ppo.zero_grad()
+        self.scaler_ppo.scale(total_loss).backward()
+        self.scaler_ppo.step(self.optimizer_ppo)
+        self.scaler_ppo.update()
+
+        self.actor.clip_std(self.cfg.noise_range[0], self.cfg.noise_range[1])
+
+        return {
+            'kl_mean': kl_mean,
+            'value_loss_default': value_loss_default.item(),
+            'value_loss_contact': value_loss_contact.item(),
+            'surrogate_loss': surrogate_loss.item(),
+            'entropy_loss': -entropy_loss.item(),
+        }
+
+    def update_amp(self, sample_amp_policy, sample_amp_expert):
+        with torch.no_grad():
+            sample_amp_expert = self.amp_obs_normalizer(sample_amp_expert)
+        amp_loss, grad_pen_loss, gen_d, ref_d = self.amp_disc.compute_amp_loss(sample_amp_expert, sample_amp_policy)
+
+        loss_dis = self.amploss_coef * amp_loss + self.amploss_coef * grad_pen_loss
+
+        self.optimizer_amp.zero_grad()
+        self.scaler_amp.scale(loss_dis).backward()
+        # 先反缩放梯度，然后进行梯度裁剪
+        self.scaler_amp.unscale_(self.optimizer_amp)
+        nn.utils.clip_grad_norm_(self.amp_disc.parameters(), self.max_amp_disc_grad_norm)
+        self.scaler_amp.step(self.optimizer_amp)
+        self.scaler_amp.update()
+
+        return {
+            'amp_loss': amp_loss.item(),
+            'grad_pen_loss': grad_pen_loss.item(),
+            'policy_pred': gen_d.item(),
+            'expert_pred': ref_d.item(),
+        }
+
+    def update_symmetry(self, cur_it, batch):
+        """Update symmetry-related components"""
+        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+            obs = batch['observations']
+            mixer_hidden_states = batch['mixer_hidden_states'] if self.actor.is_recurrent else None
+            mask = batch['masks'] if self.actor.is_recurrent else slice(None)
+            n_steps = mask.size(0)
+
+            self.actor.act(
+                proprio=obs.proprio,
+                prop_his=obs.prop_his,
+                depth=obs.depth,
+                mixer_hidden_states=mixer_hidden_states,
+            )
+            action_mean_original = self.actor.action_mean.clone().detach()
+
+            # Symmetry loss computation
+            obs_mirrored = obs.flatten(0, 1).mirror().unflatten(0, (n_steps, -1))
+            self.actor.act(
+                proprio=obs_mirrored.proprio,
+                prop_his=obs_mirrored.prop_his,
+                depth=obs_mirrored.depth,
+                mixer_hidden_states=mixer_hidden_states,
+            )
+
+            mu_batch = obs.mirror_dof_prop_by_x(action_mean_original.flatten(0, 1)).unflatten(0, (n_steps, -1))
+            symmetry_loss = masked_MSE(mu_batch, self.actor.action_mean, mask)
+
+        # Gradient step
+        self.optimizer_sym.zero_grad()
+        self.scaler_sym.scale(symmetry_loss).backward()
+        self.scaler_sym.step(self.optimizer_sym)
+        self.scaler_sym.update()
+
+        return {
+            'symmetry_loss': symmetry_loss.item(),
+        }
+
+
+    def update_estimation(
+            self,
+            batch,
+            target_snr_vel=5.0,  # Target SNR for velocity (mean/std ratio)
+            target_snr_z=5.0,  # Target SNR for z (mean/std ratio)
+    ):
+        """Update estimation-related components (estimation, prediction, VAE, recon losses)"""
+        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
+            obs = batch['observations']
+            critic_obs = batch['critic_observations']
+            mixer_hidden_states = batch['mixer_hidden_states'] if self.actor.is_recurrent else None
+            mask = batch['masks'] if self.actor.is_recurrent else slice(None)
+            obs_next = batch['observations_next']
+
+            # Forward pass
+            vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap = self.actor.estimate(
+                obs.prop_his, obs.depth, mixer_hidden_states=mixer_hidden_states)
+
+            # Estimation loss
+            vel_est_loss = masked_MSE(vel, critic_obs.est_gt, mask)
+            ot1_loss = masked_MSE(ot1, obs_next.proprio, mask)
+            recon_loss = masked_L1(hmap, critic_obs.scan.flatten(2), mask)
+
+            # KL loss
+            vel_kl_loss = 1 + logvar_vel - mu_vel.pow(2) - logvar_vel.exp()
+            vel_kl_loss = -0.5 * masked_mean(vel_kl_loss.sum(dim=2, keepdim=True), mask)
+            z_kl_loss = 1 + logvar_z - mu_z.pow(2) - logvar_z.exp()
+            z_kl_loss = -0.5 * masked_mean(z_kl_loss.sum(dim=2, keepdim=True), mask)
+
+            # Adaptive KL coefficient based on SNR (Signal-to-Noise Ratio)
+            std_vel = logvar_vel.exp().sqrt().mean().item()
+            std_z = logvar_z.exp().sqrt().mean().item()
+            mean_abs_vel = mu_vel.abs().mean().item()  # Absolute mean for SNR calculation
+            mean_abs_z = mu_z.abs().mean().item()  # Absolute mean for SNR calculation
+
+            # Calculate SNR = |mean| / std (avoid division by zero)
+            snr_vel = mean_abs_vel / (std_vel + 1e-8)
+            snr_z = mean_abs_z / (std_z + 1e-8)
+
+        # Adaptive KL coefficient based on SNR
+        if snr_vel < target_snr_vel:
+            self.kl_coef_vel = max(1e-7, self.kl_coef_vel / 1.1)
+        else:
+            self.kl_coef_vel = max(1e-7, self.kl_coef_vel * 1.1)
+
+        if snr_z < target_snr_z:
+            self.kl_coef_z = max(1e-7, self.kl_coef_z / 1.1)
+        else:
+            self.kl_coef_z = max(1e-7, self.kl_coef_z * 1.1)
+
+        kl_loss = self.kl_coef_vel * vel_kl_loss + self.kl_coef_z * z_kl_loss
+
+        # Total estimation loss
+        total_loss = vel_est_loss + ot1_loss + recon_loss + kl_loss
+
+        # Gradient step
+        self.optimizer_vae.zero_grad()
+        self.scaler_vae.scale(total_loss).backward()
+        self.scaler_vae.step(self.optimizer_vae)
+        self.scaler_vae.update()
+
+        return {
+            'vel_est_loss': vel_est_loss.item(),
+            'ot1_loss': ot1_loss.item(),
+            'recon_loss': recon_loss.item(),
+            'vel_kl_loss': vel_kl_loss.item(),
+            'z_kl_loss': z_kl_loss.item(),
+            'abs_vel': mean_abs_vel,
+            'abs_z': mean_abs_z,
+            'std_vel': std_vel,
+            'std_z': std_z,
+            'snr_vel': snr_vel,  # Signal-to-Noise Ratio for velocity
+            'snr_z': snr_z,  # Signal-to-Noise Ratio for z
+            'kl_coef_vel': self.kl_coef_vel,
+            'kl_coef_z': self.kl_coef_z,
+        }
 
     def reset(self, dones):
         if self.mixer_hidden_states is not None:
@@ -382,7 +608,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
                 prop_his=obs.prop_his.unsqueeze(0),
                 depth=obs.depth.unsqueeze(0),
                 mixer_hidden_states=self.mixer_hidden_states,
-                eval_=True,
+                **kwargs
             )
 
             return {'actions': actions, 'vel_est': vel_est}
@@ -399,8 +625,8 @@ class PPO_PIE_AMP(BaseAlgorithm):
         self.amp_obs_normalizer.load_state_dict(loaded_dict['amp_obs_normalizer_state_dict'])
 
         if load_optimizer:
-            self.optimizer_ac.load_state_dict(loaded_dict['optimizer_ac_state_dict'])
-            self.optimizer_dis.load_state_dict(loaded_dict['optimizer_dis_state_dict'])
+            self.optimizer_ppo.load_state_dict(loaded_dict['optimizer_ac_state_dict'])
+            self.optimizer_amp.load_state_dict(loaded_dict['optimizer_dis_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std)
@@ -411,6 +637,6 @@ class PPO_PIE_AMP(BaseAlgorithm):
             'critic_state_dict': self.critic.state_dict(),
             'discriminator_state_dict': self.amp_disc.state_dict(),
             'amp_obs_normalizer_state_dict': self.amp_obs_normalizer.state_dict(),
-            'optimizer_ac_state_dict': self.optimizer_ac.state_dict(),
-            'optimizer_dis_state_dict': self.optimizer_dis.state_dict(),
+            'optimizer_ac_state_dict': self.optimizer_ppo.state_dict(),
+            'optimizer_dis_state_dict': self.optimizer_amp.state_dict(),
         }

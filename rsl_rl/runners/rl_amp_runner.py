@@ -19,6 +19,7 @@ class RunnerLogger:
     reward_amp = []
     step_rew = collections.deque(maxlen=100)
     episode_rew_sum = collections.deque(maxlen=100)
+    episode_raw_rew_sum = collections.deque(maxlen=100)
     episode_length = collections.deque(maxlen=100)
 
     mean_base_height = None
@@ -72,6 +73,7 @@ class RLAmpRunner(RunnerLogger):
         # statistics
         n_envs = self.task_cfg.env.num_envs
         cur_reward_sum = torch.zeros(n_envs, device=self.device)
+        cur_raw_reward_sum = torch.zeros(n_envs, device=self.device)
         cur_episode_length = torch.zeros(n_envs, device=self.device)
         last_env_reward = torch.zeros(n_envs, device=self.device)
         self.mean_base_height = self.task_cfg.rewards.base_height_target + torch.zeros(n_envs, device=self.device)
@@ -122,7 +124,7 @@ class RLAmpRunner(RunnerLogger):
                     rewards, rewards_amp = self.alg.amp_disc.compute_style_rew(amp_obs, reset_amp_obs, reset_idx, rewards)
                     infos['rewards/amp'] = rewards_amp.mean().item()
 
-                    self.alg.process_env_step(rewards, dones, infos)
+                    self.alg.process_env_step(rewards, dones, infos, obs)
 
                     # if self.cur_it % 50 < 10:
                     #     self.odom.process_env_step(dones)
@@ -141,6 +143,7 @@ class RLAmpRunner(RunnerLogger):
                     self.reward_amp.append(infos['rewards/amp'])
 
                 cur_reward_sum[:] += rewards
+                cur_raw_reward_sum[:] += infos['raw_rew']
                 cur_episode_length[:] += 1
 
                 self.mean_base_height[:] = 0.99 * self.mean_base_height + 0.01 * env.base_height
@@ -149,11 +152,13 @@ class RLAmpRunner(RunnerLogger):
                     last_env_reward[new_ids] = cur_reward_sum[new_ids]
                     self.step_rew.extend((cur_reward_sum / cur_episode_length)[new_ids].cpu().numpy().tolist())
                     self.episode_rew_sum.extend(cur_reward_sum[new_ids].cpu().numpy().tolist())
+                    self.episode_raw_rew_sum.extend(cur_raw_reward_sum[new_ids].cpu().numpy().tolist())
                     self.episode_length.extend(cur_episode_length[new_ids].cpu().numpy().tolist())
 
                     use_estimated_values[new_ids] = torch.rand(len(new_ids[0]), device=self.device) > self.p_smpl
 
                     cur_reward_sum[new_ids] = 0.
+                    cur_raw_reward_sum[new_ids] = 0.
                     cur_episode_length[new_ids] = 0.
 
                 # update AdaSmpl coefficient
@@ -220,6 +225,7 @@ class RLAmpRunner(RunnerLogger):
 
         if len(self.episode_rew_sum) > 10:
             logger_dict['Train/step_reward'] = statistics.mean(self.step_rew)  # use the latest 100 to compute
+            logger_dict['Train/episode_raw_reward'] = statistics.mean(self.episode_raw_rew_sum)  # use the latest 100 to compute
             logger_dict['Train/episode_reward'] = statistics.mean(self.episode_rew_sum)  # use the latest 100 to compute
             logger_dict['Train/episode_length'] = statistics.mean(self.episode_length)
         logger_dict['Train/base_height'] = self.mean_base_height.mean().item()

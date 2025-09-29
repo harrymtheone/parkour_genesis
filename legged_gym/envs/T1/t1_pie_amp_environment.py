@@ -1,6 +1,8 @@
 from collections import deque
 
+import cv2
 import joblib
+import numpy as np
 import torch
 
 from legged_gym.utils.helpers import class_to_dict
@@ -11,16 +13,28 @@ from ..base.utils import ObsBase
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, depth, scan_edge):
+    def __init__(self, proprio, prop_his, depth):
         super().__init__()
         self.proprio = proprio.clone()
         self.prop_his = prop_his.clone()
         self.depth = depth.clone()
-        self.scan_edge = scan_edge.clone()
 
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
         return ObsNext(self.proprio)
+
+    def mirror(self):
+        return type(self)(
+            mirror_proprio_by_x(self.proprio),
+            mirror_proprio_by_x(self.prop_his.flatten(0, 1)).view(self.prop_his.shape),
+            torch.flip(self.depth, dims=[3]),
+        )
+
+    @staticmethod
+    def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
+        dof_prop_mirrored = dof_prop.clone()
+        mirror_dof_prop_by_x(dof_prop_mirrored, 0)
+        return dof_prop_mirrored
 
 
 class ObsNext(ObsBase):
@@ -163,16 +177,12 @@ class T1PIEAmpEnv(T1BaseEnv):
         ), dim=-1)
 
         # compute height map
-        scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.base_height.unsqueeze(1), -1, 1.)
-        scan_noisy = scan_noisy.view(self.num_envs, *self.cfg.env.scan_shape)
-
         edge_mask = -0.5 + self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
-        scan_edge = torch.stack([scan_noisy, edge_mask], dim=1)
 
         depth = torch.cat([self.sensors.get('depth_0'), self.sensors.get('depth_1')], dim=1).half()
 
         # compose actor observation
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth, scan_edge)
+        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer
@@ -189,6 +199,38 @@ class T1PIEAmpEnv(T1BaseEnv):
 
         if len(reset_ids) > 0:
             self._compute_amp_obs(reset_ids)
+
+    def render(self):
+        if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
+            self._draw_goals()
+            self._draw_feet_hmap()
+            # self._draw_height_field()
+            # self._draw_edge()
+            # self._draw_camera()
+            # self._draw_feet_at_edge()
+
+        if self.cfg.sensors.activated:
+            depth_img_f = self.sensors.get('depth_0', get_depth=True)[self.lookat_id].cpu().numpy()
+            depth_img_f = (depth_img_f - self.cfg.sensors.depth_0.near_clip) / self.cfg.sensors.depth_0.far_clip
+            img_f = np.clip(depth_img_f * 255, 0, 255).astype(np.uint8)
+            cv2.imshow("depth_front", cv2.resize(img_f, (320, 320)))
+
+            depth_img_r = self.sensors.get('depth_1', get_depth=True)[self.lookat_id].cpu().numpy()
+            depth_img_r = (depth_img_r - self.cfg.sensors.depth_1.near_clip) / self.cfg.sensors.depth_1.far_clip
+            img_r = np.clip(depth_img_r * 255, 0, 255).astype(np.uint8)
+            cv2.imshow("depth_back", cv2.resize(img_r, (320, 320)))
+            cv2.waitKey(1)
+
+            # # draw points cloud
+            # cloud, cloud_valid = self.sensors.get('depth_0', get_cloud=True)
+            # cloud, cloud_valid = cloud[self.lookat_id], cloud_valid[self.lookat_id]
+            # pts = cloud[cloud_valid]
+            #
+            # if len(pts) > 0:
+            #     indices = torch.randperm(len(pts))[:400]
+            #     self.sim.draw_points(pts[indices], color=(1, 0, 0))
+
+        super().render()
 
     def _compute_amp_obs(self, env_ids=[]):
         # update gen_amp_obs_buf after apply action
@@ -327,475 +369,11 @@ class T1PIEAmpEnv(T1BaseEnv):
 
         self.motion_ref_dof_pos[:] = full_dof_pos
 
-    def render(self):
-        # if self.cfg.terrain.description_type in ["heightfield", "trimesh"]:
-        # self._draw_body_hmap()
-        # self.draw_hmap_from_depth()
-        # self.draw_cloud_from_depth()
-        # self._draw_goals()
-        # self._draw_camera()
-        # self._draw_link_COM(whole_body=False)
-        # self._draw_feet_at_edge()
-        # self._draw_foothold()
+    def _reward_default_dof_pos(self):
+        return (self.sim.dof_pos - self.init_state_dof_pos).abs().sum(dim=1)
 
-        # self._draw_height_field(draw_guidance=True)
-        # self._draw_edge()
-
-        # if self.cfg.sensors.activated:
-        #     depth_img = self.sensors.get('depth_0', get_depth=True)[self.lookat_id].cpu().numpy()
-        #     depth_img = (depth_img - self.cfg.sensors.depth_0.near_clip) / self.cfg.sensors.depth_0.far_clip
-        #     img = np.clip(depth_img * 255, 0, 255).astype(np.uint8)
-
-        #     cv2.imshow("depth_processed", cv2.resize(img, (320, 320)))
-        #     cv2.waitKey(1)
-
-        super().render()
-
-    def _reward_goal_dist_change(self, vel_thresh=0.6):
-        if self.sim.terrain is None:
-            return self._zero_tensor(self.num_envs)
-
-        dist_change = self.last_goal_distance - self.goal_distance
-        rew = dist_change.clip(max=vel_thresh * self.dt)
-        rew *= torch.clip(1 - 2 * torch.abs(self.delta_yaw) / torch.pi, min=0.)
-        rew *= (self.env_class >= 100) & ~self.is_zero_command & (dist_change > -1.)  # dist increase a lot in a sudden, meaning goal updated
-        return rew
-
-    def _reward_penalize_vy(self):
-        rew = torch.abs(self.base_lin_vel[:, 1])
-        rew[self.env_class < 100] = 0.
-        return rew
-
-    def _reward_ankle_roll_torques_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        torques = self.torques[:, self.ankle_roll_idx]
-        lower_bound = -10  # Example lower bound
-        upper_bound = 10  # Example upper bound
-        lower_violation = (lower_bound - torques).clip(min=0.)
-        upper_violation = (torques - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = torques < lower_bound
-        upper_violation_bool = torques > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    def _reward_ankle_pitch_torques_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        torques = self.torques[:, self.ankle_pitch_idx]
-        lower_bound = -18  # Example lower bound
-        upper_bound = 18  # Example upper bound
-        lower_violation = (lower_bound - torques).clip(min=0.)
-        upper_violation = (torques - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = torques < lower_bound
-        upper_violation_bool = torques > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    def _reward_hip_pitch_torques_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        torques = self.torques[:, self.hip_pitch_idx]
-        lower_bound = -45  # Example lower bound
-        upper_bound = 45  # Example upper bound
-        lower_violation = (lower_bound - torques).clip(min=0.)
-        upper_violation = (torques - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = torques < lower_bound
-        upper_violation_bool = torques > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    def _reward_hip_roll_torques_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        torques = self.torques[:, self.hip_roll_idx]
-        lower_bound = -30  # Example lower bound
-        upper_bound = 30  # Example upper bound
-        lower_violation = (lower_bound - torques).clip(min=0.)
-        upper_violation = (torques - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = torques < lower_bound
-        upper_violation_bool = torques > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    def _reward_hip_yaw_torques_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        torques = self.torques[:, self.hip_yaw_idx]
-        lower_bound = -30  # Example lower bound
-        upper_bound = 30  # Example upper bound
-        lower_violation = (lower_bound - torques).clip(min=0.)
-        upper_violation = (torques - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = torques < lower_bound
-        upper_violation_bool = torques > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    def _reward_knee_torques_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        torques = self.torques[:, self.knee_idx]
-        lower_bound = -60  # Example lower bound
-        upper_bound = 60  # Example upper bound
-        lower_violation = (lower_bound - torques).clip(min=0.)
-        upper_violation = (torques - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = torques < lower_bound
-        upper_violation_bool = torques > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    def _reward_waist_torques_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        torques = self.torques[:, self.waist_idx]
-        lower_bound = -30  # Example lower bound
-        upper_bound = 30  # Example upper bound
-        lower_violation = (lower_bound - torques).clip(min=0.)
-        upper_violation = (torques - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = torques < lower_bound
-        upper_violation_bool = torques > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    # def _reward_ankle_roll_vel_limit(self):
-    #     """
-    #     Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-    #     the necessary force exerted by the motors.
-    #     """
-    #     vel = self.sim.dof_vel[:,self.ankle_roll_idx]
-    #     lower_bound = -4  # Example lower bound
-    #     upper_bound = 4   # Example upper bound
-    #     lower_violation = (lower_bound - vel).clip(min=0.)
-    #     upper_violation = (vel - upper_bound).clip(min=0.)
-    #     total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-    #     lower_violation_bool = vel < lower_bound
-    #     upper_violation_bool = vel > upper_bound
-    #     constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-    #     total_reward = total_penalty + constant_penalty
-    #     return total_reward
-
-    # def _reward_ankle_pitch_vel_limit(self):
-    #     """
-    #     Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-    #     the necessary force exerted by the motors.
-    #     """
-    #     vel = self.sim.dof_vel[:,self.ankle_pitch_idx]
-    #     lower_bound = -4  # Example lower bound
-    #     upper_bound = 4   # Example upper bound
-    #     lower_violation = (lower_bound - vel).clip(min=0.)
-    #     upper_violation = (vel - upper_bound).clip(min=0.)
-    #     total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-    #     lower_violation_bool = vel < lower_bound
-    #     upper_violation_bool = vel > upper_bound
-    #     constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-    #     total_reward = total_penalty + constant_penalty
-    #     return total_reward
-
-    # def _reward_hip_pitch_vel_limit(self):
-    #     """
-    #     Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-    #     the necessary force exerted by the motors.
-    #     """
-    #     vel = self.sim.dof_vel[:,self.hip_pitch_idx]
-    #     lower_bound = -5  # Example lower bound
-    #     upper_bound = 5   # Example upper bound
-    #     lower_violation = (lower_bound - vel).clip(min=0.)
-    #     upper_violation = (vel - upper_bound).clip(min=0.)
-    #     total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-    #     lower_violation_bool = vel < lower_bound
-    #     upper_violation_bool = vel > upper_bound
-    #     constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-    #     total_reward = total_penalty + constant_penalty
-    #     return total_reward
-
-    # def _reward_hip_roll_vel_limit(self):
-    #     """
-    #     Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-    #     the necessary force exerted by the motors.
-    #     """
-    #     vel = self.sim.dof_vel[:,self.hip_roll_idx]
-    #     lower_bound = -5  # Example lower bound
-    #     upper_bound = 5   # Example upper bound
-    #     lower_violation = (lower_bound - vel).clip(min=0.)
-    #     upper_violation = (vel - upper_bound).clip(min=0.)
-    #     total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-    #     lower_violation_bool = vel < lower_bound
-    #     upper_violation_bool = vel > upper_bound
-    #     constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-    #     total_reward = total_penalty + constant_penalty
-    #     return total_reward
-
-    # def _reward_thigh_vel_limit(self):
-    #     """
-    #     Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-    #     the necessary force exerted by the motors.
-    #     """
-    #     vel = self.sim.dof_vel[:,self.thigh_idx]
-    #     lower_bound = -5  # Example lower bound
-    #     upper_bound = 5   # Example upper bound
-    #     lower_violation = (lower_bound - vel).clip(min=0.)
-    #     upper_violation = (vel - upper_bound).clip(min=0.)
-    #     total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-    #     lower_violation_bool = vel < lower_bound
-    #     upper_violation_bool = vel > upper_bound
-    #     constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-    #     total_reward = total_penalty + constant_penalty
-    #     return total_reward
-
-    # def _reward_calf_vel_limit(self):
-    #     """
-    #     Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-    #     the necessary force exerted by the motors.
-    #     """
-    #     vel = self.sim.dof_vel[:,self.calf_idx]
-    #     lower_bound = -5  # Example lower bound
-    #     upper_bound = 5   # Example upper bound
-    #     lower_violation = (lower_bound - vel).clip(min=0.)
-    #     upper_violation = (vel - upper_bound).clip(min=0.)
-    #     total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-    #     lower_violation_bool = vel < lower_bound
-    #     upper_violation_bool = vel > upper_bound
-    #     constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-    #     total_reward = total_penalty + constant_penalty
-    #     return total_reward
-
-    # def _reward_waist_vel_limit(self):
-    #     """
-    #     Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-    #     the necessary force exerted by the motors.
-    #     """
-    #     vel = self.sim.dof_vel[:,self.waist_idx]
-    #     lower_bound = -5  # Example lower bound
-    #     upper_bound = 5   # Example upper bound
-    #     lower_violation = (lower_bound - vel).clip(min=0.)
-    #     upper_violation = (vel - upper_bound).clip(min=0.)
-    #     total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-    #     lower_violation_bool = vel < lower_bound
-    #     upper_violation_bool = vel > upper_bound
-    #     constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-    #     total_reward = total_penalty + constant_penalty
-    #     return total_reward
-
-    def _reward_ankle_roll_dof_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        dof = self.sim.dof_pos[:, self.ankle_roll_idx]
-        lower_bound = -0.44  # Example lower bound
-        upper_bound = 0.44  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    def _reward_ankle_pitch_dof_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        dof = self.sim.dof_pos[:, self.ankle_pitch_idx]
-        lower_bound = -0.87  # Example lower bound
-        upper_bound = 0.35  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    def _reward_hip_pitch_dof_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        dof = self.sim.dof_pos[:, self.hip_pitch_idx]
-        lower_bound = -1.8  # Example lower bound
-        upper_bound = 1.57  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        if torch.any(dof[self.lookat_id] < -1.8):
-            print(dof[self.lookat_id])
-        return total_reward
-
-    def _reward_hip_roll_dof_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        dof = self.sim.dof_pos[:, self.hip_roll_idx]
-        # lower_bound = -0.5  # Example lower bound
-        lower_bound = -0.2
-        upper_bound = 0.2  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    def _reward_hip_roll_dof_limit_walk(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        dof = self.sim.dof_pos[:, self.hip_roll_idx]
-        # lower_bound = -0.5  # Example lower bound
-        lower_bound = -0.2
-        upper_bound = 1.57  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        total_reward[self.env_class >= 2] = 0.
-        return total_reward
-
-    def _reward_hip_roll_dof_limit_stair(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        dof = self.sim.dof_pos[:, self.hip_roll_idx]
-        # lower_bound = -0.5  # Example lower bound
-        lower_bound = -0.2
-        upper_bound = 0.2  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        total_reward[self.env_class < 2] = 0.
-        return total_reward
-
-    def _reward_hip_yaw_dof_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        dof = self.sim.dof_pos[:, self.hip_yaw_idx]
-        lower_bound = -0.2
-        upper_bound = 0.2  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        total_reward[self.env_class < 2] = 0.
-        return total_reward
-
-    def _reward_hip_yaw_dof_limit_walk(self):
-        dof = self.sim.dof_pos[:, self.hip_yaw_idx]
-        lower_bound = -0.9
-        upper_bound = 0.9  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        total_reward[self.env_class >= 2] = 0.
-        return total_reward
-
-    def _reward_hip_yaw_dof_limit_stair(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        dof = self.sim.dof_pos[:, self.hip_yaw_idx]
-        lower_bound = -0.2
-        upper_bound = 0.2  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        total_reward[self.env_class < 2] = 0.
-        return total_reward
-
-    def _reward_knee_dof_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        dof = self.sim.dof_pos[:, self.knee_idx]
-        lower_bound = -0.
-        upper_bound = 2.34  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
-
-    def _reward_waist_dof_limit(self):
-        """
-        Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
-        the necessary force exerted by the motors.
-        """
-        dof = self.sim.dof_pos[:, self.waist_idx]
-        lower_bound = -0.2  # Example lower bound
-        upper_bound = 0.2  # Example upper bound
-        lower_violation = (lower_bound - dof).clip(min=0.)
-        upper_violation = (dof - upper_bound).clip(min=0.)
-        total_penalty = torch.sum(lower_violation + upper_violation, dim=1)
-        lower_violation_bool = dof < lower_bound
-        upper_violation_bool = dof > upper_bound
-        constant_penalty = torch.sum(lower_violation_bool + upper_violation_bool, dim=1) * 0.02
-        total_reward = total_penalty + constant_penalty
-        return total_reward
+    def _reward_orientation(self):
+        return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
 
 
 @torch.jit.script
@@ -825,20 +403,17 @@ def mirror_proprio_by_x(prop: torch.Tensor) -> torch.Tensor:
     # projected gravity, [3:6], [x, -y, z]
     prop[:, 4] *= -1.
 
-    # commands [6:11], [clock_l <--> clock_r, x, -y, -yaw]
-    clock_l = prop[:, 6].clone()
-    prop[:, 6] = prop[:, 7]
-    prop[:, 7] = clock_l
-    prop[:, 9:11] *= -1.
+    # commands [6:9], [x, -y, -yaw]
+    prop[:, 7:9] *= -1.
 
     # dof pos
-    mirror_dof_prop_by_x(prop, 11)
+    mirror_dof_prop_by_x(prop, 9)
 
     # dof vel
-    mirror_dof_prop_by_x(prop, 11 + 13)
+    mirror_dof_prop_by_x(prop, 9 + 13)
 
     # last actions
-    mirror_dof_prop_by_x(prop, 11 + 13 + 13)
+    mirror_dof_prop_by_x(prop, 9 + 13 + 13)
 
     return prop
 

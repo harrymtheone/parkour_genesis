@@ -31,12 +31,12 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         activated = True
 
         class depth_0:
-            # link_attached_to = 'H2'
-            # position = [0.07, 0, 0.09]  # front camera
-            # pitch = 0  # positive is looking down
-            link_attached_to = 'Trunk'
-            position = [0.17, 0, 0.0]  # front camera
+            link_attached_to = 'H2'
+            position = [0.07, 0, 0.09]  # front camera
             pitch = 60  # positive is looking down
+            # link_attached_to = 'Trunk'
+            # position = [0.17, 0, 0.0]  # front camera
+            # pitch = 60  # positive is looking down
             yaw = 0
 
             position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
@@ -67,9 +67,6 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             hmap_shape = (16, 16)  # x dim, y dim
 
         class depth_1:
-            # link_attached_to = 'H2'
-            # position = [0.07, 0, 0.09]  # front camera
-            # pitch = 0  # positive is looking down
             link_attached_to = 'Trunk'
             position = [-0.06, 0, 0.17]  # front camera
             pitch = 60  # positive is looking down
@@ -125,8 +122,8 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             ang_vel_yaw = [-1., 1.]
 
         class stair_ranges:
-            lin_vel_x = [-0.8, 1.2]
-            lin_vel_y = [-0.8, 0.8]
+            lin_vel_x = [0.3, 0.8]
+            lin_vel_y = [0.3, 0.8]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
 
@@ -143,29 +140,32 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
 
         terrain_dict = {
             'smooth_slope': 1,
-            'rough_slope': 0,
-            'parkour_flat': 0,
+            # 'rough_slope': 1,
+            # 'stairs_up': 1,
+            # 'stairs_down': 1,
+            # 'parkour_stair': 1,
+            # 'parkour_stair_down': 1,
         }
 
     class noise(T1BaseCfg.noise):
-        add_noise = False
+        add_noise = True
 
     class domain_rand(T1BaseCfg.domain_rand):
-        first_switch = False
-        second_switch = False
-        randomize_start_pos = first_switch
+        switch = False
+
+        randomize_start_pos = switch
         randomize_start_z = False
         randomize_start_yaw = True
-        randomize_start_vel = first_switch
-        randomize_start_pitch = first_switch
+        randomize_start_vel = switch
+        randomize_start_pitch = switch
 
         randomize_start_dof_pos = False
         randomize_start_dof_vel = False
 
-        randomize_friction = first_switch
-        randomize_base_mass = first_switch
-        randomize_link_mass = first_switch
-        randomize_com = first_switch
+        randomize_friction = switch
+        randomize_base_mass = switch
+        randomize_link_mass = switch
+        randomize_com = switch
 
         push_robots = False
         push_duration = [0.1]
@@ -175,20 +175,20 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         dof_lag_range = (0, 6)
         add_imu_lag = False
 
-        randomize_torque = first_switch
-        randomize_gains = first_switch
-        randomize_motor_offset = first_switch
+        randomize_torque = switch
+        randomize_gains = switch
+        randomize_motor_offset = switch
         randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
         randomize_joint_friction = False
 
         randomize_joint_armature = True
         joint_armature_range = {
-            'default': dict(range=(0.0001, 0.05), log_space=False),
-            'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.0001, 0.05), log_space=False)
+            'default': dict(range=(0.01, 0.05), log_space=False),
+            # 'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.0001, 0.05), log_space=False)
         }
 
-        randomize_coulomb_friction = first_switch
+        randomize_coulomb_friction = switch
 
     class rewards:
         base_height_target = 0.64
@@ -196,7 +196,7 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         feet_height_target_max = 0.06
         use_guidance_terrain = True
         only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
-        only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
+        only_positive_rewards_until_epoch = 200  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         EMA_update_alpha = 0.99
 
@@ -213,22 +213,22 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             tracking_ang_vel = 1.5
 
             # contact
-            feet_slip = -1.
+            feet_slip = -0.1
             feet_contact_forces = -1e-3
             feet_stumble = -1.
-            foothold = -1.
+            foothold = -0.1
 
             # penalize_vy = -3.
 
             # base pos
-            default_joint_pos = 1.0
-            orientation = 1.
-            base_height = 0.2
-            base_acc = 0.2
-            vel_mismatch_exp = 0.5
+            default_joint_pos = -0.04
+            orientation = -10.
+            # base_height = 0.2
+            # base_acc = 0.2
+            # vel_mismatch_exp = 0.5
 
             # energy
-            action_smoothness = -3e-3
+            action_smoothness = -5e-4
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
@@ -236,8 +236,6 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
 
             dof_torque_limits = -0.01
             dof_pos_limits = -10.
-
-            termination = -200.
 
     class policy:
         # actor parameters
@@ -249,15 +247,6 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         estimator_gru_hidden_size = 256
         len_latent_z = 32
         len_latent_hmap = 32
-
-    class odometer:
-        # odometer parameters
-        odom_transformer_embed_dim = 64
-        odom_gru_hidden_size = 128
-        estimator_output_dim = 3
-        update_since = 100000000
-        batch_size = 258
-        learning_rate = 1e-3
 
     class algorithm:
         # training params
@@ -277,6 +266,7 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
 
         continue_from_last_std = True
         init_noise_std = 1.0
+        noise_range = (0.3, 1.0)
 
         use_amp = True
 
@@ -286,11 +276,11 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
 
         lock_smpl_to = 1
 
-        max_iterations = 2000  # number of policy updates
+        max_iterations = 200000  # number of policy updates
 
     class amp:
         # 数据加载相关
-        motion_file = "data/bet_walk"
+        motion_file = "data/T1_walk"
         preload = True
         num_preload_data = 400000
 
@@ -400,3 +390,19 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         # 数据归一化相关
         amp_empirical_normalization = True
         amp_normal_update_until = 1e4
+
+    # class control(T1BaseCfg.control):
+    #     # PD Drive parameters:
+    #     stiffness = {
+    #         'Head': 30,
+    #         'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+    #         'Waist': 100,
+    #         'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
+    #     }
+    #
+    #     damping = {
+    #         'Head': 1,
+    #         'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+    #         'Waist': 3,
+    #         'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
+    #     }
