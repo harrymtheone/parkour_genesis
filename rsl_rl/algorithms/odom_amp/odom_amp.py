@@ -3,8 +3,7 @@ import torch.nn as nn
 from torch.distributions import Normal, kl_divergence
 
 from legged_gym.utils.helpers import class_to_dict
-from rsl_rl.algorithms.alg_base import BaseAlgorithm
-from rsl_rl.algorithms.template_models import AMPDiscriminator, UniversalCritic
+from rsl_rl.algorithms import AMPDiscriminator, UniversalCritic, BaseAlgorithm
 from rsl_rl.datasets.amp_motion_loader import AMPMotionLoader
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from rsl_rl.storage.amp_replay_buffer import AMPReplayBuffer

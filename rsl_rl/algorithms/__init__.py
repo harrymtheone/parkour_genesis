@@ -1,42 +1,11 @@
-from .alg_base import BaseAlgorithm
-from .odom_amp import PPO_Odom_AMP
-from .pie_amp import PPO_PIE_AMP
-from .ppo_dream_waq import PPODreamWaQ
-from .ppo_phase import PPO_Phase
-from rsl_rl.algorithms.pie import *
-from .ppo_priv import PPO_Priv
-from .ppo_wmp import PPO_WMP
-from .ppo_dreamer import PPO_Dreamer
-from .ppo_zju import PPO_ZJU
-from .ppo_zju_multi_critic import PPO_ZJU_Multi_Critic
-from .ppo_bbm import PPO_BBM
-from rsl_rl.algorithms.odometry import PPO_Odom, PPO_Odom_ROA
+from .template_models import UniversalCritic, MixtureOfCritic, AMPType, AMPDiscriminator
 
-from rsl_rl.algorithms.distiller import Distiller
+from .alg_base import BaseAlgorithm
+from .pie import *
+from .pie_amp import *
+from .pie_amp_plain import *
 
 algorithm_dict = {
-    'distiller': Distiller,
-    'ppo_odom': PPO_Odom,
-    'ppo_odom_roa': PPO_Odom_ROA,
-
-    'ppo_odom_amp': PPO_Odom_AMP,
-
     'ppo_pie_amp': PPO_PIE_AMP,
-
-    'ppo_priv': PPO_Priv,
-    'ppo_dreamwaq': PPODreamWaQ,
-
-    # 'ppo_pie': PPO_PIE,
-    # 'ppo_pie_moc': PPO_PIE_MOC,
-    'ppo_pie_mc': PPO_PIE_MC,
-    # 'ppo_pie_dagger': PPO_PIE_Dagger,
-    # 'ppo_pie_plain': PPO_PIE_Plain,
-
-    'ppo_zju': PPO_ZJU,
-    'ppo_zju_mc': PPO_ZJU_Multi_Critic,
-    'ppo_wmp': PPO_WMP,
-    'ppo_dreamer': PPO_Dreamer,
-
-    'ppo_bbm': PPO_BBM,
-    'ppo_phase': PPO_Phase,
+    'ppo_pie_amp_plain': PPO_PIE_AMP_Plain,
 }

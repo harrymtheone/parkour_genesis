@@ -8,11 +8,7 @@ from torch.distributions import Normal
 from rsl_rl.modules.utils import make_linear_layers
 
 
-class AMPType(Enum):
-    least_square = 0
-    wasserstein = 1
-    log = 2
-    bce = 3
+
 
 
 class Actor(nn.Module):

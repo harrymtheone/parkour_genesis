@@ -140,44 +140,42 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
 
         terrain_dict = {
             'smooth_slope': 1,
-            # 'rough_slope': 1,
-            # 'stairs_up': 1,
-            # 'stairs_down': 1,
-            # 'parkour_stair': 1,
-            # 'parkour_stair_down': 1,
+            'rough_slope': 1,
+            'stairs_up': 1,
+            'stairs_down': 1,
+            'parkour_stair': 1,
+            'parkour_stair_down': 1,
         }
 
     class noise(T1BaseCfg.noise):
         add_noise = True
 
     class domain_rand(T1BaseCfg.domain_rand):
-        switch = False
-
-        randomize_start_pos = switch
+        randomize_start_pos = True
         randomize_start_z = False
         randomize_start_yaw = True
-        randomize_start_vel = switch
-        randomize_start_pitch = switch
+        randomize_start_vel = True
+        randomize_start_pitch = True
 
         randomize_start_dof_pos = False
         randomize_start_dof_vel = False
 
-        randomize_friction = switch
-        randomize_base_mass = switch
-        randomize_link_mass = switch
-        randomize_com = switch
+        randomize_friction = True
+        randomize_base_mass = True
+        randomize_link_mass = True
+        randomize_com = True
 
-        push_robots = False
+        push_robots = True
         push_duration = [0.1]
-        action_delay = False
-        action_delay_range = [(0, 4)]
-        add_dof_lag = False
-        dof_lag_range = (0, 6)
+        action_delay = True
+        action_delay_range = [(0, 5), (0, 10), (0, 15)]
+        add_dof_lag = True
+        dof_lag_range = (0, 10)
         add_imu_lag = False
 
-        randomize_torque = switch
-        randomize_gains = switch
-        randomize_motor_offset = switch
+        randomize_torque = True
+        randomize_gains = True
+        randomize_motor_offset = True
         randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
         randomize_joint_friction = False
@@ -188,7 +186,7 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             # 'ankle': dict(dof_ids=(15, 16, 21, 22), range=(0.0001, 0.05), log_space=False)
         }
 
-        randomize_coulomb_friction = switch
+        randomize_coulomb_friction = True
 
     class rewards:
         base_height_target = 0.64
@@ -273,6 +271,7 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_amp'
         algorithm_name = 'ppo_pie_amp'
+        # algorithm_name = 'ppo_pie_amp_plain'
 
         lock_smpl_to = 1
 

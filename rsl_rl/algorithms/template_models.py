@@ -1,8 +1,16 @@
-import torch
-from torch import nn as nn, autograd, nn
+from enum import Enum
 
-from rsl_rl.algorithms.odom_amp.networks import AMPType
+import torch
+from torch import autograd, nn
+
 from rsl_rl.modules.utils import get_activation, make_linear_layers, gru_wrapper
+
+
+class AMPType(Enum):
+    least_square = 0
+    wasserstein = 1
+    log = 2
+    bce = 3
 
 
 class AMPDiscriminator(nn.Module):

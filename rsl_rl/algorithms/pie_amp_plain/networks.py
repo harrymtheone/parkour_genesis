@@ -58,9 +58,7 @@ class EstimatorVAE(nn.Module):
         self.encoder = make_linear_layers(hidden_size, hidden_size, activation_func=activation)
 
         self.mlp_vel = nn.Linear(hidden_size, 3)
-        self.mlp_vel_logvar = nn.Linear(hidden_size, 3)
         self.mlp_z = nn.Linear(hidden_size, self.len_latent_z + self.len_latent_hmap)
-        self.mlp_z_logvar = nn.Linear(hidden_size, self.len_latent_z + self.len_latent_hmap)
 
         self.ot1_predictor = make_linear_layers(3 + self.len_latent_z + self.len_latent_hmap, 128, env_cfg.n_proprio,
                                                 activation_func=activation, output_activation=False)
@@ -68,28 +66,14 @@ class EstimatorVAE(nn.Module):
         self.hmap_recon = make_linear_layers(self.len_latent_hmap, 256, env_cfg.n_scan,
                                              activation_func=activation, output_activation=False)
 
-        self.mlp_vel_logvar.bias.data.fill_(-4.0)
-        self.mlp_z_logvar.bias.data.fill_(-4.0)
-
-    def forward(self, mixer_out, sample=True):
-        mu_vel = self.mlp_vel(mixer_out)
-        logvar_vel = self.mlp_vel_logvar(mixer_out)
-        mu_z = self.mlp_z(mixer_out)
-        logvar_z = self.mlp_z_logvar(mixer_out)
-
-        vel = self.reparameterize(mu_vel, logvar_vel) if sample else mu_vel
-        z = self.reparameterize(mu_z, logvar_z) if sample else mu_z
+    def forward(self, mixer_out):
+        vel = self.mlp_vel(mixer_out)
+        z = self.mlp_z(mixer_out)
 
         ot1 = self.ot1_predictor(torch.cat([vel, z], dim=-1))
         hmap = self.hmap_recon(z[:, :, -self.len_latent_hmap:])
 
-        return vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap
-
-    @staticmethod
-    def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return eps * std + mu
+        return vel, z, ot1, hmap
 
 
 class Actor(nn.Module):
@@ -120,7 +104,7 @@ class Policy(nn.Module):
         # encode history proprio
         with torch.no_grad():
             mixer_out, mixer_hidden_states = self.mixer(prop_his, depth, mixer_hidden_states)
-            vel, z = self.vae(mixer_out, sample=not eval_)[:2]
+            vel, z = self.vae(mixer_out)[:2]
 
         mean = self.actor(proprio, vel, z)
 

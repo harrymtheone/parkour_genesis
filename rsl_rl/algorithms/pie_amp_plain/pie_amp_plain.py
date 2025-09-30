@@ -55,7 +55,7 @@ class Transition:
             setattr(self, key, None)
 
 
-class PPO_PIE_AMP(BaseAlgorithm):
+class PPO_PIE_AMP_Plain(BaseAlgorithm):
     def __init__(self, task_cfg, device=torch.device('cpu'), env=None, **kwargs):
         self.env = env
 
@@ -66,10 +66,6 @@ class PPO_PIE_AMP(BaseAlgorithm):
         self.learning_rate = self.cfg.learning_rate
         self.amp_lr = self.cfg.amp_lr
         self.device = device
-
-        # Initialize adaptive KL coefficient
-        self.kl_coef_vel = 0.01
-        self.kl_coef_z = 0.01
 
         self.amp_obs = torch.zeros(self.task_cfg.env.num_envs, 26, 3, device=self.device)
 
@@ -234,28 +230,14 @@ class PPO_PIE_AMP(BaseAlgorithm):
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
-
         mean_amp_loss = 0
         mean_grad_pen_loss = 0
         mean_policy_pred = 0
         mean_expert_pred = 0
-
         mean_symmetry_loss = 0
-
         mean_vel_est_loss = 0
         mean_ot1_loss = 0
         mean_recon_loss = 0
-        mean_vel_kl_loss = 0
-
-        mean_z_kl_loss = 0
-        mean_abs_vel = 0
-        mean_abs_z = 0
-        mean_std_vel = 0
-        mean_std_z = 0
-        mean_snr_vel = 0
-        mean_snr_z = 0
-        mean_kl_coef_vel = 0
-        mean_kl_coef_z = 0
         kl_change = []
         num_updates = 0
 
@@ -300,16 +282,6 @@ class PPO_PIE_AMP(BaseAlgorithm):
                 mean_vel_est_loss += est_metrics['vel_est_loss']
                 mean_ot1_loss += est_metrics['ot1_loss']
                 mean_recon_loss += est_metrics['recon_loss']
-                mean_vel_kl_loss += est_metrics['vel_kl_loss']
-                mean_z_kl_loss += est_metrics['z_kl_loss']
-                mean_abs_vel += est_metrics['abs_vel']
-                mean_abs_z += est_metrics['abs_z']
-                mean_std_vel += est_metrics['std_vel']
-                mean_std_z += est_metrics['std_z']
-                mean_snr_vel += est_metrics['snr_vel']
-                mean_snr_z += est_metrics['snr_z']
-                mean_kl_coef_vel += est_metrics['kl_coef_vel']
-                mean_kl_coef_z += est_metrics['kl_coef_z']
 
         # ---- PPO ----
         mean_kl /= num_updates
@@ -328,19 +300,8 @@ class PPO_PIE_AMP(BaseAlgorithm):
         mean_vel_est_loss /= num_updates
         mean_ot1_loss /= num_updates
         mean_recon_loss /= num_updates
-        mean_vel_kl_loss /= num_updates
-        mean_z_kl_loss /= num_updates
-        mean_abs_vel /= num_updates
-        mean_abs_z /= num_updates
-        mean_std_vel /= num_updates
-        mean_std_z /= num_updates
-        mean_snr_vel /= num_updates
-        mean_snr_z /= num_updates
-        mean_kl_coef_vel /= num_updates
-        mean_kl_coef_z /= num_updates
 
-        if update_amp:
-            self.amp_disc.update_lambda(mean_policy_pred)
+        self.amp_disc.update_lambda(mean_policy_pred)
 
         kl_str = 'kl: '
         for k in kl_change:
@@ -377,17 +338,6 @@ class PPO_PIE_AMP(BaseAlgorithm):
                 'VAE/vel_est_loss': mean_vel_est_loss,
                 'VAE/Ot+1_loss': mean_ot1_loss,
                 'VAE/recon_loss': mean_recon_loss,
-                'VAE/vel_kl_loss': mean_vel_kl_loss,
-                'VAE/z_kl_loss': mean_z_kl_loss,
-                'VAE/total_kl_loss': mean_vel_kl_loss + mean_z_kl_loss,
-                'VAE/abs_vel': mean_abs_vel,
-                'VAE/abs_z': mean_abs_z,
-                'VAE/std_vel': mean_std_vel,
-                'VAE/std_z': mean_std_z,
-                'VAE/SNR_vel': mean_snr_vel,
-                'VAE/SNR_z': mean_snr_z,
-                'VAE/kl_coef_vel': mean_kl_coef_vel,
-                'VAE/kl_coef_z': mean_kl_coef_z,
             })
 
         return metrics
@@ -538,12 +488,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
             'symmetry_loss': symmetry_loss.item(),
         }
 
-    def update_estimation(
-            self,
-            batch,
-            target_snr_vel=5.0,  # Target SNR for velocity (mean/std ratio)
-            target_snr_z=5.0,  # Target SNR for z (mean/std ratio)
-    ):
+    def update_estimation(self, batch):
         """Update estimation-related components (estimation, prediction, VAE, recon losses)"""
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             obs = batch['observations']
@@ -553,7 +498,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
             obs_next = batch['observations_next']
 
             # Forward pass
-            vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap = self.actor.estimate(
+            vel, z, ot1, hmap = self.actor.estimate(
                 obs.prop_his, obs.depth, mixer_hidden_states=mixer_hidden_states)
 
             # Estimation loss
@@ -561,37 +506,8 @@ class PPO_PIE_AMP(BaseAlgorithm):
             ot1_loss = masked_MSE(ot1, obs_next.proprio, mask)
             recon_loss = masked_L1(hmap, critic_obs.scan.flatten(2), mask)
 
-            # KL loss
-            vel_kl_loss = 1 + logvar_vel - mu_vel.pow(2) - logvar_vel.exp()
-            vel_kl_loss = -0.5 * masked_mean(vel_kl_loss.sum(dim=2, keepdim=True), mask)
-            z_kl_loss = 1 + logvar_z - mu_z.pow(2) - logvar_z.exp()
-            z_kl_loss = -0.5 * masked_mean(z_kl_loss.sum(dim=2, keepdim=True), mask)
-
-            # Adaptive KL coefficient based on SNR (Signal-to-Noise Ratio)
-            std_vel = logvar_vel.exp().sqrt().mean().item()
-            std_z = logvar_z.exp().sqrt().mean().item()
-            mean_abs_vel = mu_vel.abs().mean().item()  # Absolute mean for SNR calculation
-            mean_abs_z = mu_z.abs().mean().item()  # Absolute mean for SNR calculation
-
-            # Calculate SNR = |mean| / std (avoid division by zero)
-            snr_vel = mean_abs_vel / (std_vel + 1e-8)
-            snr_z = mean_abs_z / (std_z + 1e-8)
-
-        # Adaptive KL coefficient based on SNR
-        if snr_vel < target_snr_vel:
-            self.kl_coef_vel = max(1e-7, self.kl_coef_vel / 1.1)
-        else:
-            self.kl_coef_vel = max(1e-7, self.kl_coef_vel * 1.1)
-
-        if snr_z < target_snr_z:
-            self.kl_coef_z = max(1e-7, self.kl_coef_z / 1.1)
-        else:
-            self.kl_coef_z = max(1e-7, self.kl_coef_z * 1.1)
-
-        kl_loss = self.kl_coef_vel * vel_kl_loss + self.kl_coef_z * z_kl_loss
-
         # Total estimation loss
-        total_loss = vel_est_loss + ot1_loss + recon_loss + kl_loss
+        total_loss = vel_est_loss + ot1_loss + recon_loss
 
         # Gradient step
         self.optimizer_vae.zero_grad()
@@ -603,16 +519,6 @@ class PPO_PIE_AMP(BaseAlgorithm):
             'vel_est_loss': vel_est_loss.item(),
             'ot1_loss': ot1_loss.item(),
             'recon_loss': recon_loss.item(),
-            'vel_kl_loss': vel_kl_loss.item(),
-            'z_kl_loss': z_kl_loss.item(),
-            'abs_vel': mean_abs_vel,
-            'abs_z': mean_abs_z,
-            'std_vel': std_vel,
-            'std_z': std_z,
-            'snr_vel': snr_vel,  # Signal-to-Noise Ratio for velocity
-            'snr_z': snr_z,  # Signal-to-Noise Ratio for z
-            'kl_coef_vel': self.kl_coef_vel,
-            'kl_coef_z': self.kl_coef_z,
         }
 
     def reset(self, dones):

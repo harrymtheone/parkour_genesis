@@ -83,7 +83,7 @@ class PPO_PIE_MC(BaseAlgorithm):
             self.transition.observations = obs
             self.transition.critic_observations = obs_critic
             if self.actor.is_recurrent:
-                self.transition.mixer_hidden_states = self.mixer_hidden_states
+                self.transition.mixer_hidden_states = self.mixer_hidden_states  # TODO CONTAINS bugs??? should we use clone?
             self.transition.use_estimated_values = use_estimated_values
 
             actions, self.mixer_hidden_states = self.actor.act(

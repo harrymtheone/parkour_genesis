@@ -1,13 +1,9 @@
-from collections import deque
-
 import cv2
 import numpy as np
 import torch
 
-from rsl_rl.datasets.amp_motion_loader import AMPMotionLoader
 from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
 from ..base.utils import ObsBase
-from ...utils.helpers import class_to_dict
 
 
 def linear_change(start, end, span, start_it, cur_it):
@@ -131,7 +127,9 @@ class T1PIEEnvironment(T1BaseEnv):
         edge_mask = -0.5 + self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
         scan_edge = torch.stack([scan_noisy, edge_mask], dim=1)
 
-        depth = torch.cat([self.sensors.get('depth_0'), self.sensors.get('depth_1')], dim=1).half()
+        depth = torch.cat([self.sensors.get('depth_0'), self.sensors.get('depth_1')], dim=1)
+        if self.cfg.algorithm.use_amp:
+            depth = depth.half()
 
         # compose actor observation
         self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth, scan_edge)

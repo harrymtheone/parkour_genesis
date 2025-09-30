@@ -179,7 +179,9 @@ class T1PIEAmpEnv(T1BaseEnv):
         # compute height map
         edge_mask = -0.5 + self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
 
-        depth = torch.cat([self.sensors.get('depth_0'), self.sensors.get('depth_1')], dim=1).half()
+        depth = torch.cat([self.sensors.get('depth_0'), self.sensors.get('depth_1')], dim=1)
+        if self.cfg.algorithm.use_amp:
+            depth = depth.half()
 
         # compose actor observation
         self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth)
