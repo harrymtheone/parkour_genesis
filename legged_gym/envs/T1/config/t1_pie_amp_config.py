@@ -215,8 +215,7 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             feet_contact_forces = -1e-3
             feet_stumble = -1.
             foothold = -0.1
-
-            # penalize_vy = -3.
+            feet_clearance = 0.1
 
             # base pos
             default_joint_pos = -0.04

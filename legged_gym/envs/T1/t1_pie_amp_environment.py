@@ -84,7 +84,8 @@ class T1PIEAmpEnv(T1BaseEnv):
         self.reset_idx = None
 
         self.motion_cfg = class_to_dict(self.cfg.amp)
-        self.amp_motion_loader = AMPMotionLoader(motion_cfg=self.motion_cfg, env_dt=self.dt, amp_num_frames=self.cfg.amp.amp_obs_hist_steps, device=self.device)
+        self.amp_motion_loader = AMPMotionLoader(motion_cfg=self.motion_cfg, env_dt=self.dt,
+                                                 amp_num_frames=self.cfg.amp.amp_obs_hist_steps, device=self.device)
 
     def _post_physics_step(self):
         self.global_counter += 1
@@ -249,7 +250,8 @@ class T1PIEAmpEnv(T1BaseEnv):
             self.reset_amp_obs = self.gen_amp_obs_buf[env_ids].clone()
             for i in range(self.gen_amp_history.maxlen):
                 self.gen_amp_history[i][env_ids] = gen_amp_obs_buf[env_ids]
-            self.gen_amp_obs_buf[env_ids] = torch.cat([self.gen_amp_history[i][env_ids] for i in range(self.amp_obs_hist_steps)], dim=1)
+            self.gen_amp_obs_buf[env_ids] = torch.cat(
+                [self.gen_amp_history[i][env_ids] for i in range(self.amp_obs_hist_steps)], dim=1)
 
     def _get_gen_amp_obs(self):
         gen_amp_obs = []
@@ -293,27 +295,31 @@ class T1PIEAmpEnv(T1BaseEnv):
 
     def _amp_obs_knee_pos_to_base(self):
         knee_pos_to_base_gl = self.sim.link_pos[:, self.knee_indices, :3] - self.sim.root_pos[:, None, :3]
-        knee_pos_to_base_expand = quat_rotate_inverse(self.sim.root_quat.repeat_interleave(len(self.knee_indices), dim=0), knee_pos_to_base_gl.reshape(-1, 3))
+        knee_pos_to_base_expand = quat_rotate_inverse(
+            self.sim.root_quat.repeat_interleave(len(self.knee_indices), dim=0), knee_pos_to_base_gl.reshape(-1, 3))
         knee_pos_to_base = knee_pos_to_base_expand.reshape(self.num_envs, -1, 3)
         return knee_pos_to_base.reshape(self.num_envs, -1)
 
     def _amp_obs_feet_pos_to_base(self):
         feet_pos_to_base_gl = self.sim.link_pos[:, self.feet_indices, :3] - self.sim.root_pos[:, None, :3]
-        feet_pos_to_base_expand = quat_rotate_inverse(self.sim.root_quat.repeat_interleave(len(self.feet_indices), dim=0), feet_pos_to_base_gl.reshape(-1, 3))
+        feet_pos_to_base_expand = quat_rotate_inverse(
+            self.sim.root_quat.repeat_interleave(len(self.feet_indices), dim=0), feet_pos_to_base_gl.reshape(-1, 3))
         feet_pos_to_base = feet_pos_to_base_expand.reshape(self.num_envs, -1, 3)
         return feet_pos_to_base.reshape(self.num_envs, -1)
 
     def _amp_obs_elbow_pos_to_base(self):
         elbow_pos_to_base_gl = self.sim.link_pos[:, self.elbow_indices, :3] - self.sim.root_pos[:, None, :3]
-        elbow_pos_to_base_expand = quat_rotate_inverse(self.sim.root_quat.repeat_interleave(len(self.elbow_indices), dim=0),
-                                                       elbow_pos_to_base_gl.reshape(-1, 3))
+        elbow_pos_to_base_expand = quat_rotate_inverse(
+            self.sim.root_quat.repeat_interleave(len(self.elbow_indices), dim=0),
+            elbow_pos_to_base_gl.reshape(-1, 3))
         elbow_pos_to_base = elbow_pos_to_base_expand.reshape(self.num_envs, -1, 3)
         return elbow_pos_to_base.reshape(self.num_envs, -1)
 
     def _amp_obs_wrist_pos_to_base(self):
         wrist_pos_to_base_gl = self.sim.link_pos[:, self.wrist_indices, :3] - self.sim.root_pos[:, None, :3]
-        wrist_pos_to_base_expand = quat_rotate_inverse(self.sim.root_quat.repeat_interleave(len(self.wrist_indices), dim=0),
-                                                       wrist_pos_to_base_gl.reshape(-1, 3))
+        wrist_pos_to_base_expand = quat_rotate_inverse(
+            self.sim.root_quat.repeat_interleave(len(self.wrist_indices), dim=0),
+            wrist_pos_to_base_gl.reshape(-1, 3))
         wrist_pos_to_base = wrist_pos_to_base_expand.reshape(self.num_envs, -1, 3)
         return wrist_pos_to_base.reshape(self.num_envs, -1)
 
@@ -376,6 +382,13 @@ class T1PIEAmpEnv(T1BaseEnv):
 
     def _reward_orientation(self):
         return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+
+    def _reward_feet_clearance(self):
+        rew = (self.feet_height / self.cfg.rewards.feet_height_target).clip(min=-1, max=1)
+
+        rew[self.contact_filt | self.is_zero_command.unsqueeze(1)] = 0.
+        # rew *= 1.0 - self._get_soft_stance_mask()
+        return rew.sum(dim=1)
 
 
 @torch.jit.script
