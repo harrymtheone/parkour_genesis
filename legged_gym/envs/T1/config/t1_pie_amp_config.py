@@ -389,18 +389,18 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         amp_empirical_normalization = True
         amp_normal_update_until = 1e4
 
-    # class control(T1BaseCfg.control):
-    #     # PD Drive parameters:
-    #     stiffness = {
-    #         'Head': 30,
-    #         'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
-    #         'Waist': 100,
-    #         'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
-    #     }
-    #
-    #     damping = {
-    #         'Head': 1,
-    #         'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
-    #         'Waist': 3,
-    #         'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
-    #     }
+    class control(T1BaseCfg.control):
+        # PD Drive parameters:
+        stiffness = {
+            'Head': 30,
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+            'Waist': 100,
+            'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
+        }
+
+        damping = {
+            'Head': 1,
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+            'Waist': 3,
+            'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
+        }
