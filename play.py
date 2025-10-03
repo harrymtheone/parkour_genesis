@@ -62,8 +62,8 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         # 'smooth_slope': 1,
         # 'rough_slope': 1,
-        # 'stairs_up': 1,
-        # 'stairs_down': 1,
+        'stairs_up': 1,
+        'stairs_down': 1,
         # 'huge_stair': 0,
         # 'discrete': 0,
         # 'stepping_stone': 0,

@@ -220,12 +220,10 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             # base pos
             default_joint_pos = -0.04
             orientation = -10.
-            # base_height = 0.2
-            # base_acc = 0.2
-            # vel_mismatch_exp = 0.5
 
             # energy
-            action_smoothness = -5e-4
+            action_smoothness = -1e-3
+            dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
