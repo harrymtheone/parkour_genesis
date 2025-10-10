@@ -33,7 +33,7 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         class depth_0:
             link_attached_to = 'H2'
             position = [0.07, 0, 0.09]  # front camera
-            pitch = 60  # positive is looking down
+            pitch = 0  # positive is looking down
             # link_attached_to = 'Trunk'
             # position = [0.17, 0, 0.0]  # front camera
             # pitch = 60  # positive is looking down

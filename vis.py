@@ -311,7 +311,7 @@ class T1DofVelVisualizer(BaseVisualizer):
 
     def plot(self, env, args):
         dof_vel = env.sim.dof_vel.cpu().numpy()
-        offset = 0
+        offset = 10
         self._plot({
             'Left_Hip_Pitch': dof_vel[env.lookat_id, offset + 0],
             'Left_Hip_Roll': dof_vel[env.lookat_id, offset + 1],
@@ -353,7 +353,7 @@ class T1TorqueVisualizer(BaseVisualizer):
     def plot(self, env, args):
         torques = env.torques.cpu().numpy()
         feet_contact_forces = torch.norm(env.sim.contact_forces[:, env.feet_indices], dim=-1).cpu().numpy()
-        offset = 0
+        offset = 10
         self._plot({
             'Waist': torques[env.lookat_id, offset + 0],
             'Left_Hip_Pitch': torques[env.lookat_id, offset + 1],

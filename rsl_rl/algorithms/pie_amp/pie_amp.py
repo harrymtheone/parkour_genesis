@@ -393,64 +393,63 @@ class PPO_PIE_AMP(BaseAlgorithm):
         return metrics
 
     def update_ppo(self, batch: dict):
-        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            obs = batch['observations']
-            critic_obs = batch['critic_observations']
-            est_vel = batch['est_vel']
-            est_z = batch['est_z']
-            mask = batch['masks']
-            actions = batch['actions']
-            default_values = batch['values']
-            contact_values = batch['values_contact']
-            advantages = batch['advantages']
-            default_returns = batch['returns']
-            contact_returns = batch['returns_contact']
-            old_actions_log_prob = batch['actions_log_prob']
+        obs = batch['observations']
+        critic_obs = batch['critic_observations']
+        est_vel = batch['est_vel']
+        est_z = batch['est_z']
+        mask = batch['masks']
+        actions = batch['actions']
+        default_values = batch['values']
+        contact_values = batch['values_contact']
+        advantages = batch['advantages']
+        default_returns = batch['returns']
+        contact_returns = batch['returns_contact']
+        old_actions_log_prob = batch['actions_log_prob']
 
-            # Forward pass
-            self.actor.actor_forward(obs.proprio, est_vel, est_z)
+        # Forward pass
+        self.actor.actor_forward(obs.proprio, est_vel, est_z)
 
-            with torch.no_grad():
-                kl_mean = kl_divergence(
-                    Normal(batch['action_mean'], batch['action_sigma']),
-                    Normal(self.actor.action_mean, self.actor.action_std)
-                ).sum(dim=2, keepdim=True)
-                kl_mean = masked_mean(kl_mean, mask)
+        with torch.no_grad():
+            kl_mean = kl_divergence(
+                Normal(batch['action_mean'], batch['action_sigma']),
+                Normal(self.actor.action_mean, self.actor.action_std)
+            ).sum(dim=2, keepdim=True)
+            kl_mean = masked_mean(kl_mean, mask).item()
 
-            actions_log_prob = self.actor.get_actions_log_prob(actions)
-            evaluation_default = self.critic['default'].evaluate(critic_obs)
-            evaluation_contact = self.critic['contact'].evaluate(critic_obs)
+        actions_log_prob = self.actor.get_actions_log_prob(actions)
+        evaluation_default = self.critic['default'].evaluate(critic_obs)
+        evaluation_contact = self.critic['contact'].evaluate(critic_obs)
 
-            # Surrogate loss
-            ratio = torch.exp(actions_log_prob - old_actions_log_prob)
-            surrogate = -advantages * ratio
-            surrogate_clipped = -advantages * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
-            surrogate_loss = masked_mean(torch.maximum(surrogate, surrogate_clipped), mask)
+        # Surrogate loss
+        ratio = torch.exp(actions_log_prob - old_actions_log_prob)
+        surrogate = -advantages * ratio
+        surrogate_clipped = -advantages * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
+        surrogate_loss = masked_mean(torch.maximum(surrogate, surrogate_clipped), mask)
 
-            # Value function loss
-            if self.cfg.use_clipped_value_loss:
-                value_clipped_default = default_values + (
-                        evaluation_default - default_values).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_loss_default = (evaluation_default - default_returns).square()
-                value_loss_clipped_default = (value_clipped_default - default_returns).square()
-                value_loss_default = masked_mean(torch.maximum(value_loss_default, value_loss_clipped_default), mask)
+        # Value function loss
+        if self.cfg.use_clipped_value_loss:
+            value_clipped_default = default_values + (
+                    evaluation_default - default_values).clamp(-self.cfg.clip_param, self.cfg.clip_param)
+            value_loss_default = (evaluation_default - default_returns).square()
+            value_loss_clipped_default = (value_clipped_default - default_returns).square()
+            value_loss_default = masked_mean(torch.maximum(value_loss_default, value_loss_clipped_default), mask)
 
-                value_clipped_contact = contact_values + (
-                        evaluation_contact - contact_values).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_loss_contact = (evaluation_contact - contact_returns).square()
-                value_loss_clipped_contact = (value_clipped_contact - contact_returns).square()
-                value_loss_contact = masked_mean(torch.maximum(value_loss_contact, value_loss_clipped_contact), mask)
-            else:
-                value_loss_default = masked_MSE(evaluation_default, default_returns, mask)
-                value_loss_contact = masked_MSE(evaluation_contact, contact_returns, mask)
+            value_clipped_contact = contact_values + (
+                    evaluation_contact - contact_values).clamp(-self.cfg.clip_param, self.cfg.clip_param)
+            value_loss_contact = (evaluation_contact - contact_returns).square()
+            value_loss_clipped_contact = (value_clipped_contact - contact_returns).square()
+            value_loss_contact = masked_mean(torch.maximum(value_loss_contact, value_loss_clipped_contact), mask)
+        else:
+            value_loss_default = masked_MSE(evaluation_default, default_returns, mask)
+            value_loss_contact = masked_MSE(evaluation_contact, contact_returns, mask)
 
-            value_loss = value_loss_default + value_loss_contact
+        value_loss = value_loss_default + value_loss_contact
 
-            # Entropy loss
-            entropy_loss = -masked_mean(self.actor.entropy, mask)
+        # Entropy loss
+        entropy_loss = -masked_mean(self.actor.entropy, mask)
 
-            # Total PPO loss
-            total_loss = surrogate_loss + self.cfg.value_loss_coef * value_loss + self.cfg.entropy_coef * entropy_loss
+        # Total PPO loss
+        total_loss = surrogate_loss + self.cfg.value_loss_coef * value_loss + self.cfg.entropy_coef * entropy_loss
 
         # Use KL to adaptively update learning rate
         if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:

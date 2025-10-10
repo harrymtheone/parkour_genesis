@@ -166,10 +166,10 @@ def play(args):
 
 if __name__ == '__main__':
     # t1_vis = vis.RewVisualizer()
-    t1_vis = vis.T1ActionsVisualizer()
+    # t1_vis = vis.T1ActionsVisualizer()
     # t1_vis = vis.T1DofPosVisualizer()
     # t1_vis = vis.T1DofVelVisualizer()
-    # t1_vis = vis.T1TorqueVisualizer()
+    t1_vis = vis.T1TorqueVisualizer()
     # t1_vis = vis.VelEstVisualizer()
 
     with torch.inference_mode():
