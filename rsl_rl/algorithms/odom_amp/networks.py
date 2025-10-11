@@ -1,4 +1,4 @@
-from enum import Enum
+import math
 
 import torch
 import torch.nn as nn
@@ -6,9 +6,6 @@ import torch.utils.data
 from torch.distributions import Normal
 
 from rsl_rl.modules.utils import make_linear_layers
-
-
-
 
 
 class Actor(nn.Module):
@@ -34,14 +31,7 @@ class Actor(nn.Module):
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions), requires_grad=True)
         self.distribution = None
 
-    def safe_nan_to_num(self, x):
-        return torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
-
     def act(self, proprio, scan, priv, hidden_states, eval_=False, **kwargs):
-        proprio = self.safe_nan_to_num(proprio)
-        scan = self.safe_nan_to_num(scan)
-        priv = self.safe_nan_to_num(priv)
-
         scan_enc = self.scan_encoder(scan.flatten(2))
         x = torch.cat([proprio, scan_enc, priv], dim=2)
 
@@ -73,3 +63,6 @@ class Actor(nn.Module):
     def reset_std(self, std):
         new_log_std = torch.log(std * torch.ones_like(self.log_std.data, device=self.log_std.device))
         self.log_std.data = new_log_std.data
+
+    def clip_std(self, min_std: float, max_std: float) -> None:
+        self.log_std.data = torch.clamp(self.log_std.data, math.log(min_std), math.log(max_std))

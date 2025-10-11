@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.distributions import Normal
 
-from .utils import make_linear_layers, gru_wrapper
+from rsl_rl.modules.utils import make_linear_layers, gru_wrapper
 
 gru_hidden_size = 128
 encoder_output_size = 3 + 64  # v_t, z_t
@@ -125,8 +125,8 @@ class ActorGRU(nn.Module):
         super().__init__()
         self.activation = nn.ELU()
 
-        gru_num_layers = 1
-        self.gru = nn.GRU(input_size=env_cfg.n_proprio, hidden_size=gru_hidden_size, num_layers=gru_num_layers)
+        self.gru_num_layers = 1
+        self.gru = nn.GRU(input_size=env_cfg.n_proprio, hidden_size=gru_hidden_size, num_layers=self.gru_num_layers)
         self.hidden_states = None
 
         self.vae = VAE(env_cfg, policy_cfg)
@@ -143,6 +143,9 @@ class ActorGRU(nn.Module):
 
         # disable args validation for speedup
         Normal.set_default_validate_args = False
+
+    def init_hidden_state(self, num_envs: int, device: torch.device):
+        self.hidden_states = torch.zeros(self.gru_num_layers, num_envs, gru_hidden_size, device=device)
 
     def act(self, obs, eval_=False, **kwargs):
         # inference forward

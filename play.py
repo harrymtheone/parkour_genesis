@@ -27,7 +27,7 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = False
+    task_cfg.play.control = True
     task_cfg.env.num_envs = 8
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
@@ -121,7 +121,7 @@ def play(args):
 
             if 'recon' in rtn:
                 recon = rtn['recon']
-                args.recon_loss = torch.nn.functional.l1_loss(obs.scan[env.lookat_id, 1], recon[env.lookat_id, 1])
+                # args.recon_loss = torch.nn.functional.l1_loss(obs.scan[env.lookat_id, 1], recon[env.lookat_id, 1])
 
                 # env._draw_body_hmap(recon_rough[env.lookat_id])
                 # env.draw_recon(recon[env.lookat_id])

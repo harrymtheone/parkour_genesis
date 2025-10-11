@@ -7,8 +7,8 @@ from rsl_rl.algorithms import AMPDiscriminator, UniversalCritic, BaseAlgorithm
 from rsl_rl.datasets.amp_motion_loader import AMPMotionLoader
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from rsl_rl.storage.amp_replay_buffer import AMPReplayBuffer
-from . import EmpiricalNormalization
 from .networks import Actor
+from .normalizer import EmpiricalNormalization
 
 try:
     from torch.amp import GradScaler
@@ -76,14 +76,11 @@ class PPO_Odom_AMP(BaseAlgorithm):
             'default': UniversalCritic(task_cfg.env, task_cfg.policy),
             'contact': UniversalCritic(task_cfg.env, task_cfg.policy),
         }).to(self.device)
-        params_ac = [
-            {"params": self.actor.parameters(), "name": "actor"},
-            {"params": self.critic.parameters(), "name": "critic"},
-        ]
+
+        self.optimizer = torch.optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
+
         self._build_amp_discriminator()
 
-        self.optimizer_ac = torch.optim.Adam(params_ac, lr=self.learning_rate)
-        self.scaler_ac = GradScaler(enabled=self.cfg.use_amp)
         # Rollout Storage
         self.transition = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
@@ -118,8 +115,7 @@ class PPO_Odom_AMP(BaseAlgorithm):
             {"params": self.amp_disc.amp_linear.parameters(), "weight_decay": amp_optim_cfg["amp_head_weight_decay"], "name": "amp_head",
              "lr": amp_optim_cfg["amp_disc_lr"]},
         ]
-        self.optimizer_dis = torch.optim.Adam(params_dis, lr=amp_optim_cfg["amp_disc_lr"])
-        self.scaler_dis = GradScaler(enabled=self.cfg.use_amp)
+        self.optimizer_amp = torch.optim.Adam(params_dis, lr=amp_optim_cfg["amp_disc_lr"])
         self.amp_replay_buffer = AMPReplayBuffer(self.amp_disc.num_input, amp_optim_cfg["amp_replay_buffer_size"], self.device)
         self.amploss_coef = amp_optim_cfg["amp_loss_coef"]
         self.max_amp_disc_grad_norm = amp_optim_cfg["max_amp_disc_grad_norm"]
@@ -131,34 +127,34 @@ class PPO_Odom_AMP(BaseAlgorithm):
             amp_obs: torch.Tensor = None,
             **kwargs):
         # act function should run within torch.inference_mode context
-        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            # store observations
-            self.transition.observations = obs.no_depth()
-            self.transition.critic_observations = obs_critic
-            self.transition.actor_hidden_states = self.actor_hidden_states
 
-            actions, self.actor_hidden_states = self.actor.act(
-                obs.proprio.unsqueeze(0),
-                obs.scan.unsqueeze(0),
-                obs.priv_actor.unsqueeze(0),
-                self.actor_hidden_states
-            )
+        # store observations
+        self.transition.observations = obs.no_depth()
+        self.transition.critic_observations = obs_critic
+        self.transition.actor_hidden_states = self.actor_hidden_states
 
-            if self.transition.actor_hidden_states is None:
-                # only for the first step where hidden_state is None
-                self.transition.actor_hidden_states = torch.zeros_like(self.actor_hidden_states)
+        actions, self.actor_hidden_states = self.actor.act(
+            obs.proprio.unsqueeze(0),
+            obs.scan.unsqueeze(0),
+            obs.priv_actor.unsqueeze(0),
+            self.actor_hidden_states
+        )
 
-            # store
-            self.transition.actions = actions
-            self.transition.values = self.critic['default'].evaluate(obs_critic)
-            self.transition.values_contact = self.critic['contact'].evaluate(obs_critic)
-            self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions)
-            self.transition.action_mean = self.actor.action_mean
-            self.transition.action_sigma = self.actor.action_std
+        if self.transition.actor_hidden_states is None:
+            # only for the first step where hidden_state is None
+            self.transition.actor_hidden_states = torch.zeros_like(self.actor_hidden_states)
 
-            self.amp_replay_buffer.insert(amp_obs.detach())
+        # store
+        self.transition.actions = actions
+        self.transition.values = self.critic['default'].evaluate(obs_critic)
+        self.transition.values_contact = self.critic['contact'].evaluate(obs_critic)
+        self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions)
+        self.transition.action_mean = self.actor.action_mean
+        self.transition.action_sigma = self.actor.action_std
 
-            return actions
+        self.amp_replay_buffer.insert(amp_obs.detach())
+
+        return actions
 
     def process_env_step(self, rewards, dones, infos, *args):
         self.transition.dones = dones.unsqueeze(1)
@@ -199,19 +195,25 @@ class PPO_Odom_AMP(BaseAlgorithm):
         self.storage.compute_returns(last_values_default, last_values_contact, self.cfg.gamma, self.cfg.lam)
 
     def update(self, cur_it=0, **kwargs):
+        update_amp = cur_it % self.amp_update_interval == 0
+
+        num_updates = 0
+
         self.cur_it = cur_it
-        mean_value_loss = 0
-        mean_default_value_loss = 0
-        mean_contact_value_loss = 0
+        mean_value_loss_default = 0
+        mean_value_loss_contact = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
         mean_kl = 0
+        kl_change = []
+
+        mean_value_loss = 0
+        mean_default_value_loss = 0
+        mean_contact_value_loss = 0
         mean_amp_loss = 0
         mean_grad_pen_loss = 0
         mean_policy_pred = 0
         mean_expert_pred = 0
-        kl_change = []
-        num_updates = 0
 
         amp_policy_generator = self.amp_replay_buffer.feed_forward_generator(
             self.cfg.num_learning_epochs * self.cfg.num_mini_batches,
@@ -225,55 +227,24 @@ class PPO_Odom_AMP(BaseAlgorithm):
         generator = self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
 
         for batch, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
-            # ########################## policy loss ##########################
-            kl_mean, value_loss_default, value_loss_contact, surrogate_loss, entropy_loss = self._compute_policy_loss(batch)
-            loss_ac = surrogate_loss + self.cfg.value_loss_coef * (value_loss_default + value_loss_contact) - entropy_loss
-
             num_updates += 1
-            # policy statistics
-            kl_change.append(kl_mean.item())
-            mean_kl += kl_mean.item()
-            mean_default_value_loss += value_loss_default.item()
-            mean_contact_value_loss += value_loss_contact.item()
-            mean_value_loss = mean_default_value_loss + mean_contact_value_loss
-            mean_surrogate_loss += surrogate_loss.item()
-            mean_entropy_loss += entropy_loss.item()
+
+            # ########################## policy loss ##########################
+            ppo_metrics = self.update_ppo(batch)
+            mean_kl += ppo_metrics['kl_mean']
+            mean_value_loss_default += ppo_metrics['value_loss_default']
+            mean_value_loss_contact += ppo_metrics['value_loss_contact']
+            mean_surrogate_loss += ppo_metrics['surrogate_loss']
+            mean_entropy_loss += ppo_metrics['entropy_loss']
+            kl_change.append(ppo_metrics['kl_mean'])
 
             # ########################## discriminator loss ##########################
-            with torch.no_grad():
-                sample_amp_expert = self.amp_obs_normalizer(sample_amp_expert)
-            amp_loss, grad_pen_loss, gen_d, ref_d = self.amp_disc.compute_amp_loss(sample_amp_expert, sample_amp_policy)
-
-            loss_dis = self.amploss_coef * amp_loss + self.amploss_coef * grad_pen_loss
-            mean_amp_loss += amp_loss.item()
-            mean_grad_pen_loss += grad_pen_loss.item()
-            mean_policy_pred += gen_d.item()
-            mean_expert_pred += ref_d.item()
-
-            # Use KL to adaptively update learning rate
-            if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
-                if kl_mean > self.cfg.desired_kl * 2.0:
-                    self.learning_rate = max(1e-5, self.learning_rate / 1.5)
-                elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
-                    self.learning_rate = min(1e-3, self.learning_rate * 1.5)
-
-                for param_group in self.optimizer_ac.param_groups:
-                    param_group['lr'] = self.learning_rate
-
-            # Gradient step
-            self.optimizer_ac.zero_grad()
-            self.scaler_ac.scale(loss_ac).backward()
-            self.scaler_ac.step(self.optimizer_ac)
-            self.scaler_ac.update()
-
-            if self.cur_it % self.amp_update_interval == 0:
-                self.optimizer_dis.zero_grad()
-                self.scaler_dis.scale(loss_dis).backward()
-                # 先反缩放梯度，然后进行梯度裁剪
-                self.scaler_dis.unscale_(self.optimizer_dis)
-                nn.utils.clip_grad_norm_(self.amp_disc.parameters(), self.max_amp_disc_grad_norm)
-                self.scaler_dis.step(self.optimizer_dis)
-                self.scaler_dis.update()
+            if update_amp:
+                amp_metrics = self.update_amp(sample_amp_policy, sample_amp_expert)
+                mean_amp_loss += amp_metrics['amp_loss']
+                mean_grad_pen_loss += amp_metrics['grad_pen_loss']
+                mean_policy_pred += amp_metrics['policy_pred']
+                mean_expert_pred += amp_metrics['expert_pred']
 
         mean_kl /= num_updates
         mean_value_loss /= num_updates
@@ -310,65 +281,107 @@ class PPO_Odom_AMP(BaseAlgorithm):
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
         }
 
-    def _compute_policy_loss(self, batch: dict):
-        with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
-            obs_batch = batch['observations']
-            critic_obs_batch = batch['critic_observations']
-            actor_hidden_states_batch = batch['actor_hidden_states']
-            mask_batch = batch['masks']
-            actions_batch = batch['actions']
-            default_values_batch = batch['values']
-            contact_values_batch = batch['values_contact']
-            advantages_batch = batch['advantages']
-            default_returns_batch = batch['returns']
-            contact_returns_batch = batch['returns_contact']
-            old_actions_log_prob_batch = batch['actions_log_prob']
+    def update_ppo(self, batch: dict):
+        obs = batch['observations']
+        critic_obs = batch['critic_observations']
+        actor_hidden_states = batch['actor_hidden_states']
+        mask = batch['masks']
+        actions = batch['actions']
+        default_values = batch['values']
+        contact_values = batch['values_contact']
+        advantages = batch['advantages']
+        default_returns = batch['returns']
+        contact_returns = batch['returns_contact']
+        old_actions_log_prob = batch['actions_log_prob']
 
-            self.actor.act(
-                obs_batch.proprio,
-                obs_batch.scan,
-                obs_batch.priv_actor,
-                actor_hidden_states_batch,
-            )
+        # Forward pass
+        self.actor.act(obs.proprio, obs.scan, obs.priv_actor, actor_hidden_states)
 
-            with torch.no_grad():
-                kl_mean = kl_divergence(
-                    Normal(batch['action_mean'], batch['action_sigma']),
-                    Normal(self.actor.action_mean, self.actor.action_std)
-                ).sum(dim=2, keepdim=True)
-                kl_mean = masked_mean(kl_mean, mask_batch)
+        with torch.no_grad():
+            kl_mean = kl_divergence(
+                Normal(batch['action_mean'], batch['action_sigma']),
+                Normal(self.actor.action_mean, self.actor.action_std)
+            ).sum(dim=2, keepdim=True)
+            kl_mean = masked_mean(kl_mean, mask).item()
 
-            actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
-            evaluation_default = self.critic['default'].evaluate(critic_obs_batch)
-            evaluation_contact = self.critic['contact'].evaluate(critic_obs_batch)
+        actions_log_prob = self.actor.get_actions_log_prob(actions)
+        evaluation_default = self.critic['default'].evaluate(critic_obs)
+        evaluation_contact = self.critic['contact'].evaluate(critic_obs)
 
-            # Surrogate loss
-            ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
-            surrogate = -advantages_batch * ratio
-            surrogate_clipped = -advantages_batch * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
-            surrogate_loss = masked_mean(torch.maximum(surrogate, surrogate_clipped), mask_batch)
+        # Surrogate loss
+        ratio = torch.exp(actions_log_prob - old_actions_log_prob)
+        surrogate = -advantages * ratio
+        surrogate_clipped = -advantages * ratio.clamp(1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param)
+        surrogate_loss = masked_mean(torch.maximum(surrogate, surrogate_clipped), mask)
 
-            # Value function loss
-            if self.cfg.use_clipped_value_loss:
-                value_clipped_default = default_values_batch + (
-                        evaluation_default - default_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_losses_default = (evaluation_default - default_returns_batch).square()
-                value_losses_clipped_default = (value_clipped_default - default_returns_batch).square()
-                value_losses_default = masked_mean(torch.maximum(value_losses_default, value_losses_clipped_default), mask_batch)
+        # Value function loss
+        if self.cfg.use_clipped_value_loss:
+            value_clipped_default = default_values + (
+                    evaluation_default - default_values).clamp(-self.cfg.clip_param, self.cfg.clip_param)
+            value_loss_default = (evaluation_default - default_returns).square()
+            value_loss_clipped_default = (value_clipped_default - default_returns).square()
+            value_loss_default = masked_mean(torch.maximum(value_loss_default, value_loss_clipped_default), mask)
 
-                value_clipped_contact = contact_values_batch + (
-                        evaluation_contact - contact_values_batch).clamp(-self.cfg.clip_param, self.cfg.clip_param)
-                value_losses_contact = (evaluation_contact - contact_returns_batch).square()
-                value_losses_clipped_contact = (value_clipped_contact - contact_returns_batch).square()
-                value_losses_contact = masked_mean(torch.max(value_losses_contact, value_losses_clipped_contact), mask_batch)
-            else:
-                value_losses_default = masked_MSE(evaluation_default, default_returns_batch, mask_batch)
-                value_losses_contact = masked_MSE(evaluation_contact, contact_returns_batch, mask_batch)
+            value_clipped_contact = contact_values + (
+                    evaluation_contact - contact_values).clamp(-self.cfg.clip_param, self.cfg.clip_param)
+            value_loss_contact = (evaluation_contact - contact_returns).square()
+            value_loss_clipped_contact = (value_clipped_contact - contact_returns).square()
+            value_loss_contact = masked_mean(torch.maximum(value_loss_contact, value_loss_clipped_contact), mask)
+        else:
+            value_loss_default = masked_MSE(evaluation_default, default_returns, mask)
+            value_loss_contact = masked_MSE(evaluation_contact, contact_returns, mask)
 
-            # Entropy loss
-            entropy_loss = self.cfg.entropy_coef * masked_mean(self.actor.entropy, mask_batch)
+        value_loss = value_loss_default + value_loss_contact
 
-            return kl_mean, value_losses_default, value_losses_contact, surrogate_loss, entropy_loss
+        # Entropy loss
+        entropy_loss = -masked_mean(self.actor.entropy, mask)
+
+        # Total PPO loss
+        total_loss = surrogate_loss + self.cfg.value_loss_coef * value_loss + self.cfg.entropy_coef * entropy_loss
+
+        # Use KL to adaptively update learning rate
+        if self.cfg.schedule == 'adaptive' and self.cfg.desired_kl is not None:
+            if kl_mean > self.cfg.desired_kl * 2.0:
+                self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+            elif self.cfg.desired_kl / 2.0 > kl_mean > 0.0:
+                self.learning_rate = min(1e-3, self.learning_rate * 1.5)
+
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = self.learning_rate
+
+        # Gradient step
+        self.optimizer.zero_grad()
+        total_loss.backward()
+        self.optimizer.step()
+
+        self.actor.clip_std(self.cfg.noise_range[0], self.cfg.noise_range[1])
+
+        return {
+            'kl_mean': kl_mean,
+            'value_loss_default': value_loss_default.item(),
+            'value_loss_contact': value_loss_contact.item(),
+            'surrogate_loss': surrogate_loss.item(),
+            'entropy_loss': -entropy_loss.item(),
+        }
+
+    def update_amp(self, sample_amp_policy, sample_amp_expert):
+        with torch.no_grad():
+            sample_amp_expert = self.amp_obs_normalizer(sample_amp_expert)
+        amp_loss, grad_pen_loss, gen_d, ref_d = self.amp_disc.compute_amp_loss(sample_amp_expert, sample_amp_policy)
+
+        total_loss = self.amploss_coef * amp_loss + self.amploss_coef * grad_pen_loss
+
+        self.optimizer_amp.zero_grad()
+        total_loss.backward()
+        nn.utils.clip_grad_norm_(self.amp_disc.parameters(), self.max_amp_disc_grad_norm)
+        self.optimizer_amp.step()
+
+        return {
+            'amp_loss': amp_loss.item(),
+            'grad_pen_loss': grad_pen_loss.item(),
+            'policy_pred': gen_d.item(),
+            'expert_pred': ref_d.item(),
+        }
 
     def reset(self, dones):
         if self.actor_hidden_states is not None:
@@ -398,8 +411,8 @@ class PPO_Odom_AMP(BaseAlgorithm):
         self.amp_obs_normalizer.load_state_dict(loaded_dict['amp_obs_normalizer_state_dict'])
 
         if load_optimizer:
-            self.optimizer_ac.load_state_dict(loaded_dict['optimizer_ac_state_dict'])
-            self.optimizer_dis.load_state_dict(loaded_dict['optimizer_dis_state_dict'])
+            self.optimizer.load_state_dict(loaded_dict['optimizer_ac_state_dict'])
+            self.optimizer_amp.load_state_dict(loaded_dict['optimizer_dis_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std)
@@ -410,6 +423,6 @@ class PPO_Odom_AMP(BaseAlgorithm):
             'critic_state_dict': self.critic.state_dict(),
             'discriminator_state_dict': self.amp_disc.state_dict(),
             'amp_obs_normalizer_state_dict': self.amp_obs_normalizer.state_dict(),
-            'optimizer_ac_state_dict': self.optimizer_ac.state_dict(),
-            'optimizer_dis_state_dict': self.optimizer_dis.state_dict(),
+            'optimizer_ac_state_dict': self.optimizer.state_dict(),
+            'optimizer_dis_state_dict': self.optimizer_amp.state_dict(),
         }

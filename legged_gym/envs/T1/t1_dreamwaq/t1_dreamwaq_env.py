@@ -1,8 +1,8 @@
 import torch
 
-from .t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
-from ..base.utils import ObsBase
-from ...utils.math import torch_rand_float
+from legged_gym.envs.T1.t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
+from legged_gym.envs.base.utils import ObsBase
+from legged_gym.utils.math import torch_rand_float
 
 
 class ActorObs(ObsBase):
@@ -50,7 +50,7 @@ class CriticObs(ObsBase):
         return torch.cat((self.priv_his.flatten(1), self.scan.flatten(1)), dim=1)
 
 
-class T1DreamWaqEnvironment(T1BaseEnv):
+class T1DreamWaqEnv(T1BaseEnv):
     def _init_buffers(self):
         super()._init_buffers()
 

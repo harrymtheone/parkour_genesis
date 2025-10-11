@@ -3,9 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import kl_divergence, Normal
 
-from rsl_rl.modules.model_dreamwaq import Actor, ActorGRU, Critic
+from .networks import Actor, ActorGRU, Critic
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
-from .alg_base import BaseAlgorithm
+from rsl_rl.algorithms.alg_base import BaseAlgorithm
 
 try:
     from torch.amp import GradScaler
@@ -57,6 +57,10 @@ class PPODreamWaQ(BaseAlgorithm):
 
         # reconstructor
         self.mse_loss = nn.MSELoss()
+
+        # Initialize adaptive KL coefficient
+        self.kl_coef_vel = 0.01
+        self.kl_coef_z = 0.01
 
         # Rollout Storage
         self.transition = Transition(self.actor.is_recurrent)

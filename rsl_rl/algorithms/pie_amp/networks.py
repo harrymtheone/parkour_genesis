@@ -120,12 +120,12 @@ class Policy(nn.Module):
         # encode history proprio
         with torch.no_grad():
             mixer_out, mixer_hidden_states = self.mixer(prop_his, depth, mixer_hidden_states)
-            vel, z = self.vae(mixer_out, sample=not eval_)[:2]
+            vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap = self.vae(mixer_out, sample=not eval_)
 
         mean = self.actor(proprio, vel, z)
 
         if eval_:
-            return mean, vel, mixer_hidden_states
+            return mean, vel, mixer_hidden_states, hmap
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())

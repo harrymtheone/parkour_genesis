@@ -91,7 +91,6 @@ class PPO_PIE_AMP(BaseAlgorithm):
         self._build_amp_discriminator()
 
         self.optimizer_ppo = torch.optim.Adam(params_ac, lr=self.learning_rate)
-        self.scaler_ppo = GradScaler(enabled=self.cfg.use_amp)
 
         self.optimizer_sym = torch.optim.Adam(self.actor.parameters(), lr=self.learning_rate)
         self.scaler_sym = GradScaler(enabled=self.cfg.use_amp)
@@ -463,9 +462,8 @@ class PPO_PIE_AMP(BaseAlgorithm):
 
         # Gradient step
         self.optimizer_ppo.zero_grad()
-        self.scaler_ppo.scale(total_loss).backward()
-        self.scaler_ppo.step(self.optimizer_ppo)
-        self.scaler_ppo.update()
+        total_loss.backward()
+        self.optimizer_ppo.step()
 
         self.actor.clip_std(self.cfg.noise_range[0], self.cfg.noise_range[1])
 
@@ -620,7 +618,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
 
     def play_act(self, obs, **kwargs):
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):
-            actions, vel_est, self.mixer_hidden_states = self.actor.act(
+            actions, vel_est, self.mixer_hidden_states, hmap = self.actor.act(
                 proprio=obs.proprio.unsqueeze(0),
                 prop_his=obs.prop_his.unsqueeze(0),
                 depth=obs.depth.unsqueeze(0),
@@ -628,7 +626,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
                 **kwargs
             )
 
-            return {'actions': actions, 'vel_est': vel_est}
+            return {'actions': actions, 'vel_est': vel_est, 'recon': hmap.view(-1, 32, 16)}
 
     def train(self):
         self.actor.train()

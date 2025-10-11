@@ -610,9 +610,13 @@ class HumanoidEnv(ParkourTask):
         # rew[self.env_class < 2] = 0.
         return rew.sum(dim=1)
 
-    @staticmethod
-    def _reward_alive():
-        return 1.
+    def _reward_termination(self):
+        termination = self.reset_buf & ~self.timeout_cutoff
+
+        if self.sim.terrain is not None:
+            termination = termination & ~self.reach_goal_cutoff
+
+        return termination.float()
 
     # ----------------------------------------- Graphics -------------------------------------------
 

@@ -1,6 +1,6 @@
 import numpy as np
 
-from .t1_base_config import T1BaseCfg
+from legged_gym.envs.T1.config.t1_base_config import T1BaseCfg
 
 
 class T1DreamWaqCfg(T1BaseCfg):

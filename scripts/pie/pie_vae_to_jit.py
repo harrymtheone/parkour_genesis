@@ -26,7 +26,7 @@ class MixerJIT(Mixer):
 
 
 class EstimatorJIT(EstimatorVAE):
-    def forward(self, mixer_out, sample=True):
+    def forward(self, mixer_out):
         vel = self.mlp_vel(mixer_out)
         z = self.mlp_z(mixer_out)
 
@@ -46,8 +46,8 @@ class PolicyJIT(nn.Module):
         self.log_std = nn.Parameter(torch.ones(env_cfg.num_actions))
 
     def forward(self, proprio, prop_his, depth, mixer_hidden_states):  # <-- my mood be like
-        mixer_out, hidden_states = self.mixer(prop_his, depth, mixer_hidden_states)
-        vel, z, ot1, hmap = self.vae(mixer_out, sample=False)
+        mixer_out, hidden_states = self.mixer.forward(prop_his, depth, mixer_hidden_states)
+        vel, z, ot1, hmap = self.vae.forward(mixer_out)
 
         mean = self.actor(proprio, vel, z)
 
@@ -55,7 +55,7 @@ class PolicyJIT(nn.Module):
 
 
 def trace():
-    proj, cfg, exptid, checkpoint = 't1', 't1_pie_amp', 't1_pie_amp_015', 24000
+    proj, cfg, exptid, checkpoint = 't1', 't1_pie_amp', 't1_pie_amp_016', 16200
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):

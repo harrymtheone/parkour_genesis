@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import kl_divergence, Normal
 
-from rsl_rl.modules.model_dreamwaq import ActorGRU, Critic
+from rsl_rl.algorithms.dreamwaq.model_dreamwaq import ActorGRU, Critic
 from rsl_rl.storage import RolloutStoragePerception as RolloutStorage
 from .alg_base import BaseAlgorithm
 from ..modules.model_phase import Modulator

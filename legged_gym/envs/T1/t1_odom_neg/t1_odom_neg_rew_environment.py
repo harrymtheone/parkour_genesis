@@ -2,9 +2,9 @@ import cv2
 import numpy as np
 import torch
 
-from .t1_base_env import T1BaseEnv
-from ..base.utils import ObsBase
-from ...utils.math import torch_rand_float
+from legged_gym.envs.T1.t1_base_env import T1BaseEnv
+from legged_gym.envs.base.utils import ObsBase
+from legged_gym.utils.math import torch_rand_float
 
 
 class ActorObs(ObsBase):
