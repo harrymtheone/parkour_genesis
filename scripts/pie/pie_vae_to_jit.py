@@ -55,7 +55,7 @@ class PolicyJIT(nn.Module):
 
 
 def trace():
-    proj, cfg, exptid, checkpoint = 't1', 't1_pie_amp', 't1_pie_amp_016', 16200
+    proj, cfg, exptid, checkpoint = 't1', 't1_pie_amp', 't1_pie_amp_020', 12500
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):
@@ -90,7 +90,7 @@ def trace():
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
         prop_his = torch.zeros(1, task_cfg.env.len_prop_his, task_cfg.env.n_proprio, device=device)
-        depth_his = torch.zeros(1, 4, *reversed(task_cfg.sensors.depth_0.resized), device=device)
+        depth_his = torch.zeros(1, 2, *reversed(task_cfg.sensors.depth_0.resized), device=device)
         hidden_states = torch.zeros(1, 1, task_cfg.policy.estimator_gru_hidden_size, device=device)
 
         print("------------ input shape ------------")

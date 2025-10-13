@@ -66,38 +66,38 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
             hmap_shape = (16, 16)  # x dim, y dim
 
-        class depth_1:
-            link_attached_to = 'Trunk'
-            position = [-0.06, 0, 0.17]  # front camera
-            pitch = 60  # positive is looking down
-            yaw = 180
-
-            position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
-            pitch_range = [-3, 3]
-
-            data_format = 'depth'  # depth, cloud, hmap
-            update_interval = 5
-            delay_prop = (5, 1)  # Gaussian (mean, std), or None
-            history_length = 2
-
-            resolution = (114, 64)  # width, height
-            crop = (0, 2, 4, 4)  # top, bottom, left, right
-
-            edge_process = True
-            edge_noise = dict(blank_ratio=0.2, repeat_ratio=0.2)
-            blank_ratio = 0.002
-
-            near_clip = 0
-            far_clip = 2
-            dis_noise_global = 0.01  # in meters
-            dis_noise_gaussian = 0.01  # in meters
-            noise_scale_perlin = 1  # 0-1
-
-            resized = (64, 64)
-            horizontal_fov = 87
-
-            bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
-            hmap_shape = (16, 16)  # x dim, y dim
+        # class depth_1:
+        #     link_attached_to = 'Trunk'
+        #     position = [-0.06, 0, 0.17]  # front camera
+        #     pitch = 60  # positive is looking down
+        #     yaw = 180
+        #
+        #     position_range = [(-0.01, 0.01), (-0.01, 0.01), (-0.01, 0.01)]  # front camera
+        #     pitch_range = [-3, 3]
+        #
+        #     data_format = 'depth'  # depth, cloud, hmap
+        #     update_interval = 5
+        #     delay_prop = (5, 1)  # Gaussian (mean, std), or None
+        #     history_length = 2
+        #
+        #     resolution = (114, 64)  # width, height
+        #     crop = (0, 2, 4, 4)  # top, bottom, left, right
+        #
+        #     edge_process = True
+        #     edge_noise = dict(blank_ratio=0.2, repeat_ratio=0.2)
+        #     blank_ratio = 0.002
+        #
+        #     near_clip = 0
+        #     far_clip = 2
+        #     dis_noise_global = 0.01  # in meters
+        #     dis_noise_gaussian = 0.01  # in meters
+        #     noise_scale_perlin = 1  # 0-1
+        #
+        #     resized = (64, 64)
+        #     horizontal_fov = 87
+        #
+        #     bounding_box = (0.3, 1.1, -0.4, 0.4)  # x1, x2, y1, y2
+        #     hmap_shape = (16, 16)  # x dim, y dim
 
     class commands:
         num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
@@ -249,7 +249,7 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 8
+        num_learning_epochs = 4
         num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 1.e-4  # 5.e-4
         amp_lr = 5e-5

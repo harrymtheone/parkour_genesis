@@ -1,54 +1,34 @@
-import isaacgym, torch
+try:
+    import isaacgym, torch
+except ImportError:
+    pass
+
 import os
 
 from torch import nn
 
 from legged_gym.utils.task_registry import TaskRegistry
-from rsl_rl.modules.model_dreamwaq import VAE
-from rsl_rl.modules.utils import make_linear_layers
-
-encoder_output_size = 3 + 64  # v_t, z_t
+from rsl_rl.algorithms.dreamwaq.networks import VAE, Actor
 
 
-class Actor(nn.Module):
-    is_recurrent = False
-
-    def __init__(self, env_cfg, policy_cfg):
+class Policy(nn.Module):
+    def __init__(self, vae, actor):
         super().__init__()
-        self.activation = nn.ELU()
+        self.vae = vae
+        self.actor = actor
 
-        # construct actor network
-        channel_size = 16
+    def forward(self, proprio, vae_hidden_states):
+        proprio = proprio.unsqueeze(0)
 
-        self.obs_enc = nn.Sequential(
-            nn.Conv1d(in_channels=env_cfg.n_proprio, out_channels=2 * channel_size, kernel_size=8, stride=4),
-            self.activation,
-            nn.Conv1d(in_channels=2 * channel_size, out_channels=4 * channel_size, kernel_size=6, stride=1),
-            self.activation,
-            nn.Conv1d(in_channels=4 * channel_size, out_channels=8 * channel_size, kernel_size=6, stride=1),  # (8 * channel_size, 1)
-            self.activation,
-            nn.Flatten()
-        )
-        self.vae = VAE(env_cfg, policy_cfg)
+        vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1 = self.vae(proprio, vae_hidden_states, sample=False)
 
-        # Action noise
-        self.actor_backbone = make_linear_layers(env_cfg.n_proprio + encoder_output_size,
-                                                 *policy_cfg.actor_hidden_dims,
-                                                 env_cfg.num_actions,
-                                                 activation_func=self.activation,
-                                                 output_activation=False)
-        self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
+        actions = self.actor(proprio, vel, z)
 
-    def forward(self, proprio, prop_his):
-        obs_enc = self.obs_enc(prop_his.transpose(1, 2))
-        est_mu = self.vae(obs_enc, mu_only=True)
-        actor_input = torch.cat((proprio, self.activation(est_mu)), dim=1)
-        return self.actor_backbone(actor_input), est_mu[..., :3]
+        return actions.squeeze(0), vae_hidden_states
 
 
 def trace():
-    # proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_005', 22000
-    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_006', 18700
+    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_006', 0
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):
@@ -62,11 +42,15 @@ def trace():
     print(f"Loading model from: {load_path}")
     state_dict = torch.load(load_path, map_location=device, weights_only=True)
 
-    model = Actor(task_cfg.env, task_cfg.policy)
-    model.load_state_dict(state_dict['actor_state_dict'])
-    model.eval()
+    vae = VAE(task_cfg.env, task_cfg.policy)
+    actor = Actor(task_cfg.env, task_cfg.policy)
 
-    # define the trace function
+    vae.load_state_dict(state_dict['vae'])
+    actor.load_state_dict(state_dict['actor'])
+
+    policy = Policy(vae, actor)
+    policy.eval()
+
     def trace_and_save(model, args):
         model(*args)
         model_jit = torch.jit.trace(model, args)
@@ -82,9 +66,9 @@ def trace():
     with torch.no_grad():
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
-        prop_his = torch.zeros(1, task_cfg.env.len_prop_his, task_cfg.env.n_proprio, device=device)
+        vae_hidden_states = torch.zeros(1, 1, 128, device=device)
 
-        trace_and_save(model, (proprio, prop_his))
+        trace_and_save(policy, (proprio, vae_hidden_states))
 
 
 if __name__ == '__main__':

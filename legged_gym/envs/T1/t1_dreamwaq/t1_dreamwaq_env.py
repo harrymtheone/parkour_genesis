@@ -1,71 +1,50 @@
 import torch
 
-from legged_gym.envs.T1.t1_base_env import T1BaseEnv, mirror_proprio_by_x, mirror_dof_prop_by_x
+from legged_gym.envs.T1.t1_base_env import T1BaseEnv
 from legged_gym.envs.base.utils import ObsBase
-from legged_gym.utils.math import torch_rand_float
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, priv_actor):
+    def __init__(self, proprio):
         super().__init__()
         self.proprio = proprio.clone()
-        self.prop_his = prop_his.clone()
-        self.priv_actor = priv_actor.clone()
 
     def as_obs_next(self):
         # remove unwanted attribute to save CUDA memory
-        return ObsNext(self.proprio)
+        return ActorObs(self.proprio)
 
-    @torch.compiler.disable
-    def mirror(self):
-        priv_actor = self.priv_actor.clone()
-        priv_actor[:, 1] *= -1.
-
-        return ActorObs(
-            mirror_proprio_by_x(self.proprio),
-            mirror_proprio_by_x(self.prop_his.flatten(0, 1)).unflatten(0, self.prop_his.shape[:2]),
-            priv_actor,
-        )
-
-    @staticmethod
-    def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
-        dof_prop_mirrored = dof_prop.clone()
-        mirror_dof_prop_by_x(dof_prop_mirrored, 0)
-        return dof_prop_mirrored
-
-
-class ObsNext(ObsBase):
-    def __init__(self, proprio):
-        self.proprio = proprio.clone()
+    # @torch.compiler.disable
+    # def mirror(self):
+    #     priv_actor = self.priv_actor.clone()
+    #     priv_actor[:, 1] *= -1.
+    #
+    #     return ActorObs(
+    #         mirror_proprio_by_x(self.proprio),
+    #         mirror_proprio_by_x(self.prop_his.flatten(0, 1)).unflatten(0, self.prop_his.shape[:2]),
+    #         priv_actor,
+    #     )
+    #
+    # @staticmethod
+    # def mirror_dof_prop_by_x(dof_prop: torch.Tensor):
+    #     dof_prop_mirrored = dof_prop.clone()
+    #     mirror_dof_prop_by_x(dof_prop_mirrored, 0)
+    #     return dof_prop_mirrored
 
 
 class CriticObs(ObsBase):
-    def __init__(self, priv, priv_his, scan):
+    def __init__(self, priv_his, scan, edge_mask, est_gt):
         super().__init__()
-        self.priv = priv.clone()
         self.priv_his = priv_his.clone()
         self.scan = scan.clone()
-
-    def to_tensor(self):
-        return torch.cat((self.priv_his.flatten(1), self.scan.flatten(1)), dim=1)
+        self.edge_mask = edge_mask.clone()
+        self.est_gt = est_gt.clone()
 
 
 class T1DreamWaqEnv(T1BaseEnv):
-    def _init_buffers(self):
-        super()._init_buffers()
-
-        self.phase_increment_ratio = torch_rand_float(0.8, 1.2, (self.num_envs, 1), self.device).squeeze(1)
-
     def _init_robot_props(self):
         super()._init_robot_props()
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
-
-    def _post_physics_pre_step(self):
-        super()._post_physics_pre_step()
-
-        self.phase_length_buf[:] += self.dt * (self.phase_increment_ratio - 1)
-        self._update_phase()
 
     def _compute_observations(self):
         """
@@ -124,19 +103,19 @@ class T1DreamWaqEnv(T1BaseEnv):
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
         ), dim=-1)
 
-        priv_actor_obs = self.base_lin_vel * self.obs_scales.lin_vel
+        # compose actor observation
+        reset_flag = self.episode_length_buf <= 1
+        self.actor_obs = ActorObs(proprio)
+        self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # compute height map
         scan = torch.clip(self.sim.root_pos[:, 2].unsqueeze(1) - self.scan_hmap - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan = scan.view((self.num_envs, *self.cfg.env.scan_shape))
+        edge_mask = -0.5 + self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
 
-        # compose actor observation
-        reset_flag = self.episode_length_buf <= 1
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), priv_actor_obs)
-        self.prop_his_buf.append(proprio, reset_flag)
-        self.actor_obs.clip(self.cfg.normalization.clip_observations)
+        est_gt = self.base_lin_vel * self.obs_scales.lin_vel
 
         # compose critic observation
-        self.critic_obs = CriticObs(priv_obs, self.critic_his_buf.get(), scan)
+        self.critic_obs = CriticObs(self.critic_his_buf.get(), scan, edge_mask, est_gt)
         self.critic_his_buf.append(priv_obs, reset_flag)
         self.critic_obs.clip(self.cfg.normalization.clip_observations)

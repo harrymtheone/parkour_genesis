@@ -223,7 +223,7 @@ class T1OdomAmpEnv(T1BaseEnv):
         scan_noisy = torch.clip(self.sim.root_pos[:, 2:3] - self.get_scan(noisy=True) - self.cfg.normalization.scan_norm_bias, -1, 1.)
         scan_noisy = scan_noisy.view(self.num_envs, *self.cfg.env.scan_shape)
 
-        base_edge_mask = self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
+        base_edge_mask = -0.5 + self.get_edge_mask().float().view(self.num_envs, *self.cfg.env.scan_shape)
         scan_edge = torch.stack([scan_noisy, base_edge_mask], dim=1)
 
         if self.cfg.sensors.activated:

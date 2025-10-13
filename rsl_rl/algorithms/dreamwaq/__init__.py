@@ -1,1 +1,1 @@
-from .ppo_dream_waq import PPODreamWaQ
+from .ppo_dreamwaq import PPODreamWaQ

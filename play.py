@@ -27,7 +27,7 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = True
+    task_cfg.play.control = False
     task_cfg.env.num_envs = 8
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
     task_cfg.terrain.num_rows = 5
@@ -136,11 +136,11 @@ def play(args):
                 recon[1] += 0.5
                 env.draw_recon(recon)
 
-            elif hasattr(obs_critic, 'scan'):
-                noisy_scan = torch.stack([obs_critic.scan[env.lookat_id], obs_critic.edge_mask[env.lookat_id]], dim=0)
-                # noisy_scan[0] = - noisy_scan[0] - 0.7
-                noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
-                env.draw_recon(noisy_scan)
+            # elif hasattr(obs_critic, 'scan'):
+            #     noisy_scan = torch.stack([obs_critic.scan[env.lookat_id], obs_critic.edge_mask[env.lookat_id]], dim=0)
+            #     # noisy_scan[0] = - noisy_scan[0] - 0.7
+            #     noisy_scan[0] = noisy_scan[0] - task_cfg.normalization.scan_norm_bias + env.base_height[env.lookat_id]
+            #     env.draw_recon(noisy_scan)
 
             # # for calibration of mirroring of dof
             # actions[:] = 0.

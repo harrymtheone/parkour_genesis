@@ -58,42 +58,44 @@ class T1DreamWaqCfg(T1BaseCfg):
         add_noise = True
 
     class domain_rand(T1BaseCfg.domain_rand):
-        switch = True
-
-        randomize_start_pos = switch
+        randomize_start_pos = True
         randomize_start_z = False
-        randomize_start_yaw = switch
-        randomize_start_vel = switch
-        randomize_start_pitch = switch
+        randomize_start_yaw = True
+        randomize_start_vel = True
+        randomize_start_pitch = True
 
         randomize_start_dof_pos = False
         randomize_start_dof_vel = False
 
-        randomize_friction = switch
-        randomize_base_mass = switch
-        randomize_link_mass = switch
-        randomize_com = switch
+        randomize_friction = True
+        randomize_base_mass = True
+        randomize_link_mass = True
+        randomize_com = True
 
-        push_robots = switch
-        action_delay = switch
-        add_dof_lag = switch
+        push_robots = True
+        push_duration = [0.1]
+        action_delay = True
+        action_delay_range = [(0, 5), (0, 10), (0, 15)]
+        add_dof_lag = True
+        dof_lag_range = (0, 10)
         add_imu_lag = False
 
-        randomize_torque = switch
-        randomize_gains = switch
-        randomize_motor_offset = switch
-        randomize_joint_stiffness = False  # for joints with spring behavior, not usually used
+        randomize_torque = True
+        randomize_gains = True
+        randomize_motor_offset = True
+        randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
         randomize_joint_friction = False
-        randomize_joint_armature = switch
-        randomize_coulomb_friction = switch
+
+        randomize_joint_armature = True
+        randomize_coulomb_friction = True
 
     class rewards:
         base_height_target = 0.64
         feet_height_target = 0.04
         feet_height_target_max = 0.06
         use_guidance_terrain = True
-        only_positive_rewards = True  # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
         only_positive_rewards_until_epoch = 100  # after the epoch, turn off only_positive_reward
         tracking_sigma = 5
         EMA_update_alpha = 0.99
@@ -114,7 +116,7 @@ class T1DreamWaqCfg(T1BaseCfg):
             feet_rotation = 0.5
 
             # contact
-            feet_slip = -1.
+            feet_slip = -0.3
             feet_contact_forces = -0.001
 
             # vel tracking
@@ -129,8 +131,8 @@ class T1DreamWaqCfg(T1BaseCfg):
             base_acc = 0.2
 
             # energy
-            action_smoothness = -3e-3
-            dof_vel_smoothness = -1e-3
+            action_smoothness = -3e-4
+            # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
@@ -161,12 +163,31 @@ class T1DreamWaqCfg(T1BaseCfg):
         use_amp = True
         continue_from_last_std = True
         init_noise_std = 1.0
+        noise_range = (0.3, 1.0)
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_dream'
         algorithm_name = 'ppo_dreamwaq'
 
+        lock_smpl_until = 10000000
+
         max_iterations = 2000  # number of policy updates
+
+    class control(T1BaseCfg.control):
+        # PD Drive parameters:
+        stiffness = {
+            'Head': 30,
+            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
+            'Waist': 100,
+            'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
+        }
+
+        damping = {
+            'Head': 1,
+            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
+            'Waist': 3,
+            'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
+        }
 
 
 class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):

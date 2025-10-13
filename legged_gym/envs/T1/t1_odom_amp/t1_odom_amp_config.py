@@ -200,6 +200,8 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
             dof_torque_limits = -0.01
             dof_pos_limits = -10.
 
+            termination = -200.
+
     class policy:
         # actor parameters
         actor_gru_hidden_size = 128

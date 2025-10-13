@@ -73,8 +73,6 @@ class PPO_PIE_AMP(BaseAlgorithm):
 
         self.amp_obs = torch.zeros(self.task_cfg.env.num_envs, 26, 3, device=self.device)
 
-        self.cur_it = 0
-
         # PPO components
         self.actor = Policy(task_cfg.env, task_cfg.policy).to(self.device)
         self.actor.reset_std(self.cfg.init_noise_std, self.device)
@@ -227,7 +225,6 @@ class PPO_PIE_AMP(BaseAlgorithm):
         update_sym = False
         update_est = cur_it % 3 == 0
 
-        self.cur_it = cur_it
         mean_value_loss_default = 0
         mean_value_loss_contact = 0
         mean_surrogate_loss = 0
@@ -242,10 +239,10 @@ class PPO_PIE_AMP(BaseAlgorithm):
         mean_symmetry_loss = 0
 
         mean_vel_est_loss = 0
-        mean_ot1_loss = 0
+        mean_ot1_est_loss = 0
         mean_recon_loss = 0
-        mean_vel_kl_loss = 0
 
+        mean_vel_kl_loss = 0
         mean_z_kl_loss = 0
         mean_abs_vel = 0
         mean_abs_z = 0
@@ -297,7 +294,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
             if update_est:
                 est_metrics = self.update_estimation(batch)
                 mean_vel_est_loss += est_metrics['vel_est_loss']
-                mean_ot1_loss += est_metrics['ot1_loss']
+                mean_ot1_est_loss += est_metrics['ot1_loss']
                 mean_recon_loss += est_metrics['recon_loss']
                 mean_vel_kl_loss += est_metrics['vel_kl_loss']
                 mean_z_kl_loss += est_metrics['z_kl_loss']
@@ -325,7 +322,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
         mean_symmetry_loss /= num_updates
         # ---- VAE ----
         mean_vel_est_loss /= num_updates
-        mean_ot1_loss /= num_updates
+        mean_ot1_est_loss /= num_updates
         mean_recon_loss /= num_updates
         mean_vel_kl_loss /= num_updates
         mean_z_kl_loss /= num_updates
@@ -374,7 +371,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
         if update_est:
             metrics.update({
                 'VAE/vel_est_loss': mean_vel_est_loss,
-                'VAE/Ot+1_loss': mean_ot1_loss,
+                'VAE/Ot+1_loss': mean_ot1_est_loss,
                 'VAE/recon_loss': mean_recon_loss,
                 'VAE/vel_kl_loss': mean_vel_kl_loss,
                 'VAE/z_kl_loss': mean_z_kl_loss,
