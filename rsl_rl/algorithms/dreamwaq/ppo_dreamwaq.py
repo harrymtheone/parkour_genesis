@@ -313,7 +313,7 @@ class PPODreamWaQ(BaseAlgorithm):
             masks = batch['masks']
             obs_next = batch['observations_next']
 
-            vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1 = self.vae(obs.proprio, vae_hidden_states)
+            vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, _ = self.vae(obs.proprio, vae_hidden_states)
 
             # Estimation loss
             vel_est_loss = masked_MSE(vel, critic_obs.est_gt, masks)

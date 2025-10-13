@@ -43,7 +43,7 @@ class VAE(nn.Module):
         if hidden_states is None:
             obs_enc, self.hidden_states = self.gru(proprio, self.hidden_states)
         else:
-            obs_enc, _ = self.gru(proprio, hidden_states)
+            obs_enc, hidden_states = self.gru(proprio, hidden_states)
 
         mu_vel = self.mlp_vel_mu(obs_enc)
         logvar_vel = self.mlp_vel_logvar(obs_enc)
@@ -55,7 +55,10 @@ class VAE(nn.Module):
 
         ot1 = self.decoder(torch.cat([vel, z], dim=-1))
 
-        return vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1
+        if hidden_states is None:
+            return vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1
+        else:
+            return vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hidden_states
 
     @staticmethod
     def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:

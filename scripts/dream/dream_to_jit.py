@@ -20,7 +20,7 @@ class Policy(nn.Module):
     def forward(self, proprio, vae_hidden_states):
         proprio = proprio.unsqueeze(0)
 
-        vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1 = self.vae(proprio, vae_hidden_states, sample=False)
+        vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, vae_hidden_states = self.vae(proprio, vae_hidden_states, sample=False)
 
         actions = self.actor(proprio, vel, z)
 
@@ -28,7 +28,7 @@ class Policy(nn.Module):
 
 
 def trace():
-    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_006', 0
+    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_007', 700
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):

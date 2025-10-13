@@ -21,7 +21,7 @@ slowmo = 1
 def play():
     args = Namespace()
 
-    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_005', 22000
+    proj, cfg, exptid, checkpoint = 't1', 't1_dreamwaq', 't1_dream_006', 1800
 
     args.proj_name = proj
     args.device = 'cpu'
@@ -72,7 +72,7 @@ def play():
 
     # prepare environment
     args.n_rendered_envs = task_cfg.env.num_envs
-    env, _ = task_registry.make_env(args=args, task_cfg=task_cfg)
+    env = task_registry.make_env(args=args, task_cfg=task_cfg)
     obs = env.get_observations()
 
     model = torch.jit.load(os.path.join("traced", f'{exptid}_{checkpoint}_jit.pt'))

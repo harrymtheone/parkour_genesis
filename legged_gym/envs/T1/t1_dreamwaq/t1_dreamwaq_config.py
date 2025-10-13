@@ -52,7 +52,17 @@ class T1DreamWaqCfg(T1BaseCfg):
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
 
     class terrain(T1BaseCfg.terrain):
-        description_type = 'plane'
+        body_pts_x = np.linspace(-0.6, 1.2, 32)
+        body_pts_y = np.linspace(-0.6, 0.6, 16)
+
+        num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
+        num_cols = 20  # number of terrain cols (types)
+
+
+        terrain_dict = {
+            'smooth_slope': 3,
+            'rough_slope': 1,
+        }
 
     class noise(T1BaseCfg.noise):
         add_noise = True
@@ -171,7 +181,7 @@ class T1DreamWaqCfg(T1BaseCfg):
 
         lock_smpl_until = 10000000
 
-        max_iterations = 2000  # number of policy updates
+        max_iterations = 20000  # number of policy updates
 
     class control(T1BaseCfg.control):
         # PD Drive parameters:
@@ -188,73 +198,3 @@ class T1DreamWaqCfg(T1BaseCfg):
             'Waist': 3,
             'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
         }
-
-
-class T1DreamWaqPhase2Cfg(T1DreamWaqCfg):
-    class terrain(T1DreamWaqCfg.terrain):
-        description_type = 'trimesh'
-        num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
-        num_cols = 20  # number of terrain cols (types)
-
-        scan_pts_x = np.linspace(-0.5, 1.1, 32)
-        scan_pts_y = np.linspace(-0.4, 0.4, 16)
-
-        curriculum = True
-
-        terrain_dict = {
-            'smooth_slope': 3,
-            'rough_slope': 1,
-            'stairs_up': 0,
-            'stairs_down': 0,
-            'discrete': 0,
-            'stepping_stone': 0,
-            'gap': 0,
-            'pit': 0,
-            'parkour': 0,
-            'parkour_gap': 0,
-            'parkour_box': 0,
-            'parkour_step': 0,
-            'parkour_stair': 0,
-            'parkour_mini_stair': 0,
-            'parkour_flat': 0,
-        }
-
-    class domain_rand(T1DreamWaqCfg.domain_rand):
-        push_robots = True
-        push_duration = [0.1, 0.2, 0.3]
-
-        action_delay = True
-        action_delay_range = [(0, 4), (0, 6)]
-        action_delay_update_steps = 2000 * 24
-
-    class rewards(T1DreamWaqCfg.rewards):
-        only_positive_rewards = True
-        only_positive_rewards_until_epoch = 3000 + 100
-
-        class scales(T1DreamWaqCfg.rewards.scales):
-            dof_pos_limits = -10.
-            dof_vel_limits = -1.
-            dof_torque_limits = -0.1
-
-    class control(T1DreamWaqCfg.control):
-        # PD Drive parameters:
-        stiffness = {
-            'Head': 30,
-            'Shoulder_Pitch': 300, 'Shoulder_Roll': 200, 'Elbow_Pitch': 200, 'Elbow_Yaw': 100,  # not used yet, set randomly
-            'Waist': 100,
-            'Hip_Pitch': 55, 'Hip_Roll': 55, 'Hip_Yaw': 30, 'Knee_Pitch': 100, 'Ankle_Pitch': 30, 'Ankle_Roll': 30,
-        }
-
-        damping = {
-            'Head': 1,
-            'Shoulder_Pitch': 3, 'Shoulder_Roll': 3, 'Elbow_Pitch': 3, 'Elbow_Yaw': 3,  # not used yet, set randomly
-            'Waist': 3,
-            'Hip_Pitch': 3, 'Hip_Roll': 3, 'Hip_Yaw': 4, 'Knee_Pitch': 5, 'Ankle_Pitch': 0.3, 'Ankle_Roll': 0.3,
-        }
-
-    class algorithm(T1DreamWaqCfg.algorithm):
-        continue_from_last_std = False
-        # init_noise_std = 0.8
-
-    class runner(T1DreamWaqCfg.runner):
-        max_iterations = 20000  # number of policy updates
