@@ -22,7 +22,7 @@ class Mixer(nn.Module):
         )
 
         self.depth_enc = nn.Sequential(
-            nn.Conv2d(in_channels=2 * 2, out_channels=32, kernel_size=5, stride=4, padding=2),
+            nn.Conv2d(in_channels=1 * 2, out_channels=32, kernel_size=5, stride=4, padding=2),
             nn.ReLU(inplace=True),
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, stride=4, padding=2),
             nn.ReLU(inplace=True),
@@ -58,22 +58,41 @@ class EstimatorVAE(nn.Module):
         self.encoder = make_linear_layers(hidden_size, hidden_size, activation_func=activation)
 
         self.mlp_vel = nn.Linear(hidden_size, 3)
+        self.mlp_vel_logvar = nn.Linear(hidden_size, 3)
         self.mlp_z = nn.Linear(hidden_size, self.len_latent_z + self.len_latent_hmap)
+        self.mlp_z_logvar = nn.Linear(hidden_size, self.len_latent_z + self.len_latent_hmap)
 
         self.ot1_predictor = make_linear_layers(3 + self.len_latent_z + self.len_latent_hmap, 128, env_cfg.n_proprio,
                                                 activation_func=activation, output_activation=False)
 
         self.hmap_recon = make_linear_layers(self.len_latent_hmap, 256, env_cfg.n_scan,
                                              activation_func=activation, output_activation=False)
+        self.edge_recon = make_linear_layers(self.len_latent_hmap, 256, env_cfg.n_scan,
+                                             activation_func=activation, output_activation=False)
 
-    def forward(self, mixer_out):
-        vel = self.mlp_vel(mixer_out)
-        z = self.mlp_z(mixer_out)
+        self.mlp_vel_logvar.bias.data.fill_(-4.0)
+        self.mlp_z_logvar.bias.data.fill_(-4.0)
+
+    def forward(self, mixer_out, sample=True):
+        mu_vel = self.mlp_vel(mixer_out)
+        logvar_vel = self.mlp_vel_logvar(mixer_out)
+        mu_z = self.mlp_z(mixer_out)
+        logvar_z = self.mlp_z_logvar(mixer_out)
+
+        vel = self.reparameterize(mu_vel, logvar_vel) if sample else mu_vel
+        z = self.reparameterize(mu_z, logvar_z) if sample else mu_z
 
         ot1 = self.ot1_predictor(torch.cat([vel, z], dim=-1))
         hmap = self.hmap_recon(z[:, :, -self.len_latent_hmap:])
+        edge = self.edge_recon(z[:, :, -self.len_latent_hmap:])
 
-        return vel, z, ot1, hmap
+        return vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap, edge
+
+    @staticmethod
+    def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return eps * std + mu
 
 
 class Actor(nn.Module):
@@ -104,12 +123,12 @@ class Policy(nn.Module):
         # encode history proprio
         with torch.no_grad():
             mixer_out, mixer_hidden_states = self.mixer(prop_his, depth, mixer_hidden_states)
-            vel, z = self.vae(mixer_out)[:2]
+            vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap, edge = self.vae(mixer_out, sample=not eval_)
 
         mean = self.actor(proprio, vel, z)
 
         if eval_:
-            return mean, vel, mixer_hidden_states
+            return mean, vel, mixer_hidden_states, hmap, edge
 
         # sample action from distribution
         self.distribution = torch.distributions.Normal(mean, self.log_std.exp())

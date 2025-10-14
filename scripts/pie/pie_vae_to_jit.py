@@ -55,7 +55,7 @@ class PolicyJIT(nn.Module):
 
 
 def trace():
-    proj, cfg, exptid, checkpoint = 't1', 't1_pie_amp', 't1_pie_amp_020', 12500
+    proj, cfg, exptid, checkpoint = 't1', 't1_pie_amp', 't1_pie_amp_021', 16200
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):

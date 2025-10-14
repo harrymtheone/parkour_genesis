@@ -61,30 +61,10 @@ class T1OdomAmpEnv(T1BaseEnv):
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
-        self.head_link_indices = self.sim.create_indices(
-            self.sim.get_full_names(['H2'], True), True)
-
-        self.waist_dof_indices = self.sim.create_indices(
-            self.sim.get_full_names(['Waist'], False), False)
-
-        self.ankle_roll_idx = [16, 22]
-        self.ankle_pitch_idx = [15, 21]
-        self.hip_pitch_idx = [11, 17]
-        self.hip_roll_idx = [12, 18]
-        self.hip_yaw_idx = [13, 19]
-        self.knee_idx = [14, 20]
-        self.waist_idx = [10]
-
-        # 这里需要修改
-        self.left_leg_indices = [11, 12, 13, 14, 15, 16]
-        self.right_leg_indices = [17, 18, 19, 20, 21, 22]
         self.motion_ref_dof_pos = self._zero_tensor(self.num_envs, 23)
 
     def _init_buffers(self):
         super()._init_buffers()
-        self.goal_distance = self._zero_tensor(self.num_envs)
-        self.last_goal_distance = self._zero_tensor(self.num_envs)
-
         self.scan_dev_xy = self._zero_tensor(self.num_envs, 1, 2)
         self.scan_dev_z = self._zero_tensor(self.num_envs, 1)
 
@@ -101,14 +81,6 @@ class T1OdomAmpEnv(T1BaseEnv):
 
         self.scan_dev_xy[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 2), device=self.device).unsqueeze(1)
         self.scan_dev_z[:] = torch_rand_float(-0.03, 0.03, (self.num_envs, 1), device=self.device)
-
-    def _post_physics_pre_step(self):
-        super()._post_physics_pre_step()
-        self.goal_distance[:] = torch.norm(self.cur_goals[:, :2] - self.sim.root_pos[:, :2], dim=1)
-
-    def _post_physics_post_step(self):
-        super()._post_physics_post_step()
-        self.last_goal_distance[:] = self.goal_distance
 
     def get_scan(self, noisy=False):
         # convert height points coordinate to world frame
@@ -156,6 +128,7 @@ class T1OdomAmpEnv(T1BaseEnv):
             self._compute_observations(reset_ids)
         else:
             self._compute_observations()
+
         self._post_physics_post_step()
 
         if not self.sim.headless:
@@ -211,9 +184,9 @@ class T1OdomAmpEnv(T1BaseEnv):
             self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.ext_force[:, :2],  # 2
             self.ext_torque,  # 3
+            self.sim.friction_coeffs,  # 1
             self.sim.payload_masses / 10.,  # 1
             self.sim.contact_forces[:, self.feet_indices, 2] > 5.,  # 2
-            self.goal_distance.unsqueeze(1) / 10.,  # 1
         ), dim=-1)
 
         # compute height map
@@ -254,6 +227,7 @@ class T1OdomAmpEnv(T1BaseEnv):
     def _compute_amp_obs(self, env_ids=[]):
         # update gen_amp_obs_buf after apply action
         gen_amp_obs_buf = self._get_gen_amp_obs()
+
         if len(env_ids) == 0:
             self.gen_amp_history.append(gen_amp_obs_buf)
             self.reset_idx = None

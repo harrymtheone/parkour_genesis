@@ -5,6 +5,7 @@ from torch.distributions import Normal, kl_divergence
 from legged_gym.utils.helpers import class_to_dict
 from rsl_rl.algorithms.alg_base import BaseAlgorithm
 from rsl_rl.algorithms.template_models import UniversalCritic, AMPDiscriminator
+from rsl_rl.algorithms.utils import masked_mean, masked_MSE, masked_L1
 from rsl_rl.datasets.amp_motion_loader import AMPMotionLoader
 from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
 from rsl_rl.storage.amp_replay_buffer import AMPReplayBuffer
@@ -15,18 +16,6 @@ try:
     from torch.amp import GradScaler
 except ImportError:
     from torch.cuda.amp import GradScaler
-
-
-def masked_MSE(input_, target, mask):
-    return ((input_ - target) * mask).square().sum() / (input_.numel() / mask.numel() * mask.sum())
-
-
-def masked_L1(input_, target, mask):
-    return ((input_ - target) * mask).abs().sum() / (input_.numel() / mask.numel() * mask.sum())
-
-
-def masked_mean(input_, mask):
-    return (input_ * mask).sum() / (input_.numel() / mask.numel() * mask.sum())
 
 
 class Transition:

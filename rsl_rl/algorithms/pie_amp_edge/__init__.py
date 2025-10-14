@@ -1,3 +1,3 @@
 from .normalizer import EmpiricalNormalization
 
-from .pie_amp_plain import PPO_PIE_AMP_Plain
+from .pie_amp_edge import PPO_PIE_AMP_Edge

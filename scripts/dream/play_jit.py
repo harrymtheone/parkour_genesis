@@ -52,6 +52,11 @@ def play():
     task_cfg.domain_rand.push_interval_s = 6
     task_cfg.domain_rand.push_duration = [0.05, 0.1, 0.15]
 
+    task_cfg.domain_rand.randomize_joint_armature = True
+    task_cfg.domain_rand.joint_armature_range = {
+        'default': dict(range=(0.1, 0.1), log_space=False),
+    }
+
     task_cfg.terrain.terrain_dict = {
         'smooth_slope': 1,
         'rough_slope': 0,
@@ -85,6 +90,9 @@ def play():
         for _ in range(10 * int(env.max_episode_length)):
             time_start = time.time()
 
+            obs.proprio[:, 8:11] = 0.
+            obs.proprio[:, 8] = 0.3
+            print(env.commands[env.lookat_id].cpu().numpy())
             actions, hidden_states = model(obs.proprio, hidden_states)
 
             obs, _, rewards, dones, _ = env.step(actions)

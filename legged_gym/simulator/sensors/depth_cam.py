@@ -229,7 +229,7 @@ class DepthCam(SensorBase):
             # normalize the depth image to range (-0.5, 0.5)
             depth_image[:] = (depth_image - self.near_clip) / (self.far_clip - self.near_clip) - 0.5
 
-            simulate_feet_mask(depth_image)
+            # simulate_feet_mask(depth_image)
 
             self.depth_processed[:] = depth_image
             self.buf.append(depth_image)
