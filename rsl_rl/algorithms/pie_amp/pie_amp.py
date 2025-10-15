@@ -147,7 +147,6 @@ class PPO_PIE_AMP(BaseAlgorithm):
 
             actions, self.transition.est_vel, self.transition.est_z, self.mixer_hidden_states = self.actor.act(
                 proprio=obs.proprio.unsqueeze(0),
-                prop_his=obs.prop_his.unsqueeze(0),
                 depth=obs.depth.unsqueeze(0),
                 mixer_hidden_states=self.mixer_hidden_states,
             )
@@ -537,7 +536,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
 
             # Forward pass
             vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap = self.actor.estimate(
-                obs.prop_his, obs.depth, mixer_hidden_states=mixer_hidden_states)
+                obs.proprio, obs.depth, mixer_hidden_states=mixer_hidden_states)
 
             # Estimation loss
             vel_est_loss = masked_MSE(vel, critic_obs.est_gt, mask)

@@ -11,18 +11,13 @@ class Mixer(nn.Module):
         super().__init__()
         activation = nn.ELU()
 
-        self.prop_his_enc = nn.Sequential(
-            nn.Conv1d(in_channels=env_cfg.n_proprio, out_channels=32, kernel_size=4),
-            activation,
-            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=4),
-            activation,
-            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=4),
-            activation,
-            nn.Flatten()
+        self.prop_his_enc = make_linear_layers(
+            env_cfg.n_proprio, 64, 128,
+            activation_func=activation
         )
 
         self.depth_enc = nn.Sequential(
-            nn.Conv2d(in_channels=1 * 2, out_channels=32, kernel_size=5, stride=4, padding=2),
+            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=5, stride=4, padding=2),
             nn.ReLU(inplace=True),
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, stride=4, padding=2),
             nn.ReLU(inplace=True),
@@ -34,9 +29,9 @@ class Mixer(nn.Module):
 
         self.gru = nn.GRU(input_size=256, hidden_size=policy_cfg.estimator_gru_hidden_size, num_layers=1)
 
-    def forward(self, prop_his, depth_his, hidden_states, **kwargs):
+    def forward(self, proprio, depth_his, hidden_states, **kwargs):
         # update forward
-        prop_latent = recurrent_wrapper(self.prop_his_enc, prop_his.transpose(2, 3))
+        prop_latent = self.prop_his_enc(proprio)
 
         depth_latent = recurrent_wrapper(self.depth_enc, depth_his)
 
@@ -116,10 +111,10 @@ class Policy(nn.Module):
         self.log_std = nn.Parameter(torch.zeros(env_cfg.num_actions))
         self.distribution = None
 
-    def act(self, proprio, prop_his, depth, mixer_hidden_states, eval_=False, **kwargs):  # <-- my mood be like
+    def act(self, proprio, depth, mixer_hidden_states, eval_=False, **kwargs):  # <-- my mood be like
         # encode history proprio
         with torch.no_grad():
-            mixer_out, mixer_hidden_states = self.mixer(prop_his, depth, mixer_hidden_states)
+            mixer_out, mixer_hidden_states = self.mixer(proprio, depth, mixer_hidden_states)
             vel, z, mu_vel, logvar_vel, mu_z, logvar_z, ot1, hmap = self.vae(mixer_out, sample=not eval_)
 
         mean = self.actor(proprio, vel, z)

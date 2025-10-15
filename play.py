@@ -18,8 +18,8 @@ slowmo = 1
 
 def play(args):
     log_root = 'logs'
-    args.simulator = SimulatorType.Genesis
-    # args.simulator = SimulatorType.IsaacGym
+    # args.simulator = SimulatorType.Genesis
+    args.simulator = SimulatorType.IsaacGym
     args.headless = False
     args.resume = True
 
@@ -27,10 +27,10 @@ def play(args):
     task_cfg = task_registry.get_cfg(name=args.task)
 
     # override some parameters for testing
-    task_cfg.play.control = False
+    task_cfg.play.control = True
     task_cfg.env.num_envs = 8
     task_cfg.env.episode_length_s *= 10 if task_cfg.play.control else 1
-    task_cfg.terrain.num_rows = 1
+    task_cfg.terrain.num_rows = 5
     task_cfg.terrain.max_init_terrain_level = task_cfg.terrain.num_rows - 1
     task_cfg.terrain.curriculum = True
     # task_cfg.terrain.max_difficulty = True
@@ -62,8 +62,8 @@ def play(args):
     task_cfg.terrain.terrain_dict = {
         # 'smooth_slope': 1,
         # 'rough_slope': 1,
-        # 'stairs_up': 1,
-        # 'stairs_down': 1,
+        'stairs_up': 1,
+        'stairs_down': 1,
         # 'huge_stair': 0,
         # 'discrete': 0,
         # 'stepping_stone': 0,
@@ -75,8 +75,8 @@ def play(args):
         # 'parkour_box': 1,
         # 'parkour_step': 1,
         'parkour_stair': 1,
-        # 'parkour_stair_down': 1,
-        # 'parkour_mini_stair': 1,
+        'parkour_stair_down': 1,
+        # 'parkour_mini_stair': 0,
         # 'parkour_mini_stair_down': 0,
         # 'parkour_go_back_stair': 0,
     }
@@ -165,9 +165,9 @@ def play(args):
 
 if __name__ == '__main__':
     # t1_vis = vis.RewVisualizer()
-    # t1_vis = vis.T1ActionsVisualizer()
+    t1_vis = vis.T1ActionsVisualizer()
     # t1_vis = vis.T1DofPosVisualizer()
-    t1_vis = vis.T1DofVelVisualizer()
+    # t1_vis = vis.T1DofVelVisualizer()
     # t1_vis = vis.T1TorqueVisualizer()
     # t1_vis = vis.VelEstVisualizer()
 

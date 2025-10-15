@@ -1,16 +1,30 @@
-import trimesh
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtWidgets, QtCore
+import numpy as np
+import time
 
-# Create large ground plane
-ground = trimesh.creation.box(extents=(1000, 1000, 1), transform=trimesh.transformations.translation_matrix([0, 0, -0.5]))
+app = QtWidgets.QApplication([])
 
-# Create a "cutout" volume (a cube where the stair will go)
-hole = trimesh.creation.box(extents=(2, 2, 2), transform=trimesh.transformations.translation_matrix([0, 0, -1]))
+win = pg.plot(title="Real-time line plot")
+win.showGrid(x=True, y=True)
+curve = win.plot(pen='y')
 
-# Subtract the hole from the ground
-ground_with_hole = trimesh.boolean.difference([ground, hole], engine="scad")  # engine can be "blender", "scad", or "igl"
+data = np.zeros(1000)
+ptr = 0
 
-# Add downward stair mesh
-stair = trimesh.creation.box(extents=(2, 2, 2), transform=trimesh.transformations.translation_matrix([0, 0, -2]))
+def update():
+    global data, ptr
+    data[:-1] = data[1:]
+    data[-1] = np.sin(ptr * 0.1)
+    curve.setData(data)
+    ptr += 1
 
-# Combine ground with stairs
-final_env = trimesh.util.concatenate([ground_with_hole, stair])
+timer = QtCore.QTimer()
+timer.timeout.connect(update)
+timer.start(0)
+
+# Non-blocking update loop (like plt.pause)
+for i in range(1000):
+    print("Loop iteration:", i)
+    time.sleep(0.01)
+    QtWidgets.QApplication.processEvents()

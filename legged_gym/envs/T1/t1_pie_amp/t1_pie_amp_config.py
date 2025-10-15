@@ -45,7 +45,7 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             data_format = 'depth'  # depth, cloud, hmap
             update_interval = 5
             delay_prop = (5, 1)  # Gaussian (mean, std), or None
-            history_length = 2
+            history_length = 1
 
             resolution = (114, 64)  # width, height
             crop = (0, 2, 4, 4)  # top, bottom, left, right
@@ -178,7 +178,7 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         randomize_motor_offset = True
         randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
-        randomize_joint_friction = False
+        randomize_joint_friction = True
 
         randomize_joint_armature = True
         joint_armature_range = {
@@ -239,9 +239,9 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         # critic parameters
         critic_hidden_dims = [512, 256, 128]
 
-        estimator_gru_hidden_size = 256
-        len_latent_z = 32
-        len_latent_hmap = 32
+        estimator_gru_hidden_size = 128
+        len_latent_z = 16
+        len_latent_hmap = 16
 
     class algorithm:
         # training params
@@ -267,8 +267,8 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_amp'
-        # algorithm_name = 'ppo_pie_amp'
-        algorithm_name = 'ppo_pie_amp_edge'
+        algorithm_name = 'ppo_pie_amp'
+        # algorithm_name = 'ppo_pie_amp_edge'
 
         lock_smpl_to = 1
 

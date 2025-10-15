@@ -11,10 +11,9 @@ from legged_gym.envs.base.utils import ObsBase
 
 
 class ActorObs(ObsBase):
-    def __init__(self, proprio, prop_his, depth):
+    def __init__(self, proprio, depth):
         super().__init__()
         self.proprio = proprio.clone()
-        self.prop_his = prop_his.clone()
         self.depth = depth.clone()
 
     def as_obs_next(self):
@@ -57,17 +56,6 @@ class T1PIEAmpEnv(T1BaseEnv):
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
-        self.ankle_roll_idx = [16, 22]
-        self.ankle_pitch_idx = [15, 21]
-        self.hip_pitch_idx = [11, 17]
-        self.hip_roll_idx = [12, 18]
-        self.hip_yaw_idx = [13, 19]
-        self.knee_idx = [14, 20]
-        self.waist_idx = [10]
-
-        # 这里需要修改
-        self.left_leg_indices = [11, 12, 13, 14, 15, 16]
-        self.right_leg_indices = [17, 18, 19, 20, 21, 22]
         self.motion_ref_dof_pos = self._zero_tensor(self.num_envs, 23)
 
     def _init_buffers(self):
@@ -180,7 +168,7 @@ class T1PIEAmpEnv(T1BaseEnv):
             depth = depth.half()
 
         # compose actor observation
-        self.actor_obs = ActorObs(proprio, self.prop_his_buf.get(), depth)
+        self.actor_obs = ActorObs(proprio, depth)
         self.actor_obs.clip(self.cfg.normalization.clip_observations)
 
         # update history buffer
