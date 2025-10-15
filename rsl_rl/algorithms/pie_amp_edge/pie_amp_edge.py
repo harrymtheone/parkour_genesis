@@ -641,7 +641,7 @@ class PPO_PIE_AMP_Edge(BaseAlgorithm):
             self.optimizer_amp.load_state_dict(loaded_dict['optimizer_dis_state_dict'])
 
         if not self.cfg.continue_from_last_std:
-            self.actor.reset_std(self.cfg.init_noise_std)
+            self.actor.reset_std(self.cfg.init_noise_std, self.device)
 
     def save(self):
         return {

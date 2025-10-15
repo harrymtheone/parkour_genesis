@@ -321,7 +321,7 @@ class ParkourMiniStair(GoalGuidedTerrain):
             step_depth=random.uniform(0.25, 0.35),
             # step_depth=0.31
         )
-        self.add_roughness(difficulty)
+        # self.add_roughness(difficulty)
 
     def parkour_mini_stair_terrain(
             self,

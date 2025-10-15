@@ -129,7 +129,7 @@ class GenesisWrapper(BaseWrapper):
         """ Adds a heightfield terrain to the simulation, sets parameters based on the cfg.
         """
         # horizontal_scale = self.cfg.terrain.horizontal_scale_downsample
-        horizontal_scale = 0.25
+        horizontal_scale = 0.05
         self._scene.add_entity(gs.morphs.Terrain(
             pos=(-self.cfg.terrain.border_size, -self.cfg.terrain.border_size, 0.0),
             horizontal_scale=horizontal_scale,
