@@ -267,8 +267,8 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_amp'
-        algorithm_name = 'ppo_pie_amp'
-        # algorithm_name = 'ppo_pie_amp_plain'
+        # algorithm_name = 'ppo_pie_amp'
+        algorithm_name = 'ppo_pie_amp_edge'
 
         lock_smpl_to = 1
 

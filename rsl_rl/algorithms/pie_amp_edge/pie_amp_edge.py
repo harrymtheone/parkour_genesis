@@ -611,7 +611,7 @@ class PPO_PIE_AMP_Edge(BaseAlgorithm):
         self.actor.eval()
 
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):
-            actions, vel_est, self.mixer_hidden_states, hmap = self.actor.act(
+            actions, vel_est, self.mixer_hidden_states, hmap, edge = self.actor.act(
                 proprio=obs.proprio.unsqueeze(0),
                 prop_his=obs.prop_his.unsqueeze(0),
                 depth=obs.depth.unsqueeze(0),
@@ -619,7 +619,11 @@ class PPO_PIE_AMP_Edge(BaseAlgorithm):
                 **kwargs
             )
 
-            return {'actions': actions.squeeze(0), 'vel_est': vel_est.squeeze(0), 'recon': hmap.view(-1, 32, 16)}
+            actions, vel_est, hmap, edge = map(lambda x: x.squeeze(0), [actions, vel_est, hmap, edge])
+
+            recon = torch.stack([hmap, edge], dim=1)
+
+            return {'actions': actions, 'vel_est': vel_est, 'recon': recon.view(-1, 2, 32, 16)}
 
     def train(self):
         self.actor.train()
