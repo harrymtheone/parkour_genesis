@@ -4,6 +4,7 @@ import statistics
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import wandb
 
@@ -25,6 +26,11 @@ class RunnerLogger:
     mean_base_height = None
     terrain_coefficient_variation = {}
     p_smpl = 1.
+
+    robot_state_buf_idx = 0
+    robot_sampled_idx = None
+    qpos_buf = None
+    qvel_buf = None
 
 
 class RLAmpRunner(RunnerLogger):
@@ -60,6 +66,11 @@ class RLAmpRunner(RunnerLogger):
         self.amp_obs = torch.zeros(self.task_cfg.env.num_envs, 26, 4, device=self.device)
 
     def learn(self, env, init_at_random_ep_len=True):
+        if self.qpos_buf is None:
+            self.robot_sampled_idx = torch.randperm(env.num_envs)[:100]
+            self.qpos_buf = torch.zeros(1000, len(self.robot_sampled_idx), 7 + env.num_dof)  # pos(xyz), quat(wxyz), joint_pos
+            self.qvel_buf = torch.zeros(1000, len(self.robot_sampled_idx), 6 + env.num_dof)  # lin_vel, ang_vel, joint_vel
+
         if init_at_random_ep_len:
             env.episode_length_buf = torch.randint_like(env.episode_length_buf, high=int(env.max_episode_length))
 
@@ -126,12 +137,28 @@ class RLAmpRunner(RunnerLogger):
 
                     self.alg.process_env_step(rewards, dones, infos, obs)
 
-                    # if self.cur_it % 50 < 10:
-                    #     self.odom.process_env_step(dones)
-                    #     with torch.inference_mode(mode=False):
-                    #         odom_update_info = self.odom.update(self.cur_it)
-                    # else:
-                    #     self.odom.storage.clear()
+                qpos = torch.cat([
+                    env.sim.root_pos,
+                    env.sim.root_quat[:, [3, 0, 1, 2]],
+                    env.sim.dof_pos,
+                ], dim=-1)
+                qvel = torch.cat([
+                    env.sim.root_lin_vel,
+                    env.sim.root_ang_vel,
+                    env.sim.dof_vel,
+                ], dim=-1)
+                self.qpos_buf[self.robot_state_buf_idx] = qpos[self.robot_sampled_idx]
+                self.qvel_buf[self.robot_state_buf_idx] = qvel[self.robot_sampled_idx]
+                self.robot_state_buf_idx += 1
+
+                if self.robot_state_buf_idx == 1000:
+                    np.savez_compressed(
+                        os.path.join(self.model_dir, f'motion_{self.cur_it}.npz'),
+                        qpos=self.qpos_buf.cpu().numpy(),
+                        qvel=self.qvel_buf.cpu().numpy(),
+                        frequency=50,
+                    )
+                    self.robot_state_buf_idx = 0
 
                 if 'episode_rew' in infos:
                     self.episode_rew.append(infos['episode_rew'])

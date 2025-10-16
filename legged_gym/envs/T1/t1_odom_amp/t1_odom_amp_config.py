@@ -278,7 +278,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
                  "obs_scale": [Obs_scales.ang_vel],
                  },
             "base_height":
-                {"using": True,
+                {"using": False,
                  "size": 1,
                  "obs_scale": [1.0],
                  },

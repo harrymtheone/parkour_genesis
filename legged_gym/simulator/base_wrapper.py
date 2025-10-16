@@ -20,7 +20,6 @@ class BaseWrapper:
         self.num_bodies: int
         self.num_dof: int
 
-        self.drive_mode: DriveMode
         self.dof_pos_limits: torch.Tensor
         self.torque_limits: torch.Tensor
 
