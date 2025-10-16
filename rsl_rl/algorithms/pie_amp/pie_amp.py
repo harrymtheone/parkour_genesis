@@ -361,17 +361,17 @@ class PPO_PIE_AMP(BaseAlgorithm):
                 'VAE/vel_est_loss': mean_vel_est_loss,
                 'VAE/Ot+1_loss': mean_ot1_est_loss,
                 'VAE/recon_loss': mean_recon_loss,
-                'VAE/vel_kl_loss': mean_vel_kl_loss,
-                'VAE/z_kl_loss': mean_z_kl_loss,
-                'VAE/total_kl_loss': mean_vel_kl_loss + mean_z_kl_loss,
-                'VAE/abs_vel': mean_abs_vel,
-                'VAE/abs_z': mean_abs_z,
-                'VAE/std_vel': mean_std_vel,
-                'VAE/std_z': mean_std_z,
-                'VAE/SNR_vel': mean_snr_vel,
-                'VAE/SNR_z': mean_snr_z,
-                'VAE/kl_coef_vel': mean_kl_coef_vel,
-                'VAE/kl_coef_z': mean_kl_coef_z,
+                'VAE_KL/vel_kl_loss': mean_vel_kl_loss,
+                'VAE_KL/z_kl_loss': mean_z_kl_loss,
+                'VAE_KL/total_kl_loss': mean_vel_kl_loss + mean_z_kl_loss,
+                'VAE_KL/abs_vel': mean_abs_vel,
+                'VAE_KL/abs_z': mean_abs_z,
+                'VAE_KL/std_vel': mean_std_vel,
+                'VAE_KL/std_z': mean_std_z,
+                'VAE_KL/SNR_vel': mean_snr_vel,
+                'VAE_KL/SNR_z': mean_snr_z,
+                'VAE_KL/kl_coef_vel': mean_kl_coef_vel,
+                'VAE_KL/kl_coef_z': mean_kl_coef_z,
             })
 
         return metrics
@@ -605,7 +605,6 @@ class PPO_PIE_AMP(BaseAlgorithm):
         with torch.autocast(self.device.type, torch.float16, enabled=self.cfg.use_amp):
             actions, vel_est, self.mixer_hidden_states, hmap = self.actor.act(
                 proprio=obs.proprio.unsqueeze(0),
-                prop_his=obs.prop_his.unsqueeze(0),
                 depth=obs.depth.unsqueeze(0),
                 mixer_hidden_states=self.mixer_hidden_states,
                 **kwargs

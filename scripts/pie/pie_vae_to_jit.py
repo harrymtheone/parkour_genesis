@@ -12,9 +12,9 @@ from rsl_rl.algorithms.pie_amp.networks import Mixer, EstimatorVAE, Actor
 
 
 class MixerJIT(Mixer):
-    def forward(self, prop_his, depth_his, hidden_states, **kwargs):
+    def forward(self, proprio, depth_his, hidden_states, **kwargs):
         # update forward
-        prop_latent = self.prop_his_enc(prop_his.transpose(1, 2))
+        prop_latent = self.prop_his_enc(proprio)
 
         depth_latent = self.depth_enc(depth_his)
 
@@ -45,8 +45,8 @@ class PolicyJIT(nn.Module):
 
         self.log_std = nn.Parameter(torch.ones(env_cfg.num_actions))
 
-    def forward(self, proprio, prop_his, depth, mixer_hidden_states):  # <-- my mood be like
-        mixer_out, hidden_states = self.mixer.forward(prop_his, depth, mixer_hidden_states)
+    def forward(self, proprio, depth, mixer_hidden_states):  # <-- my mood be like
+        mixer_out, hidden_states = self.mixer.forward(proprio, depth, mixer_hidden_states)
         vel, z, ot1, hmap = self.vae.forward(mixer_out)
 
         mean = self.actor(proprio, vel, z)
@@ -55,7 +55,7 @@ class PolicyJIT(nn.Module):
 
 
 def trace():
-    proj, cfg, exptid, checkpoint = 't1', 't1_pie_amp', 't1_pie_amp_021', 16200
+    proj, cfg, exptid, checkpoint = 't1', 't1_pie_amp', 't1_pie_amp_026', 10100
 
     trace_path = os.path.join('./traced')
     if not os.path.exists(trace_path):
@@ -89,17 +89,15 @@ def trace():
     with torch.no_grad():
         # Save the traced actor
         proprio = torch.zeros(1, task_cfg.env.n_proprio, device=device)
-        prop_his = torch.zeros(1, task_cfg.env.len_prop_his, task_cfg.env.n_proprio, device=device)
-        depth_his = torch.zeros(1, 2, *reversed(task_cfg.sensors.depth_0.resized), device=device)
+        depth = torch.zeros(1, 1, *reversed(task_cfg.sensors.depth_0.resized), device=device)
         hidden_states = torch.zeros(1, 1, task_cfg.policy.estimator_gru_hidden_size, device=device)
 
         print("------------ input shape ------------")
         print("proprio", proprio.shape)
-        print("prop_his", prop_his.shape)
-        print("depth_his", depth_his.shape)
+        print("depth", depth.shape)
         print("hidden_states", hidden_states.shape)
 
-        trace_and_save(model, (proprio, prop_his, depth_his, hidden_states))
+        trace_and_save(model, (proprio, depth, hidden_states))
 
 
 if __name__ == '__main__':

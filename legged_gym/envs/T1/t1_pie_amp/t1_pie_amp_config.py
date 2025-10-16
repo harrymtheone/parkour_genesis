@@ -178,7 +178,7 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         randomize_motor_offset = True
         randomize_joint_stiffness = False  # for joints with spring behavior, (not implemented yet)
         randomize_joint_damping = False
-        randomize_joint_friction = True
+        randomize_joint_friction = False
 
         randomize_joint_armature = True
         joint_armature_range = {
@@ -208,14 +208,14 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             # vel tracking
             tracking_lin_vel = 2.5
             tracking_goal_vel = 3.0
-            tracking_ang_vel = 1.5
+            tracking_ang_vel = 2.5
 
             # contact
             feet_slip = -0.1
             feet_contact_forces = -1e-3
             feet_stumble = -1.
             foothold = -0.1
-            feet_clearance = 0.1
+            feet_clearance = 0.5
 
             # base pos
             default_joint_pos = -0.04
@@ -231,6 +231,8 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
 
             dof_torque_limits = -0.01
             dof_pos_limits = -10.
+
+            termination = -200.
 
     class policy:
         # actor parameters

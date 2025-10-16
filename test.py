@@ -1,30 +1,19 @@
-import pyqtgraph as pg
-from pyqtgraph.Qt import QtWidgets, QtCore
-import numpy as np
-import time
+import torch
+import matplotlib.pyplot as plt
 
-app = QtWidgets.QApplication([])
+# Define range of d
+d = torch.linspace(-2, 4, 500)
 
-win = pg.plot(title="Real-time line plot")
-win.showGrid(x=True, y=True)
-curve = win.plot(pen='y')
+# Define function
+f = torch.clamp(1 - 0.25 * torch.square(d - 1), min=0)
 
-data = np.zeros(1000)
-ptr = 0
-
-def update():
-    global data, ptr
-    data[:-1] = data[1:]
-    data[-1] = np.sin(ptr * 0.1)
-    curve.setData(data)
-    ptr += 1
-
-timer = QtCore.QTimer()
-timer.timeout.connect(update)
-timer.start(0)
-
-# Non-blocking update loop (like plt.pause)
-for i in range(1000):
-    print("Loop iteration:", i)
-    time.sleep(0.01)
-    QtWidgets.QApplication.processEvents()
+# Plot
+plt.plot(d, f, label=r'$f(d) = \mathrm{clamp}(1 - \frac{1}{4}(d-1)^2, 0)$')
+plt.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+plt.axvline(1, color='gray', linestyle='--', linewidth=0.8)
+plt.title("Plot of f(d)")
+plt.xlabel("d")
+plt.ylabel("f(d)")
+plt.legend()
+plt.grid(True)
+plt.show()
