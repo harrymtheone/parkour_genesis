@@ -176,14 +176,14 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
             # vel tracking
             tracking_lin_vel = 2.5
             tracking_goal_vel = 3.0
-            tracking_ang_vel = 1.5
+            tracking_ang_vel = 2.5
 
             # contact
             feet_slip = -0.1
             feet_contact_forces = -1e-3
             feet_stumble = -1.
             foothold = -0.1
-            feet_clearance = 0.1
+            feet_clearance = 0.5
 
             # base pos
             default_joint_pos = -0.04
@@ -251,7 +251,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
 
     class amp:
         # 数据加载相关
-        motion_file = "data/T1_walk"
+        motion_file = "data/rand_walk"
         preload = True
         num_preload_data = 400000
 
@@ -278,7 +278,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
                  "obs_scale": [Obs_scales.ang_vel],
                  },
             "base_height":
-                {"using": True,
+                {"using": False,
                  "size": 1,
                  "obs_scale": [1.0],
                  },

@@ -196,9 +196,6 @@ class PPO_Odom_AMP(BaseAlgorithm):
         mean_kl = 0
         kl_change = []
 
-        mean_value_loss = 0
-        mean_default_value_loss = 0
-        mean_contact_value_loss = 0
         mean_amp_loss = 0
         mean_grad_pen_loss = 0
         mean_policy_pred = 0
@@ -236,9 +233,8 @@ class PPO_Odom_AMP(BaseAlgorithm):
                 mean_expert_pred += amp_metrics['expert_pred']
 
         mean_kl /= num_updates
-        mean_value_loss /= num_updates
-        mean_default_value_loss /= num_updates
-        mean_contact_value_loss /= num_updates
+        mean_value_loss_default /= num_updates
+        mean_value_loss_contact /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy_loss /= num_updates
         mean_amp_loss /= num_updates
@@ -258,15 +254,14 @@ class PPO_Odom_AMP(BaseAlgorithm):
         return {
             'Loss/learning_rate': self.learning_rate,
             'Loss/kl_div': mean_kl,
-            'Loss/value_loss': mean_value_loss,
-            'Loss/default_value_loss': mean_default_value_loss,
-            'Loss/contact_value_loss': mean_contact_value_loss,
+            'Loss/default_value_loss': mean_value_loss_default,
+            'Loss/contact_value_loss': mean_value_loss_contact,
             'Loss/surrogate_loss': mean_surrogate_loss,
             'Loss/entropy_loss': mean_entropy_loss,
-            'Loss/amp_loss': mean_amp_loss,
-            'Loss/grad_pen_loss': mean_grad_pen_loss,
-            'Loss/policy_pred': mean_policy_pred,
-            'Loss/expert_pred': mean_expert_pred,
+            'AMP/amp_loss': mean_amp_loss,
+            'AMP/grad_pen_loss': mean_grad_pen_loss,
+            'AMP/policy_pred': mean_policy_pred,
+            'AMP/expert_pred': mean_expert_pred,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
         }
 

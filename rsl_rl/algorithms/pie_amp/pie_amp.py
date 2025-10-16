@@ -98,8 +98,7 @@ class PPO_PIE_AMP(BaseAlgorithm):
         policy_dt = self.task_cfg.control.decimation * self.task_cfg.sim.dt
         rew_norm_factor = self.task_cfg.rewards.rew_norm_factor
         amp_disc_cfg["amp_reward_coef"] = amp_disc_cfg["amp_reward_coef"] * policy_dt * rew_norm_factor
-        amp_disc_cfg["task_rew_schedule_dict"][
-            "traking_lin_vel_max"] = self.task_cfg.rewards.scales.tracking_lin_vel * rew_norm_factor
+        amp_disc_cfg["task_rew_schedule_dict"]["traking_lin_vel_max"] = self.task_cfg.rewards.scales.tracking_lin_vel * rew_norm_factor
         self.amp_disc = AMPDiscriminator(device=self.device, **amp_disc_cfg)
 
         self.amp_motion_loader = AMPMotionLoader(motion_cfg=self.amp_cfg,
