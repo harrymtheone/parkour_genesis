@@ -2,3 +2,5 @@ from .rollout_storage import RolloutStorage
 from .rollout_storage_perception import RolloutStoragePerception
 from .rollout_storage_multi_critic import RolloutStorageMultiCritic
 from .rollout_storage_moc import RolloutStorageMixtureOfCritic
+
+from .amp_replay_buffer import AMPReplayBuffer

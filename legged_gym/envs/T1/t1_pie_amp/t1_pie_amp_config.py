@@ -3,14 +3,6 @@ import numpy as np
 from legged_gym.envs.T1.config.t1_base_config import T1BaseCfg
 
 
-class Obs_scales:
-    dof_pos = 1.0
-    dof_vel = 1.0
-    lin_vel = 1.0
-    ang_vel = 1.0
-    quat = 1.0
-
-
 class T1_PIE_AMP_Cfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
@@ -232,8 +224,6 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             dof_torque_limits = -0.01
             dof_pos_limits = -10.
 
-            termination = -200.
-
     class policy:
         # actor parameters
         actor_hidden_dims = [512, 256, 128]  # [128, 64, 32]
@@ -284,106 +274,106 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
 
         # 根据amp_obs_dict加在参考数据以及生成数据
         amp_obs_dict = {
-            "dof_pos":
-                {"using": True,
-                 "size": 13,
-                 "obs_scale": [Obs_scales.dof_pos],
-                 },
-            "dof_vel":
-                {"using": True,
-                 "size": 13,
-                 "obs_scale": [Obs_scales.dof_vel],
-                 },
-            "base_lin_vel":
-                {"using": True,
-                 "size": 3,
-                 "obs_scale": [Obs_scales.lin_vel],
-                 },
-            "base_ang_vel":
-                {"using": True,
-                 "size": 3,
-                 "obs_scale": [Obs_scales.ang_vel],
-                 },
-            "base_height":
-                {"using": True,
-                 "size": 1,
-                 "obs_scale": [1.0],
-                 },
-            "projected_gravity":
-                {"using": True,
-                 "size": 3,
-                 "obs_scale": [1.0],
-                 "interpolate": "slerp",
-                 },
-            "torso_projected_gravity":
-                {"using": False,
-                 "size": 3,
-                 "obs_scale": [1.0],
-                 "interpolate": "slerp"
-                 },
-            "shoulder_pos_to_base":
-                {"using": False,
-                 "size": 3 * 2,
-                 "obs_scale": [1.0],
-                 },
-            "knee_pos_to_base":
-                {"using": True,
-                 "size": 3 * 2,
-                 "obs_scale": [1.0],
-                 },
-            "feet_pos_to_base":
-                {"using": True,
-                 "size": 3 * 2,
-                 "obs_scale": [1.0],
-                 },
-            "elbow_pos_to_base":
-                {"using": False,
-                 "size": 3 * 2,
-                 "obs_scale": [1.0],
-                 },
-            "wrist_pos_to_base":
-                {"using": False,
-                 "size": 3 * 2,
-                 "obs_scale": [1.0],
-                 },
+            "dof_pos": {
+                "using": True,
+                "size": 13,
+                "obs_scale": [T1BaseCfg.normalization.obs_scales.dof_pos],
+            },
+            "dof_vel": {
+                "using": True,
+                "size": 13,
+                "obs_scale": [T1BaseCfg.normalization.obs_scales.dof_vel],
+            },
+            "base_lin_vel": {
+                "using": True,
+                "size": 3,
+                "obs_scale": [T1BaseCfg.normalization.obs_scales.lin_vel],
+            },
+            "base_ang_vel": {
+                "using": True,
+                "size": 3,
+                "obs_scale": [T1BaseCfg.normalization.obs_scales.ang_vel],
+            },
+            "base_height": {
+                "using": True,
+                "size": 1,
+                "obs_scale": [1.0],
+            },
+            "projected_gravity": {
+                "using": True,
+                "size": 3,
+                "obs_scale": [1.0],
+                "interpolate": "slerp",
+            },
+            "torso_projected_gravity": {
+                "using": False,
+                "size": 3,
+                "obs_scale": [1.0],
+                "interpolate": "slerp"
+            },
+            "shoulder_pos_to_base": {
+                "using": False,
+                "size": 3 * 2,
+                "obs_scale": [1.0],
+            },
+            "knee_pos_to_base": {
+                "using": True,
+                "size": 3 * 2,
+                "obs_scale": [1.0],
+            },
+            "feet_pos_to_base": {
+                "using": True,
+                "size": 3 * 2,
+                "obs_scale": [1.0],
+            },
+            "elbow_pos_to_base": {
+                "using": False,
+                "size": 3 * 2,
+                "obs_scale": [1.0],
+            },
+            "wrist_pos_to_base": {
+                "using": False,
+                "size": 3 * 2,
+                "obs_scale": [1.0],
+            },
         }
         num_single_amp_obs = 0
-        amp_obs_hist_steps = 6
         for key, value in amp_obs_dict.items():
             if value["using"]:
                 num_single_amp_obs += value["size"]
+        amp_obs_hist_steps = 6
         num_amp_obs = int(amp_obs_hist_steps * num_single_amp_obs)
 
         # 构建判别器相关
-        amp_disc_cfg = {"num_input": num_amp_obs,
-                        "hidden_dims": [1024, 512, 256],
-                        "activation": 'relu',
-                        "amp_reward_coef": 6.0,
-                        "amp_type": 'least_square',  # 'least_square' , 'wasserstein', 'log', 'bce'
-                        "lambda_schedule_dict":
-                            {
-                                "schedule_type": "inverse",  # linear, inverse, exp, None
-                                "lambda1": [20, 50, 500, 0.05],  # init,low,high,ema
-                            },
-                        "task_rew_schedule_dict":
-                            {
-                                "using_schedule": True,
-                                "buffer_size": 10000,
-                                "update_step": 0.05,
-                                "task_rew_coef_min": 0.7,
-                                "update_threshold": 0.8,
-                            },
-                        }
+        amp_disc_cfg = {
+            "num_input": num_amp_obs,
+            "hidden_dims": [1024, 512, 256],
+            "activation": 'relu',
+            "amp_reward_coef": 6.0,
+            "amp_type": 'least_square',  # 'least_square' , 'wasserstein', 'log', 'bce'
+            "lambda_schedule_dict": {
+                "schedule_type": "inverse",  # linear, inverse, exp, None
+                "lambda1": [20, 50, 500, 0.05],  # init,low,high,ema
+            },
+            "task_rew_schedule_dict": {
+                "using_schedule": False,
+                "buffer_size": 10000,
+                "update_step": 0.05,
+                "task_rew_coef_min": 0.7,
+                "update_threshold": 0.8,
+            },
+        }
 
         # 更新判别器相关
-        amp_optim_cfg = {"amp_trunk_weight_decay": 10e-4,
-                         "amp_head_weight_decay": 10e-2,
-                         "amp_replay_buffer_size": 500000,
-                         "amp_loss_coef": 5.0,
-                         'amp_disc_lr': 5e-5,
-                         'max_amp_disc_grad_norm': 0.05,
-                         'amp_update_interval': 1,
-                         }
+        amp_optim_cfg = {
+            "amp_trunk_weight_decay": 10e-4,
+            "amp_head_weight_decay": 10e-2,
+            "amp_replay_buffer_size": 500000,
+            "amp_loss_coef": 5.0,
+            'amp_disc_lr': 5e-5,
+            'max_amp_disc_grad_norm': 0.05,
+            'amp_update_interval': 1,
+        }
 
         # 数据归一化相关
         amp_empirical_normalization = True

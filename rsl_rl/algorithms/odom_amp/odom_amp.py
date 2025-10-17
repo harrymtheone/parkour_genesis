@@ -5,9 +5,8 @@ from torch.distributions import Normal, kl_divergence
 from legged_gym.utils.helpers import class_to_dict
 from rsl_rl.algorithms import AMPDiscriminator, UniversalCritic, BaseAlgorithm
 from rsl_rl.algorithms.utils import masked_mean, masked_MSE
-from rsl_rl.datasets.amp_motion_loader import AMPMotionLoader
-from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage
-from rsl_rl.storage.amp_replay_buffer import AMPReplayBuffer
+from rsl_rl.datasets.motion_loader import AMPMotionLoader
+from rsl_rl.storage import RolloutStorageMultiCritic as RolloutStorage, AMPReplayBuffer
 from .networks import Actor
 from .normalizer import EmpiricalNormalization
 
@@ -49,10 +48,7 @@ class PPO_Odom_AMP(BaseAlgorithm):
         self.amp_cfg = class_to_dict(task_cfg.amp)
         self.cfg = task_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate
-        self.amp_lr = self.cfg.amp_lr
         self.device = device
-
-        self.amp_obs = torch.zeros(self.task_cfg.env.num_envs, 26, 3, device=self.device)
 
         self.cur_it = 0
 

@@ -322,12 +322,8 @@ class BaseTask:
 
         # prepare quantities
         self.base_euler[:] = quat_to_xyz(self.sim.root_quat)
-        inv_quat_yaw = axis_angle_to_quat(
-            -self.base_euler[:, 2],
-            torch.tensor([0, 0, 1], device=self.device, dtype=torch.float)
-        )
         inv_base_quat = inv_quat(self.sim.root_quat)
-        self.base_lin_vel[:] = transform_by_quat(self.sim.root_lin_vel, inv_quat_yaw)
+        self.base_lin_vel[:] = transform_by_quat(self.sim.root_lin_vel, inv_base_quat)
         self.base_ang_vel[:] = transform_by_quat(self.sim.root_ang_vel, inv_base_quat)
         self.projected_gravity[:] = transform_by_quat(self.gravity_vec, inv_base_quat)
 

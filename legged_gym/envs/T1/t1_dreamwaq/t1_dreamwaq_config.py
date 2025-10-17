@@ -40,16 +40,19 @@ class T1DreamWaqCfg(T1BaseCfg):
             lin_vel_x = [-0.8, 1.2]
             lin_vel_y = [-0.8, 0.8]
             ang_vel_yaw = [-1., 1.]
+            motion_weight = [1, 4, 1, 4]
 
         class stair_ranges:
             lin_vel_x = [-0.5, 0.8]
             lin_vel_y = [-0.5, 0.5]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
+            motion_weight = [2, 4, 0, 4]
 
         class parkour_ranges:
             lin_vel_x = [0.3, 0.8]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
+            motion_weight = [1, 0, 0, 9]
 
     class terrain(T1BaseCfg.terrain):
         body_pts_x = np.linspace(-0.6, 1.2, 32)
@@ -57,7 +60,6 @@ class T1DreamWaqCfg(T1BaseCfg):
 
         num_rows = 10  # number of terrain rows (levels)   spreaded is beneficial !
         num_cols = 20  # number of terrain cols (types)
-
 
         terrain_dict = {
             'smooth_slope': 3,
@@ -142,7 +144,7 @@ class T1DreamWaqCfg(T1BaseCfg):
 
             # energy
             action_smoothness = -3e-4
-            # dof_vel_smoothness = -1e-3
+            dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
@@ -161,7 +163,7 @@ class T1DreamWaqCfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 10
+        num_learning_epochs = 5
         num_mini_batches = 4  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 2.e-4  # 5.e-4
         schedule = 'adaptive'  # could be adaptive, fixed
