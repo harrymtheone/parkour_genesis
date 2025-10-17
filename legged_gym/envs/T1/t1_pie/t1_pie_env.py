@@ -1,5 +1,3 @@
-from collections import deque
-
 import cv2
 import numpy as np
 import torch
@@ -55,17 +53,6 @@ class T1_PIE_Env(T1BaseEnv):
         self.yaw_roll_dof_indices = self.sim.create_indices(
             self.sim.get_full_names(['Waist', 'Roll', 'Yaw'], False), False)
 
-    def _init_buffers(self):
-        super()._init_buffers()
-
-        self.gen_amp_history = deque(maxlen=self.cfg.amp.amp_obs_hist_steps)
-        self.amp_obs_hist_steps = self.cfg.amp.amp_obs_hist_steps
-        for _ in range(self.cfg.amp.amp_obs_hist_steps):
-            self.gen_amp_history.append(torch.zeros(
-                self.num_envs, self.cfg.amp.num_single_amp_obs, dtype=torch.float, device=self.device))
-        self.reset_amp_obs = None
-        self.reset_idx = None
-
     def _compute_observations(self):
         """
         Computes observations
@@ -93,11 +80,16 @@ class T1_PIE_Env(T1BaseEnv):
         base_ang_vel = self._add_noise(base_ang_vel, self.cfg.noise.noise_scales.ang_vel)
         projected_gravity = self._add_noise(projected_gravity, self.cfg.noise.noise_scales.gravity)
 
+        self._compute_ref_state()
+
+        clock = torch.stack(self._get_clock_input(), dim=1)
+        command_input = torch.cat((clock, self.commands[:, :3] * self.commands_scale), dim=1)
+
         # proprio observation
         proprio = torch.cat((
             base_ang_vel * self.obs_scales.ang_vel,  # 3
             projected_gravity,  # 3
-            self.commands[:, :3] * self.commands_scale,
+            command_input,
             (dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 12D
             dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
             self.last_action_output,  # 12D
@@ -109,7 +101,7 @@ class T1_PIE_Env(T1BaseEnv):
             self.get_feet_hmap() - self.cfg.normalization.feet_height_correction,  # 8
             self.base_ang_vel * self.obs_scales.ang_vel,  # 3
             self.base_euler * self.obs_scales.quat,  # 3
-            self.commands[:, :3] * self.commands_scale,
+            command_input,
             self.last_action_output,  # 12D
             (self.sim.dof_pos - self.init_state_dof_pos)[:, self.dof_activated] * self.obs_scales.dof_pos,  # 12D
             self.sim.dof_vel[:, self.dof_activated] * self.obs_scales.dof_vel,  # 12D
@@ -180,11 +172,119 @@ class T1_PIE_Env(T1BaseEnv):
 
         super().render()
 
+    def _reward_joint_pos_flat(self):
+        diff = self.sim.dof_pos - torch.where(
+            self.is_zero_command.unsqueeze(1),
+            self.init_state_dof_pos,
+            self.ref_dof_pos
+        )
+        diff = torch.norm(diff[:, self.dof_activated], dim=1)
+
+        rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
+        rew[self.env_class >= 2] = 0.
+        return rew
+
+    def _reward_joint_pos_parkour(self):
+        diff = self.sim.dof_pos - torch.where(
+            self.is_zero_command.unsqueeze(1),
+            self.init_state_dof_pos,
+            self.ref_dof_pos
+        )
+        diff = torch.norm(diff[:, self.dof_activated], dim=1)
+
+        rew = torch.exp(-diff * 2) - 0.2 * diff.clamp(0, 0.5)
+        rew[self.env_class < 2] = 0.
+        return rew
+
+    def _reward_feet_contact_number_flat(self):
+        swing = self._get_swing_mask()
+        stance = self._get_stance_mask()
+        contact = self.contact_filt
+
+        rew = self._zero_tensor(self.num_envs, len(self.feet_indices))
+        rew[swing] = torch.where(contact[swing], -0.3, 1.0)
+        rew[stance] = torch.where(contact[stance], 1.0, -0.3)
+
+        rew[self.env_class >= 2] = 0.
+        return torch.mean(rew, dim=1)
+
+    def _reward_feet_contact_number_parkour(self):
+        swing = self._get_swing_mask()
+        stance = self._get_stance_mask()
+        contact = self.contact_filt
+
+        rew = self._zero_tensor(self.num_envs, len(self.feet_indices))
+        rew[swing] = torch.where(contact[swing], -0.3, 1.0)
+        rew[stance] = torch.where(contact[stance], 1.0, -0.3)
+
+        rew[self.env_class < 2] = 0.
+        return torch.mean(rew, dim=1)
+
     def _reward_default_dof_pos(self):
         return (self.sim.dof_pos - self.init_state_dof_pos).abs().sum(dim=1)
 
+    def _reward_default_dof_pos_yr(self):
+        assert self.yaw_roll_dof_indices is not None
+        joint_diff = self.sim.dof_pos - self.init_state_dof_pos
+        yaw_roll = joint_diff[:, self.yaw_roll_dof_indices].abs()
+        return (yaw_roll - 0.1).clip(min=0, max=50).sum(dim=1)
+
+    def _reward_feet_distance(self):
+        foot_pos = self.sim.link_pos[:, self.feet_indices, :2]
+        foot_dist = torch.norm(foot_pos[:, 0, :] - foot_pos[:, 1, :], dim=1)
+        penalty_min = torch.clamp(self.cfg.rewards.min_dist - foot_dist, 0., 0.5)
+        penalty_max = torch.clamp(foot_dist - self.cfg.rewards.max_dist, 0., 0.5)
+        return penalty_min + penalty_max
+
+    def _reward_knee_distance(self):
+        """
+        Calculates the reward based on the distance between the knee of the humanoid.
+        """
+        knee_pos = self.sim.link_pos[:, self.knee_indices, :2]
+        knee_dist = torch.norm(knee_pos[:, 0, :] - knee_pos[:, 1, :], dim=1)
+        penalty_min = torch.clamp(self.cfg.rewards.min_dist - knee_dist, 0., 0.5)
+        penalty_max = torch.clamp(knee_dist - self.cfg.rewards.max_dist / 2, 0., 0.5)
+        return penalty_min + penalty_max
+
+    def _reward_feet_rotation(self):
+        return self.feet_euler_xyz[:, :, :2].square().sum(dim=[1, 2])
+
     def _reward_orientation(self):
         return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+
+    def _reward_base_height(self):
+        return torch.abs(self.base_height - self.cfg.rewards.base_height_target)
+
+    def _reward_base_acc(self):
+        root_acc = self.last_root_vel - self.sim.root_lin_vel
+        return torch.norm(root_acc, dim=1)
+
+    def _reward_lin_vel_z(self):
+        # Penalize z axis base linear velocity
+        return torch.square(self.base_lin_vel[:, 2])
+
+    def _reward_ang_vel_xy(self):
+        # Penalize xy axes base angular velocity
+        return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
+
+    def _reward_penalize_vy(self):
+        rew = torch.abs(self.base_lin_vel[:, 1])
+        rew[self.env_class < 100] = 0.
+        return rew
+
+    def _reward_stall(self):
+        lin_vel_xy = torch.norm(self.base_lin_vel[:, :2], dim=1)
+        lin_vel_cmd_xy = torch.norm(self.commands[:, :2], dim=1)
+
+        lin_vel_stall = (lin_vel_xy < self.cfg.commands.lin_vel_clip) & (lin_vel_cmd_xy > 0)
+        ang_vel_stall = (torch.abs(self.base_ang_vel[:, 2]) < self.cfg.commands.ang_vel_clip) & (torch.abs(self.commands[:, 2]) > 0)
+
+        return (lin_vel_stall | ang_vel_stall).float()
+
+    def _reward_torques_ankle(self):
+        rew = torch.sum(torch.square(self.torques[:, self.ankle_indices]), dim=1)
+        rew[self.is_zero_command] = 0.
+        return rew
 
 
 @torch.jit.script

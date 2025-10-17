@@ -7,13 +7,13 @@ class T1_PIE_Cfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
 
-        n_proprio = 48
+        n_proprio = 50
         len_prop_his = 10
 
         scan_shape = (32, 16)
         n_scan = scan_shape[0] * scan_shape[1]
 
-        num_critic_obs = 67
+        num_critic_obs = 69
         len_critic_his = 50
 
         num_actions = 13
@@ -112,18 +112,23 @@ class T1_PIE_Cfg(T1BaseCfg):
             lin_vel_x = [-0.8, 1.2]
             lin_vel_y = [-0.8, 0.8]
             ang_vel_yaw = [-1., 1.]
+            motion_weight = [1, 4, 1, 4]
 
         class stair_ranges:
             lin_vel_x = [0.3, 0.8]
             lin_vel_y = [0.3, 0.8]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
+            motion_weight = [2, 4, 0, 4]
 
         class parkour_ranges:
             lin_vel_x = [0.3, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
+            motion_weight = [1, 0, 0, 9]
 
     class terrain(T1BaseCfg.terrain):
+        description_type = "plane"
+
         body_pts_x = np.linspace(-0.6, 1.2, 32)
         body_pts_y = np.linspace(-0.6, 0.6, 16)
 
@@ -270,7 +275,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         use_amp = True
 
     class runner(T1BaseCfg.runner):
-        runner_name = 'rl_amp'
+        runner_name = 'rl_dream'
         algorithm_name = 'ppo_pie'
 
         lock_smpl_to = 1

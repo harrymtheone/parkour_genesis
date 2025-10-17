@@ -1,3 +1,3 @@
-from .t1_odom_neg_rew_environment import T1_Odom_Neg_Env
+from .t1_odom_neg_env import T1_Odom_Neg_Env
 from .t1_odom_neg_config import T1_Odom_Neg_Cfg, T1_Odom_Stair_Neg_Cfg, T1_Odom_Neg_Finetune_Cfg
 

@@ -14,5 +14,6 @@ algorithm_dict = {
 
     'ppo_odom_amp': PPO_Odom_AMP,
 
+    'ppo_pie': PPO_PIE,
     'ppo_pie_amp': PPO_PIE_AMP,
 }
