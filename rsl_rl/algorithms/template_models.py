@@ -116,8 +116,10 @@ class AMPDiscriminator(nn.Module):
                 retain_graph=True, only_inputs=True)[0]
             # Wasserstein GAN with Gradient Penalty
             grad_pen = self.lambda_ * (grad.norm(2, dim=1) - 1).clip(min=0).pow(2).mean()
-            ref_regress = - torch.tanh(0.4 * self.forward(ref_motion)).mean()
-            gen_regress = torch.tanh(0.4 * self.forward(generated_motion)).mean()
+            ref_d = self.forward(ref_motion)
+            gen_d = self.forward(generated_motion)
+            ref_regress = - torch.tanh(0.4 * ref_d).mean()
+            gen_regress = torch.tanh(0.4 * gen_d).mean()
             ref_loss = ref_regress
             gen_loss = gen_regress
 

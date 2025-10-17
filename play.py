@@ -49,7 +49,7 @@ def play(args):
     task_cfg.domain_rand.add_dof_lag = True
     task_cfg.domain_rand.dof_lag_range = (5, 5)
     task_cfg.domain_rand.randomize_friction = True
-    task_cfg.domain_rand.friction_range = (0.7, 0.7)
+    task_cfg.domain_rand.friction_range = (1.0, 1.0)
     task_cfg.domain_rand.randomize_torques = False
     task_cfg.domain_rand.randomize_gains = False
     task_cfg.domain_rand.joint_armature_range = {

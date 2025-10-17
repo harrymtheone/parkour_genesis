@@ -3,7 +3,7 @@ import numpy as np
 from legged_gym.envs.T1.config.t1_base_config import T1BaseCfg
 
 
-class T1_PIE_AMP_Cfg(T1BaseCfg):
+class T1_PIE_Cfg(T1BaseCfg):
     class env(T1BaseCfg.env):
         num_envs = 4096  # 6144
 
@@ -112,19 +112,16 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
             lin_vel_x = [-0.8, 1.2]
             lin_vel_y = [-0.8, 0.8]
             ang_vel_yaw = [-1., 1.]
-            motion_weight = [1, 4, 1, 4]
 
         class stair_ranges:
             lin_vel_x = [0.3, 0.8]
             lin_vel_y = [0.3, 0.8]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
-            motion_weight = [2, 4, 0, 4]
 
         class parkour_ranges:
             lin_vel_x = [0.3, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
-            motion_weight = [1, 0, 0, 9]
 
     class terrain(T1BaseCfg.terrain):
         body_pts_x = np.linspace(-0.6, 1.2, 32)
@@ -200,32 +197,44 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
         rew_norm_factor = 1.0
 
         class scales:  # float or (start, end, span, start_it)
+            # gait
+            joint_pos = (2.0, 0.6, 10, 200)
+            feet_contact_number = (1.2, 0.6, 10, 200)
+            feet_clearance = (1., 0.5, 10, 200)
+            feet_distance = -1.
+            knee_distance = -1.
+            feet_rotation = -0.3
+
             # vel tracking
-            tracking_lin_vel = 2.5
-            tracking_goal_vel = 3.0
-            tracking_ang_vel = 2.5
+            tracking_lin_vel = 1.5
+            tracking_goal_vel = 2.5
+            tracking_ang_vel = 2.0
 
             # contact
             feet_slip = -0.1
             feet_contact_forces = -1e-3
-            feet_stumble = -1.
+            feet_stumble = -2.
             foothold = -0.1
-            feet_clearance = 0.5
+            # feet_edge = -0.1
 
             # base pos
-            default_joint_pos = -0.04
-            orientation = -10.
+            default_dof_pos = -0.04
+            default_dof_pos_yr = (0., -1., 10, 100)
+            orientation = -10.0
+            # base_height = -10.
+            base_acc = -1.
+            lin_vel_z = -1.
+            ang_vel_xy = (0., -0.05, 10, 100)
 
             # energy
-            action_smoothness = -1e-3
-            dof_vel_smoothness = -1e-3
+            action_smoothness = (0., -1e-3, 10, 100)
+            # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
-            dof_acc = -1e-7
+            dof_acc = -1.e-7
             collision = -1.
-
-            dof_torque_limits = -0.01
             dof_pos_limits = -10.
+            dof_torque_limits = -0.01
 
     class policy:
         # actor parameters
@@ -262,125 +271,11 @@ class T1_PIE_AMP_Cfg(T1BaseCfg):
 
     class runner(T1BaseCfg.runner):
         runner_name = 'rl_amp'
-        algorithm_name = 'ppo_pie_amp'
-        # algorithm_name = 'ppo_pie_amp_edge'
+        algorithm_name = 'ppo_pie'
 
         lock_smpl_to = 1
 
         max_iterations = 200000  # number of policy updates
-
-    class amp:
-        # 数据加载相关
-        motion_file = "data/T1_walk"
-        preload = True
-        num_preload_data = 400000
-
-        # 根据amp_obs_dict加在参考数据以及生成数据
-        amp_obs_dict = {
-            "dof_pos": {
-                "using": True,
-                "size": 13,
-                "obs_scale": [T1BaseCfg.normalization.obs_scales.dof_pos],
-            },
-            "dof_vel": {
-                "using": True,
-                "size": 13,
-                "obs_scale": [T1BaseCfg.normalization.obs_scales.dof_vel],
-            },
-            "base_lin_vel": {
-                "using": True,
-                "size": 3,
-                "obs_scale": [T1BaseCfg.normalization.obs_scales.lin_vel],
-            },
-            "base_ang_vel": {
-                "using": True,
-                "size": 3,
-                "obs_scale": [T1BaseCfg.normalization.obs_scales.ang_vel],
-            },
-            "base_height": {
-                "using": True,
-                "size": 1,
-                "obs_scale": [1.0],
-            },
-            "projected_gravity": {
-                "using": True,
-                "size": 3,
-                "obs_scale": [1.0],
-                "interpolate": "slerp",
-            },
-            "torso_projected_gravity": {
-                "using": False,
-                "size": 3,
-                "obs_scale": [1.0],
-                "interpolate": "slerp"
-            },
-            "shoulder_pos_to_base": {
-                "using": False,
-                "size": 3 * 2,
-                "obs_scale": [1.0],
-            },
-            "knee_pos_to_base": {
-                "using": True,
-                "size": 3 * 2,
-                "obs_scale": [1.0],
-            },
-            "feet_pos_to_base": {
-                "using": True,
-                "size": 3 * 2,
-                "obs_scale": [1.0],
-            },
-            "elbow_pos_to_base": {
-                "using": False,
-                "size": 3 * 2,
-                "obs_scale": [1.0],
-            },
-            "wrist_pos_to_base": {
-                "using": False,
-                "size": 3 * 2,
-                "obs_scale": [1.0],
-            },
-        }
-        num_single_amp_obs = 0
-        for key, value in amp_obs_dict.items():
-            if value["using"]:
-                num_single_amp_obs += value["size"]
-        amp_obs_hist_steps = 6
-        num_amp_obs = int(amp_obs_hist_steps * num_single_amp_obs)
-
-        # 构建判别器相关
-        amp_disc_cfg = {
-            "num_input": num_amp_obs,
-            "hidden_dims": [1024, 512, 256],
-            "activation": 'relu',
-            "amp_reward_coef": 6.0,
-            "amp_type": 'least_square',  # 'least_square' , 'wasserstein', 'log', 'bce'
-            "lambda_schedule_dict": {
-                "schedule_type": "inverse",  # linear, inverse, exp, None
-                "lambda1": [20, 50, 500, 0.05],  # init,low,high,ema
-            },
-            "task_rew_schedule_dict": {
-                "using_schedule": False,
-                "buffer_size": 10000,
-                "update_step": 0.05,
-                "task_rew_coef_min": 0.7,
-                "update_threshold": 0.8,
-            },
-        }
-
-        # 更新判别器相关
-        amp_optim_cfg = {
-            "amp_trunk_weight_decay": 10e-4,
-            "amp_head_weight_decay": 10e-2,
-            "amp_replay_buffer_size": 500000,
-            "amp_loss_coef": 5.0,
-            'amp_disc_lr': 5e-5,
-            'max_amp_disc_grad_norm': 0.05,
-            'amp_update_interval': 1,
-        }
-
-        # 数据归一化相关
-        amp_empirical_normalization = True
-        amp_normal_update_until = 1e4
 
     class control(T1BaseCfg.control):
         # PD Drive parameters:

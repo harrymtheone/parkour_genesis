@@ -40,7 +40,7 @@ class CriticObs(ObsBase):
         self.est_gt = est_gt.clone()
 
 
-class T1DreamWaqEnv(T1BaseEnv):
+class T1_DreamWaq_Env(T1BaseEnv):
     def _init_robot_props(self):
         super()._init_robot_props()
         self.yaw_roll_dof_indices = self.sim.create_indices(

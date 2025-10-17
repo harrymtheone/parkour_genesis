@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.distributions import Normal, kl_divergence
 
 from rsl_rl.algorithms.alg_base import BaseAlgorithm
@@ -47,43 +46,67 @@ class PPO_PIE(BaseAlgorithm):
         self.learning_rate = self.cfg.learning_rate
         self.device = device
 
+        # Initialize adaptive KL coefficient
+        self.kl_coef_vel = 0.01
+        self.kl_coef_z = 0.01
+
         # PPO components
         self.actor = Policy(task_cfg.env, task_cfg.policy).to(self.device)
-        self.actor.reset_std(self.cfg.init_noise_std, device=self.device)
+        self.actor.reset_std(self.cfg.init_noise_std, self.device)
+        self.mixer_hidden_states = None
 
-        self.critic = UniversalCritic(task_cfg.env, task_cfg.policy).to(self.device)
-        self.optimizer = optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
-        self.scaler = GradScaler(enabled=self.cfg.use_amp)
+        self.critic = nn.ModuleDict({
+            'default': UniversalCritic(task_cfg.env, task_cfg.policy),
+            'contact': UniversalCritic(task_cfg.env, task_cfg.policy),
+        }).to(self.device)
 
-        # reconstructor
-        self.mse_loss = nn.MSELoss()
-        self.l1_loss = nn.L1Loss()
+        self.optimizer_ppo = torch.optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
+
+        self.optimizer_sym = torch.optim.Adam(self.actor.parameters(), lr=self.learning_rate)
+        self.scaler_sym = GradScaler(enabled=self.cfg.use_amp)
+
+        self.optimizer_vae = torch.optim.Adam(
+            [*self.actor.mixer.parameters(), *self.actor.vae.parameters()],
+            lr=self.learning_rate
+        )
+        self.scaler_vae = GradScaler(enabled=self.cfg.use_amp)
 
         # Rollout Storage
         self.transition = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
 
-    def act(self, obs, obs_critic, use_estimated_values: torch.Tensor = None, **kwargs):
+    def act(self,
+            obs,
+            obs_critic,
+            amp_obs: torch.Tensor = None,
+            **kwargs):
+        # act function should run within torch.inference_mode context
         with torch.autocast(str(self.device), torch.float16, enabled=self.cfg.use_amp):
             # store observations
             self.transition.observations = obs
             self.transition.critic_observations = obs_critic
-            if self.actor.is_recurrent:
-                self.transition.hidden_states = self.actor.get_hidden_states()
+            self.transition.mixer_hidden_states = self.mixer_hidden_states
 
-            self.transition.use_estimated_values = use_estimated_values
-            actions = self.actor.act(obs)
+            actions, self.transition.est_vel, self.transition.est_z, self.mixer_hidden_states = self.actor.act(
+                proprio=obs.proprio.unsqueeze(0),
+                depth=obs.depth.unsqueeze(0),
+                mixer_hidden_states=self.mixer_hidden_states,
+            )
 
-            if self.actor.is_recurrent and self.transition.hidden_states is None:
-                # only for the first step where hidden_state is None
-                self.transition.hidden_states = 0 * self.actor.get_hidden_states()
+            # store hidden states
+            if self.transition.mixer_hidden_states is None:
+                self.transition.mixer_hidden_states = torch.zeros_like(self.mixer_hidden_states)
 
             # store
             self.transition.actions = actions
-            self.transition.values = self.critic.evaluate(obs_critic)
+            self.transition.values = self.critic['default'].evaluate(obs_critic)
+            self.transition.values_contact = self.critic['contact'].evaluate(obs_critic)
             self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions)
             self.transition.action_mean = self.actor.action_mean
             self.transition.action_sigma = self.actor.action_std
+
+            self.amp_replay_buffer.insert(amp_obs.detach())
+
             return actions
 
     def process_env_step(self, rewards, dones, infos, *args):

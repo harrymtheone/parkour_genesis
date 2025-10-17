@@ -248,7 +248,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
 
     class amp:
         # 数据加载相关
-        motion_file = "data/step_in_place"
+        motion_file = "data/rand_walk"
         preload = True
         num_preload_data = 400000
 
@@ -321,7 +321,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
         for key, value in amp_obs_dict.items():
             if value["using"]:
                 num_single_amp_obs += value["size"]
-        amp_obs_hist_steps = 6
+        amp_obs_hist_steps = 20
         num_amp_obs = int(amp_obs_hist_steps * num_single_amp_obs)
 
         # 构建判别器相关
@@ -330,7 +330,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
             "hidden_dims": [1024, 512, 256],
             "activation": 'relu',
             "amp_reward_coef": 6.0,
-            "amp_type": 'least_square',  # 'least_square' , 'wasserstein', 'log', 'bce'
+            "amp_type": 'wasserstein',  # 'least_square' , 'wasserstein', 'log', 'bce'
             "lambda_schedule_dict": {
                 "schedule_type": "inverse",  # linear, inverse, exp, None
                 "lambda1": [20, 50, 500, 0.05],  # init,low,high,ema

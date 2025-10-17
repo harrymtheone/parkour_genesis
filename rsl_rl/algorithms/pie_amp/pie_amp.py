@@ -53,14 +53,11 @@ class PPO_PIE_AMP(BaseAlgorithm):
         self.amp_cfg = class_to_dict(task_cfg.amp)
         self.cfg = task_cfg.algorithm
         self.learning_rate = self.cfg.learning_rate
-        self.amp_lr = self.cfg.amp_lr
         self.device = device
 
         # Initialize adaptive KL coefficient
         self.kl_coef_vel = 0.01
         self.kl_coef_z = 0.01
-
-        self.amp_obs = torch.zeros(self.task_cfg.env.num_envs, 26, 3, device=self.device)
 
         # PPO components
         self.actor = Policy(task_cfg.env, task_cfg.policy).to(self.device)
@@ -71,13 +68,8 @@ class PPO_PIE_AMP(BaseAlgorithm):
             'default': UniversalCritic(task_cfg.env, task_cfg.policy),
             'contact': UniversalCritic(task_cfg.env, task_cfg.policy),
         }).to(self.device)
-        params_ac = [
-            {"params": self.actor.parameters(), "name": "actor"},
-            {"params": self.critic.parameters(), "name": "critic"},
-        ]
-        self._build_amp_discriminator()
 
-        self.optimizer_ppo = torch.optim.Adam(params_ac, lr=self.learning_rate)
+        self.optimizer_ppo = torch.optim.Adam([*self.actor.parameters(), *self.critic.parameters()], lr=self.learning_rate)
 
         self.optimizer_sym = torch.optim.Adam(self.actor.parameters(), lr=self.learning_rate)
         self.scaler_sym = GradScaler(enabled=self.cfg.use_amp)
@@ -88,10 +80,11 @@ class PPO_PIE_AMP(BaseAlgorithm):
         )
         self.scaler_vae = GradScaler(enabled=self.cfg.use_amp)
 
+        self._build_amp_discriminator()
+
         # Rollout Storage
         self.transition = Transition()
         self.storage = RolloutStorage(task_cfg.env.num_envs, task_cfg.runner.num_steps_per_env, self.device)
-        self.mse_loss = nn.MSELoss()
 
     def _build_amp_discriminator(self):
         amp_disc_cfg = self.amp_cfg["amp_disc_cfg"]

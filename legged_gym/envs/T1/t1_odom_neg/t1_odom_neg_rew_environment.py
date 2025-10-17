@@ -56,7 +56,7 @@ class CriticObs(ObsBase):
         self.edge_mask = edge_mask.clone()
 
 
-class T1OdomNegEnvironment(T1BaseEnv):
+class T1_Odom_Neg_Env(T1BaseEnv):
 
     def _init_robot_props(self):
         super()._init_robot_props()
