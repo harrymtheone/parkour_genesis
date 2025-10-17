@@ -279,6 +279,7 @@ class T1_PIE_Cfg(T1BaseCfg):
         algorithm_name = 'ppo_pie'
 
         lock_smpl_to = 1
+        lock_smpl_until = 10000000
 
         max_iterations = 200000  # number of policy updates
 

@@ -200,16 +200,16 @@ class PPO_Odom_AMP(BaseAlgorithm):
 
         amp_policy_generator = self.amp_replay_buffer.feed_forward_generator(
             self.cfg.num_learning_epochs * self.cfg.num_mini_batches,
-            self.task_cfg.env.num_envs * self.storage.num_transitions_per_env // self.cfg.num_mini_batches,
+            # self.task_cfg.env.num_envs * self.storage.num_transitions_per_env // self.cfg.num_mini_batches,
+            self.task_cfg.env.num_envs * self.storage.num_transitions_per_env // 1,
         )
         amp_expert_generator = self.amp_motion_loader.feed_forward_generator(
             self.cfg.num_learning_epochs * self.cfg.num_mini_batches,
-            self.task_cfg.env.num_envs * self.storage.num_transitions_per_env // self.cfg.num_mini_batches,
+            # self.task_cfg.env.num_envs * self.storage.num_transitions_per_env // self.cfg.num_mini_batches,
+            self.task_cfg.env.num_envs * self.storage.num_transitions_per_env // 1,
         )
 
-        generator = self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs)
-
-        for batch, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
+        for batch in self.storage.recurrent_mini_batch_generator(self.cfg.num_mini_batches, self.cfg.num_learning_epochs):
             num_updates += 1
 
             # ########################## policy loss ##########################
@@ -221,7 +221,8 @@ class PPO_Odom_AMP(BaseAlgorithm):
             mean_entropy_loss += ppo_metrics['entropy_loss']
             kl_change.append(ppo_metrics['kl_mean'])
 
-            # ########################## discriminator loss ##########################
+        # ########################## discriminator loss ##########################
+        for sample_amp_policy, sample_amp_expert in zip(amp_policy_generator, amp_expert_generator):
             if update_amp:
                 amp_metrics = self.update_amp(sample_amp_policy, sample_amp_expert)
                 mean_amp_loss += amp_metrics['amp_loss']
@@ -389,12 +390,12 @@ class PPO_Odom_AMP(BaseAlgorithm):
     def load(self, loaded_dict, load_optimizer=True):
         self.actor.load_state_dict(loaded_dict['actor_state_dict'])
         self.critic.load_state_dict(loaded_dict['critic_state_dict'])
-        self.amp_disc.load_state_dict(loaded_dict['discriminator_state_dict'])
-        self.amp_obs_normalizer.load_state_dict(loaded_dict['amp_obs_normalizer_state_dict'])
+        # self.amp_disc.load_state_dict(loaded_dict['discriminator_state_dict'])
+        # self.amp_obs_normalizer.load_state_dict(loaded_dict['amp_obs_normalizer_state_dict'])
 
-        if load_optimizer:
-            self.optimizer.load_state_dict(loaded_dict['optimizer_ac_state_dict'])
-            self.optimizer_amp.load_state_dict(loaded_dict['optimizer_dis_state_dict'])
+        # if load_optimizer:
+        #     self.optimizer.load_state_dict(loaded_dict['optimizer_ac_state_dict'])
+        #     self.optimizer_amp.load_state_dict(loaded_dict['optimizer_dis_state_dict'])
 
         if not self.cfg.continue_from_last_std:
             self.actor.reset_std(self.cfg.init_noise_std)

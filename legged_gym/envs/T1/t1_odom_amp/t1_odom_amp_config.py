@@ -321,7 +321,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
         for key, value in amp_obs_dict.items():
             if value["using"]:
                 num_single_amp_obs += value["size"]
-        amp_obs_hist_steps = 20
+        amp_obs_hist_steps = 10
         num_amp_obs = int(amp_obs_hist_steps * num_single_amp_obs)
 
         # 构建判别器相关
@@ -330,7 +330,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
             "hidden_dims": [1024, 512, 256],
             "activation": 'relu',
             "amp_reward_coef": 6.0,
-            "amp_type": 'wasserstein',  # 'least_square' , 'wasserstein', 'log', 'bce'
+            "amp_type": 'least_square',  # 'least_square' , 'wasserstein', 'log', 'bce'
             "lambda_schedule_dict": {
                 "schedule_type": "inverse",  # linear, inverse, exp, None
                 "lambda1": [20, 50, 500, 0.05],  # init,low,high,ema
@@ -352,7 +352,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
             "amp_loss_coef": 5.0,
             'amp_disc_lr': 5e-5,
             'max_amp_disc_grad_norm': 0.05,
-            'amp_update_interval': 1,
+            'amp_update_interval': 5,
         }
 
         # 数据归一化相关
