@@ -151,7 +151,8 @@ class PPO_Odom_AMP(BaseAlgorithm):
         # from Logan
         step_rew: dict = infos['step_rew']
 
-        rew_contact = step_rew.get('feet_edge', 0.)
+        rew_contact = torch.zeros_like(rewards)
+        rew_contact += step_rew.get('feet_edge', 0.)
         rew_contact += step_rew.get('feet_contact_forces', 0.)
         rew_contact += step_rew.get('feet_stumble', 0.)
         rew_contact += step_rew.get('foothold', 0.)
@@ -262,6 +263,7 @@ class PPO_Odom_AMP(BaseAlgorithm):
             'AMP/grad_pen_loss': mean_grad_pen_loss,
             'AMP/policy_pred': mean_policy_pred,
             'AMP/expert_pred': mean_expert_pred,
+            'AMP/task_reward_coef': self.amp_disc.task_rew_coef,
             'Train/noise_std': self.actor.log_std.exp().mean().item(),
         }
 

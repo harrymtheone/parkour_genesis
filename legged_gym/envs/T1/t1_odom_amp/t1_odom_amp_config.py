@@ -85,21 +85,26 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
         delta_t = 0.02
 
         class flat_ranges:
-            lin_vel_x = [-0.8, 1.2]
-            lin_vel_y = [-0.8, 0.8]
+            lin_vel_x = [0.2, 1.2]
+            lin_vel_y = [-0.4, 0.4]
             ang_vel_yaw = [-1., 1.]
+            motion_weight = [0, 1, 0, 1]
 
         class stair_ranges:
             lin_vel_x = [-0.8, 1.2]
             lin_vel_y = [-0.8, 0.8]
             ang_vel_yaw = [-1., 1.]  # this value limits the max yaw velocity computed by goal
             heading = [-1.5, 1.5]
+            motion_weight = [2, 4, 0, 4]
 
         class parkour_ranges:
             lin_vel_x = [0.3, 1.2]  # min value should be greater than lin_vel_clip
             ang_vel_yaw = [-1.0, 1.0]  # this value limits the max yaw velocity computed by goal
+            motion_weight = [1, 0, 0, 9]
 
     class terrain(T1BaseCfg.terrain):
+        description_type = "plane"
+
         body_pts_x = np.linspace(-0.6, 1.2, 32)
         body_pts_y = np.linspace(-0.6, 0.6, 16)
 
@@ -179,11 +184,11 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
             tracking_ang_vel = 2.5
 
             # contact
-            feet_slip = -0.1
-            feet_contact_forces = -1e-3
-            feet_stumble = -1.
-            foothold = -0.1
-            feet_clearance = 0.5
+            # feet_slip = -0.1
+            # feet_contact_forces = -1e-3
+            # feet_stumble = -1.
+            # foothold = -0.1
+            feet_clearance = 0.1
 
             # base pos
             default_joint_pos = -0.04
@@ -191,7 +196,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
 
             # energy
             action_smoothness = -1e-3
-            dof_vel_smoothness = -1e-3
+            # dof_vel_smoothness = -1e-3
             torques = -1e-5
             dof_vel = -5e-4
             dof_acc = -1e-7
@@ -225,7 +230,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
         use_clipped_value_loss = True
         clip_param = 0.2
         entropy_coef = 0.01
-        num_learning_epochs = 8
+        num_learning_epochs = 4
         num_mini_batches = 5  # mini batch size = num_envs * nsteps / nminibatches
         learning_rate = 1.e-4  # 5.e-4
         amp_lr = 5e-5
@@ -237,7 +242,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
 
         continue_from_last_std = True
         init_noise_std = 1.0
-        noise_range = (0.3, 1.0)
+        noise_range = (0.4, 1.0)
 
         use_amp = True
 
@@ -331,7 +336,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
         amp_disc_cfg = {"num_input": num_amp_obs,
                         "hidden_dims": [1024, 512, 256],
                         "activation": 'relu',
-                        "amp_reward_coef": 6.0,
+                        "amp_reward_coef": 2.0,
                         "amp_type": 'least_square',  # 'least_square' , 'wasserstein', 'log', 'bce'
                         "lambda_schedule_dict":
                             {
@@ -344,7 +349,7 @@ class T1_Odom_AMP_Cfg(T1BaseCfg):
                                 "buffer_size": 10000,
                                 "update_step": 0.05,
                                 "task_rew_coef_min": 0.7,
-                                "update_threshold": 0.8,
+                                "update_threshold": 100.,
                             },
                         }
 

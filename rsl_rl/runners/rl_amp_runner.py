@@ -108,7 +108,6 @@ class RLAmpRunner(RunnerLogger):
 
             # Rollout
             for _ in range(self.num_steps_per_env):
-
                 with torch.inference_mode(mode=self.cfg.inference_enabled):
                     actions = self.alg.act(
                         obs,

@@ -413,7 +413,7 @@ class ParkourTask(BaseTask):
             self.commands[env_ids_flat, 2] = sample_cmd(self.cmd_ranges_flat["ang_vel_yaw"],
                                                         self.cfg.commands.ang_vel_clip,
                                                         len(env_ids_flat))
-            motion_type[env_ids_flat] = sample_motion_type([1, 4, 1, 4], len(env_ids_flat))
+            motion_type[env_ids_flat] = sample_motion_type(self.cfg.commands.flat_ranges.motion_weight, len(env_ids_flat))
 
         # sample command for stair terrain (heading mode, yaw command is updated by heading)
         env_ids_stair = env_ids[torch.logical_and(self.env_class[env_ids] >= 2, self.env_class[env_ids] < 100)]
@@ -427,7 +427,7 @@ class ParkourTask(BaseTask):
             self.commands[env_ids_stair, 3] = sample_cmd(self.cmd_ranges_stair["heading"],
                                                          self.cfg.commands.ang_vel_clip,
                                                          len(env_ids_stair))
-            motion_type[env_ids_stair] = sample_motion_type([2, 4, 0, 4], len(env_ids_stair))
+            motion_type[env_ids_stair] = sample_motion_type(self.cfg.commands.stair_ranges.motion_weight, len(env_ids_stair))
 
         # sample command for parkour terrain (goal guided, no yaw command)
         env_ids_parkour = env_ids[self.env_class[env_ids] >= 100]
@@ -435,7 +435,7 @@ class ParkourTask(BaseTask):
             self.commands[env_ids_parkour, 0] = sample_cmd(self.cmd_ranges_parkour["lin_vel_x"],
                                                            self.cfg.commands.lin_vel_clip,
                                                            len(env_ids_parkour))
-            motion_type[env_ids_parkour] = sample_motion_type([1, 0, 0, 9], len(env_ids_parkour))
+            motion_type[env_ids_parkour] = sample_motion_type(self.cfg.commands.parkour_ranges.motion_weight, len(env_ids_parkour))
 
         # re-scale command (to prevent speed norm greater than x_vel_max)
         commands_normal = self.commands[self.env_class < 100]
